@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from .ast import (
@@ -92,20 +92,16 @@ def _normalize_canonical(
         return node
     if isinstance(node, GenericInvocation):
         body = None if node.body is None else _normalize_block(node.body, context)
-        return GenericInvocation(
-            node.name,
-            _header_arguments(node.arguments, context),
-            body,
-            node.loc,
+        return replace(
+            node,
+            arguments=_header_arguments(node.arguments, context),
+            body=body,
         )
     if isinstance(node, BraceGroup):
-        return BraceGroup(_normalize_block(node.body, context), node.loc)
-    return Item(
-        node.overlay,
-        node.label,
-        node.first_line,
-        _normalize_block(node.continuation, context),
-        node.loc,
+        return replace(node, body=_normalize_block(node.body, context))
+    return replace(
+        node,
+        continuation=_normalize_block(node.continuation, context),
     )
 
 
@@ -116,7 +112,7 @@ def _normalize_argument(
     value = argument.value
     if isinstance(value, Block):
         value = _normalize_block(value, context)
-    return Argument(argument.kind, value, argument.layout, argument.loc)
+    return replace(argument, value=value)
 
 
 def _header_arguments(
@@ -180,7 +176,7 @@ def _normalize_command(
             if not isinstance(child, SpecialInvocation) or child.name != "arg":
                 raise ValidationError(
                     "explicit command mode accepts only !arg direct children",
-                    getattr(child, "loc", node.loc),
+                    child.loc,
                 )
             long_arguments.append(_structured_argument(child, context))
         return GenericInvocation(
@@ -216,7 +212,6 @@ def _normalize_environment(
 
     long_arguments: list[Argument] = []
     body: Block | None = None
-    body_seen = False
     for child in direct:
         if not isinstance(child, SpecialInvocation) or child.name not in {
             "arg",
@@ -224,10 +219,10 @@ def _normalize_environment(
         }:
             raise ValidationError(
                 "explicit environment mode accepts only !arg or !body direct children",
-                getattr(child, "loc", node.loc),
+                child.loc,
             )
         if child.name == "arg":
-            if body_seen:
+            if body is not None:
                 raise ValidationError(
                     "!arg must appear before !body",
                     child.loc,
@@ -235,7 +230,7 @@ def _normalize_environment(
             long_arguments.append(_structured_argument(child, context))
             continue
 
-        if body_seen:
+        if body is not None:
             raise ValidationError(
                 "!body may appear only once",
                 child.loc,
@@ -246,7 +241,6 @@ def _normalize_environment(
                 child.loc,
             )
         body = _normalize_block(child.suite, context)
-        body_seen = True
 
     if body is None:
         # An explicit environment with arguments but no !body is still an
@@ -341,20 +335,7 @@ def _with_suite(
     segment: ParsedInvocation | SpecialInvocation,
     suite: Block,
 ) -> ParsedInvocation | SpecialInvocation:
-    if isinstance(segment, ParsedInvocation):
-        return ParsedInvocation(
-            segment.kind,
-            segment.name,
-            segment.groups,
-            suite,
-            segment.loc,
-        )
-    return SpecialInvocation(
-        segment.name,
-        segment.groups,
-        suite,
-        segment.loc,
-    )
+    return replace(segment, suite=suite)
 
 
 def _normalize_stack(
@@ -402,18 +383,17 @@ def _items_handler(
             "!items requires a nonempty block suite and no groups",
             node.loc,
         )
-    if any(not isinstance(child, RawTex) for child in node.suite.nodes):
-        invalid = next(
-            child
-            for child in node.suite.nodes
-            if not isinstance(child, RawTex)
-        )
+    invalid = next(
+        (child for child in node.suite.nodes if not isinstance(child, RawTex)),
+        None,
+    )
+    if invalid is not None:
         raise ValidationError(
             "!items suites may contain raw lines only",
             invalid.loc,
         )
 
-    raw_lines = tuple(node.suite.nodes)
+    raw_lines = node.suite.nodes
     if not any(line.text for line in raw_lines):
         raise ValidationError(
             "!items suite must contain at least one item",
@@ -423,11 +403,6 @@ def _items_handler(
     if index != len(raw_lines):
         line = raw_lines[index]
         raise ValidationError("invalid !items indentation", line.loc)
-    if not items:
-        raise ValidationError(
-            "!items suite must contain at least one item",
-            node.loc,
-        )
     body = Block(tuple(items), node.suite.loc)
     return (GenericInvocation("itemize", (), body, node.loc),)
 
@@ -449,6 +424,10 @@ def _source_loc_at(
         line.loc.line,
         line_start + text_index,
     )
+
+
+def _leading_spaces(text: str) -> int:
+    return len(text) - len(text.lstrip(" "))
 
 
 def _item_prefix(
@@ -527,6 +506,21 @@ def _item_prefix(
     return overlay, label, text[cursor:]
 
 
+def _nested_itemize(
+    lines: tuple[RawTex, ...],
+    index: int,
+    depth: int,
+) -> tuple[GenericInvocation, int]:
+    nested_items, end = _parse_item_level(lines, index, depth)
+    loc = nested_items[0].loc if nested_items else lines[index].loc
+    return GenericInvocation(
+        "itemize",
+        (),
+        Block(tuple(nested_items), loc),
+        loc,
+    ), end
+
+
 def _parse_item_level(
     lines: tuple[RawTex, ...],
     index: int,
@@ -538,9 +532,7 @@ def _parse_item_level(
             next_index = _next_item_line(lines, index)
             if next_index is None:
                 return items, len(lines)
-            next_indent = len(
-                lines[next_index].text
-            ) - len(lines[next_index].text.lstrip(" "))
+            next_indent = _leading_spaces(lines[next_index].text)
             if next_indent == depth:
                 index = next_index
                 break
@@ -554,7 +546,7 @@ def _parse_item_level(
         if index >= len(lines):
             return items, index
         line = lines[index]
-        indent = len(line.text) - len(line.text.lstrip(" "))
+        indent = _leading_spaces(line.text)
         if indent < depth:
             return items, index
         if indent > depth:
@@ -577,9 +569,7 @@ def _parse_item_level(
                     index = len(lines)
                     break
                 next_line = lines[next_index]
-                next_indent = len(
-                    next_line.text
-                ) - len(next_line.text.lstrip(" "))
+                next_indent = _leading_spaces(next_line.text)
                 if next_indent == depth:
                     index = next_index
                     break
@@ -590,25 +580,12 @@ def _parse_item_level(
                     and next_line.text[depth + 4 : depth + 5] == "-"
                 ):
                     continuation.extend(lines[index:next_index])
-                    nested_items, nested_end = _parse_item_level(
+                    nested, index = _nested_itemize(
                         lines,
                         next_index,
                         depth + 4,
                     )
-                    nested_loc = (
-                        nested_items[0].loc
-                        if nested_items
-                        else next_line.loc
-                    )
-                    continuation.append(
-                        GenericInvocation(
-                            "itemize",
-                            (),
-                            Block(tuple(nested_items), nested_loc),
-                            nested_loc,
-                        )
-                    )
-                    index = nested_end
+                    continuation.append(nested)
                     continue
                 if next_indent < depth + 2:
                     raise ValidationError(
@@ -619,32 +596,19 @@ def _parse_item_level(
                 index = next_index
                 continue
 
-            indent = len(current.text) - len(current.text.lstrip(" "))
+            indent = _leading_spaces(current.text)
             if indent <= depth:
                 break
             if (
                 indent == depth + 4
                 and current.text[depth + 4 : depth + 5] == "-"
             ):
-                nested_items, nested_end = _parse_item_level(
+                nested, index = _nested_itemize(
                     lines,
                     index,
                     depth + 4,
                 )
-                nested_loc = (
-                    nested_items[0].loc
-                    if nested_items
-                    else current.loc
-                )
-                continuation.append(
-                    GenericInvocation(
-                        "itemize",
-                        (),
-                        Block(tuple(nested_items), nested_loc),
-                        nested_loc,
-                    )
-                )
-                index = nested_end
+                continuation.append(nested)
                 continue
             if (
                 indent >= depth + 4

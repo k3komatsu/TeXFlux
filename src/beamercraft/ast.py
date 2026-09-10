@@ -104,7 +104,7 @@ class Document:
 
 SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack
 CanonicalNode = RawTex | GenericInvocation | BraceGroup | Item
-Node = SyntaxNode | CanonicalNode
+Node = SyntaxNode | GenericInvocation | BraceGroup | Item
 
 
 __all__ = [

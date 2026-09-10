@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .ast import (
     Argument,
@@ -459,21 +459,7 @@ class _Parser:
         )
 
         if len(result.segments) == 1:
-            segment = result.segments[0]
-            if isinstance(segment, ParsedInvocation):
-                return ParsedInvocation(
-                    segment.kind,
-                    segment.name,
-                    segment.groups,
-                    suite,
-                    segment.loc,
-                )
-            return SpecialInvocation(
-                segment.name,
-                segment.groups,
-                suite,
-                segment.loc,
-            )
+            return replace(result.segments[0], suite=suite)
         return Stack(result.segments, suite, directive_loc)
 
 
