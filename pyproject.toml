@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beamercraft"
+version = "0.1.0"
+description = "A TeX-first indentation-based preprocessor for structural LaTeX boilerplate"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+beamercraft = "beamercraft.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,3 @@
+@outer{A}:
+    @inner[B]:
+        BODY

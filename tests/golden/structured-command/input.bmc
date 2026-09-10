@@ -1,0 +1,6 @@
+@mycommand:
+    @!arg:
+        ARG1
+    @!arg{INLINE}
+    @!arg:
+        ARG2
