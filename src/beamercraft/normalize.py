@@ -38,22 +38,17 @@ SpecialHandler = Callable[
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class DirectiveSpec:
-    handler: SpecialHandler
-
-
 class DirectiveRegistry:
     """The small in-process registry used by normalization."""
 
     def __init__(self):
-        self._specs: dict[str, DirectiveSpec] = {}
+        self._handlers: dict[str, SpecialHandler] = {}
 
-    def register(self, name: str, spec: DirectiveSpec) -> None:
-        self._specs[name] = spec
+    def register(self, name: str, handler: SpecialHandler) -> None:
+        self._handlers[name] = handler
 
-    def lookup(self, name: str) -> DirectiveSpec | None:
-        return self._specs.get(name)
+    def lookup(self, name: str) -> SpecialHandler | None:
+        return self._handlers.get(name)
 
 
 def _blank(node: Node) -> bool:
@@ -311,13 +306,13 @@ def _normalize_special(
             f"!{node.name} is valid only as a direct child of a structured invocation",
             node.loc,
         )
-    spec = context.registry.lookup(node.name)
-    if spec is None:
+    handler = context.registry.lookup(node.name)
+    if handler is None:
         raise DirectiveError(
             f"unknown special directive '!{node.name}'",
             node.loc,
         )
-    result = spec.handler(node, context)
+    result = handler(node, context)
     if not isinstance(result, tuple) or any(
         not isinstance(item, (RawTex, GenericInvocation, BraceGroup, Item))
         for item in result
@@ -364,19 +359,20 @@ def _normalize_stack(
 
 def _block_handler(
     node: SpecialInvocation,
-    context: TransformContext,
+    _context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
     if node.groups or node.suite is None:
         raise ValidationError(
             "!block requires a block suite and no groups",
             node.loc,
         )
-    return (BraceGroup(_normalize_block(node.suite, context), node.loc),)
+    # _normalize_special normalizes handler output at the canonical boundary.
+    return (BraceGroup(node.suite, node.loc),)
 
 
 def _items_handler(
     node: SpecialInvocation,
-    context: TransformContext,
+    _context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
     if node.groups or node.suite is None:
         raise ValidationError(
@@ -640,8 +636,8 @@ def _parse_item_level(
 
 
 BUILTIN_DIRECTIVES = DirectiveRegistry()
-BUILTIN_DIRECTIVES.register("block", DirectiveSpec(_block_handler))
-BUILTIN_DIRECTIVES.register("items", DirectiveSpec(_items_handler))
+BUILTIN_DIRECTIVES.register("block", _block_handler)
+BUILTIN_DIRECTIVES.register("items", _items_handler)
 
 
 def _assert_canonical_block(block: Block) -> None:
@@ -685,7 +681,6 @@ def normalize(
 __all__ = [
     "BUILTIN_DIRECTIVES",
     "DirectiveRegistry",
-    "DirectiveSpec",
     "SpecialHandler",
     "TransformContext",
     "normalize",

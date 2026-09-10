@@ -13,7 +13,7 @@ from beamercraft.ast import (
     Stack,
 )
 from beamercraft.errors import DirectiveError, ParseError, ValidationError
-from beamercraft.normalize import DirectiveRegistry, DirectiveSpec, normalize
+from beamercraft.normalize import DirectiveRegistry, normalize
 from beamercraft.parser import parse
 from beamercraft.render import render
 
@@ -484,7 +484,7 @@ class CompileTests(unittest.TestCase):
             )
 
         registry = DirectiveRegistry()
-        registry.register("result", DirectiveSpec(result))
+        registry.register("result", result)
         document = normalize(
             parse("!result:\n    \\foo{A}\n"),
             registry,
@@ -499,7 +499,7 @@ class CompileTests(unittest.TestCase):
             return (RawTex("generated", node.loc),)
 
         registry = DirectiveRegistry()
-        registry.register("result", DirectiveSpec(result))
+        registry.register("result", result)
         document = normalize(
             parse("!result:\n    ignored\n"),
             registry,
@@ -514,7 +514,7 @@ class CompileTests(unittest.TestCase):
                 ),
             )
 
-        registry.register("grouped", DirectiveSpec(grouped))
+        registry.register("grouped", grouped)
         self.assertEqual(
             render(normalize(parse("!grouped:\n    ignored\n"), registry)),
             "{\ninside\n}\n",

@@ -166,14 +166,23 @@ class HeaderScanner:
             if self.text.startswith(">>", position):
                 self.saw_structure = True
                 if spaces == 0:
-                    raise self._error("stack separator requires surrounding spaces", position)
+                    raise self._error(
+                        "stack separator requires surrounding spaces",
+                        position,
+                    )
                 position += 2
                 if position >= self.end or self.text[position] != " ":
-                    raise self._error("stack separator requires surrounding spaces", position)
+                    raise self._error(
+                        "stack separator requires surrounding spaces",
+                        position,
+                    )
                 while position < self.end and self.text[position] == " ":
                     position += 1
                 if position == self.end:
-                    raise self._error("stack separator needs a following segment", position)
+                    raise self._error(
+                        "stack separator needs a following segment",
+                        position,
+                    )
                 continue
 
             raise self._error("unexpected token in structural header", position)

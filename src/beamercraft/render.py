@@ -16,7 +16,10 @@ from .ast import (
 
 
 def _group(argument: Argument) -> str:
-    if argument.layout is not ArgumentLayout.INLINE or not isinstance(argument.value, str):
+    if (
+        argument.layout is not ArgumentLayout.INLINE
+        or not isinstance(argument.value, str)
+    ):
         raise TypeError("renderer received a non-inline argument in an inline position")
     delimiters = {
         GroupKind.REQUIRED: ("{", "}"),
@@ -54,7 +57,11 @@ def _render_block(block: Block, source_comments: bool) -> list[str]:
     return lines
 
 
-def _render_arguments(prefix: str, arguments: tuple[Argument, ...], source_comments: bool) -> list[str]:
+def _render_arguments(
+    prefix: str,
+    arguments: tuple[Argument, ...],
+    source_comments: bool,
+) -> list[str]:
     lines = [prefix]
     for argument in arguments:
         if argument.layout is ArgumentLayout.INLINE:
@@ -73,7 +80,11 @@ def _render_arguments(prefix: str, arguments: tuple[Argument, ...], source_comme
 def _render_invocation(node: GenericInvocation, source_comments: bool) -> list[str]:
     if node.body is None:
         return _render_arguments(f"\\{node.name}", node.arguments, source_comments)
-    lines = _render_arguments(f"\\begin{{{node.name}}}", node.arguments, source_comments)
+    lines = _render_arguments(
+        f"\\begin{{{node.name}}}",
+        node.arguments,
+        source_comments,
+    )
     lines.extend(_render_block(node.body, source_comments))
     lines.append(f"\\end{{{node.name}}}")
     return lines

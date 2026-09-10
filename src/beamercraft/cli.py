@@ -26,7 +26,9 @@ def _same_path(first: Path, second: Path) -> bool:
             return True
     except OSError:
         pass
-    return os.path.normcase(str(first.resolve())) == os.path.normcase(str(second.resolve()))
+    first_resolved = os.path.normcase(str(first.resolve()))
+    second_resolved = os.path.normcase(str(second.resolve()))
+    return first_resolved == second_resolved
 
 
 def main(argv: Sequence[str] | None = None) -> int:

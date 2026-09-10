@@ -20,7 +20,6 @@ from .errors import BeamercraftError, DirectiveError, ParseError, ValidationErro
 from .normalize import (
     BUILTIN_DIRECTIVES,
     DirectiveRegistry,
-    DirectiveSpec,
     TransformContext,
     normalize,
 )
@@ -34,7 +33,8 @@ def compile_text(
     filename: str = "<string>",
     source_comments: bool = False,
 ) -> str:
-    return render(normalize(parse(source, filename=filename)), source_comments=source_comments)
+    document = normalize(parse(source, filename=filename))
+    return render(document, source_comments=source_comments)
 
 
 __all__ = [
@@ -46,7 +46,6 @@ __all__ = [
     "BraceGroup",
     "DirectiveError",
     "DirectiveRegistry",
-    "DirectiveSpec",
     "Document",
     "GenericInvocation",
     "GroupKind",
