@@ -2,97 +2,124 @@
 
 ## Project
 
-Beamercraft is a new Python 3.11+ OSS project: a TeX-first, indentation-based
-preprocessor that removes structural LaTeX/Beamer boilerplate without replacing
-TeX semantics.
+Beamercraft is a Python 3.11+ OSS project: a TeX-first, indentation-based
+preprocessor that removes structural LaTeX/Beamer boilerplate without
+replacing TeX semantics.
 
-There is no legacy implementation, compatibility target, or previous design to
-infer. Do not invent one.
+There is no legacy compatibility target. The normative language definition is
+beamercraft_tex_first_dsl_v1_spec.md; the approved implementation plan is
+plan.md. Read both completely before changing the DSL.
 
-## Sources of truth
+## Source-of-truth rules
 
-Read these files completely before designing or changing the DSL:
+The current v1 mental model is fixed:
 
-1. `beamercraft_tex_first_dsl_v1_spec.md` — normative v1 language specification.
-2. `plan.md` — approved implementation architecture, test plan, and the pending
-   specification clarifications agreed after the initial spec was written.
+~~~text
+\ = TeX command
+@ = TeX environment
+! = Beamercraft special construct
+~~~
 
-If they conflict, do not silently choose a behavior. The approved clarifications
-in `plan.md` must first be incorporated into the normative specification; after
-that, the specification remains authoritative.
+Do not reintroduce prefix-based command/environment inference. Do not inspect
+templates, package metadata, command registries, or environment registries to
+decide the shape of an invocation.
 
-## Non-negotiable invariants
+The approved syntax is:
 
-- Ordinary source lines are raw TeX.
-- `@foo` is an unregistered generic TeX command.
-- `@foo:` is a generic TeX environment unless its suite structurally defines a
-  long-form command with `@!arg` and no `@!body`.
-- Determine command versus environment only from source structure. Never inspect
-  templates, command registries, packages, or known LaTeX names.
-- Unknown `@foo` names must render; unknown `@!foo` names must fail.
-- `@!foo` is the Beamercraft special namespace.
-- Do not parse, validate, normalize, or escape inline/raw TeX.
-- `>>` is syntax sugar for a single path of nested containers and must disappear
-  during normalization.
-- Special directives expand AST to AST. They must not return TeX strings.
-- The TeX renderer consumes canonical AST and must not know special directives.
-- Preserve file, 1-based line, and 1-based column on major AST nodes and errors.
+- Ordinary TeX commands such as \vspace{...} are raw TeX.
+- \foo: and \foo >> ...: are structural command candidates.
+- @foo: is an environment. An @foo header without a suite is an error.
+- !foo is a Beamercraft special construct.
+- A top-level trailing colon is reserved by Beamercraft.
+- >> is pure single-child-suite desugaring.
+- !block: always emits one actual TeX brace group.
+- !items: is the itemize mini-grammar.
+- !arg and !body are explicit fallback forms only.
+
+Unknown environment names must render because environment names are not looked
+up. Unknown special names must fail. Ordinary/raw TeX must remain opaque:
+Beamercraft may scan a leading command line only when a top-level structural
+token makes it a structural candidate. Group contents are never scanned for
+Beamercraft operators.
+
+Structured command rules are deterministic:
+
+- In implicit mode, the complete indented suite is one required long
+  argument, including all of its normalized children.
+- !block always remains its own brace group; an implicit command suite wraps it
+  in the command argument, so the braces are intentionally nested.
+- A direct !arg or !body selects explicit mode; implicit and explicit
+  children may not be mixed.
+- Command explicit mode accepts only direct !arg children.
+- Environment explicit mode accepts only direct !arg and !body children;
+  !body is optional, unique, and last.
+- A suite marker accepts no trailing block-scalar marker.
+
+Every major syntax/canonical node and diagnostic keeps file, 1-based line, and
+1-based column. Normalization must remove syntax-only nodes before rendering.
+Special handlers are AST-to-AST transformations; they must not return TeX
+strings. The renderer consumes canonical AST and knows nothing about special
+directives or >>.
 
 ## v1 boundaries
 
-Use the Python standard library at runtime. Prefer small handwritten line and
-header scanners over a parser generator. Keep the parser, normalization/special
-expansion, and renderer responsibilities separate, but do not add abstraction
-layers or files only for hypothetical future use.
+Use the Python standard library at runtime. Keep the handwritten physical-line
+parser, header scanner, normalization/special expansion, and renderer
+separate, but do not add abstraction layers for hypothetical future use.
 
-Do not add any of the following in v1 unless the specification is explicitly
-revised:
+Do not add in v1:
 
-- a TeX parser or template parser
-- LaTeX command/environment discovery or mandatory registries
-- automatic escaping or argument-count/package validation
-- variables, expressions, loops, conditions, or a source macro language
-- YAML or Python-embedded authoring DSLs
-- implicit extension loading or a general plugin framework
-- a renderer backend framework
-- runtime dependencies
+- a TeX or template parser;
+- command/environment discovery or mandatory registries;
+- automatic escaping, normalization, or TeX argument-count validation;
+- variables, expressions, loops, conditions, or a source macro language;
+- YAML or Python-embedded authoring DSLs;
+- implicit extension loading or a general plugin framework;
+- renderer backend frameworks;
+- runtime dependencies.
 
-The internal special-directive registry is allowed. User extension loading is
-deferred; its future contract must remain explicit and AST-to-AST.
+The in-process special registry is allowed. User extension loading is deferred;
+its future contract remains AST-to-AST.
 
-## Approved syntax clarifications
+## Agent and review budget
 
-Before implementation, update the normative spec and its examples to state:
-
-- `@!arg:` always creates a multiline block argument.
-- `@!arg{...}` creates one inline required argument and is valid only as a direct
-  child in a structured generic invocation.
-- Inline and block `@!arg` forms may be mixed in source order.
-- `@!body{...}` is not part of v1.
-- Normal DSL nesting uses four spaces. The `@!items` mini-grammar separately uses
-  a two-space continuation prefix and four-space nested-list levels, as detailed
-  in `plan.md`.
-- Compact and long forms normalize to the same canonical node kinds while keeping
-  source location and argument layout metadata.
+Use Claude/Opus or another external reviewer only when the user requests it.
+For a change task that includes an Opus review, use this completion loop:
+Opus review -> implement the actionable fixes -> run the focused and full
+verification -> Opus re-review. Repeat the loop until the review reports no
+remaining actionable findings (or explicitly records any accepted residual
+risk), then run the final verification and commit the completed changes. Do
+not commit before this loop is complete. A review-only request remains
+read-only unless the user separately asks for changes.
+After such a review has started, silence, elapsed time, an empty poll result,
+or the absence of intermediate output is not evidence that it stopped. Never
+cancel, interrupt, or kill the running review based on those observations;
+only an explicit user stop request permits interruption. Preserve and poll the
+existing process/session until the review tool explicitly reports completion,
+failure, or a need for attention. Do not start a duplicate review or retry
+while the original may still be running. If the tool explicitly reports a
+failure, report that result without guessing whether the underlying process
+has stopped.
 
 ## Implementation workflow
 
-Work test-first in the phases listed in `plan.md`. For each phase:
+Work test-first in the phases in plan.md:
 
-1. Read the affected spec sections and existing tests.
-2. Add the smallest failing unit or golden test that fixes the intended behavior.
-3. Implement the smallest standard-library solution that passes it.
+1. Read the affected specification sections and existing tests.
+2. Add the smallest failing unit or exact-output golden test.
+3. Implement the smallest standard-library solution.
 4. Run the focused test, then the full suite.
-5. Check that no syntax-only `Stack`/`SpecialInvocation` nodes reach the renderer.
+5. Confirm that no ParsedInvocation, SpecialInvocation, or Stack reaches the
+   renderer.
 
-Use `apply_patch` for manual edits. Preserve unrelated user changes. Do not add a
-dependency when the standard library is sufficient.
+Use apply_patch for manual edits. Preserve unrelated user changes. Do not add
+dependencies when the standard library is sufficient.
 
-Once the package exists, the baseline verification command is:
+Baseline verification:
 
-```bash
+~~~bash
 python -m unittest discover
-```
+~~~
 
 LaTeX integration tests must detect the toolchain and skip when unavailable;
 LaTeX is never a Beamercraft runtime dependency.
@@ -101,13 +128,21 @@ LaTeX is never a Beamercraft runtime dependency.
 
 Before finishing a DSL change, verify:
 
-- an unknown generic name still works without registration
-- command/environment selection still uses structure only
-- raw TeX remains opaque
-- `@!` and generic namespaces remain distinct
-- structured `@!arg`/`@!body` ordering and placement are validated
-- `>>` inside argument groups is not treated as stacking
-- normalization removes syntax sugar before rendering
-- errors point to the originating source location
-- unit and exact-output golden tests cover the change
-- no speculative plugin, backend, or TeX-semantic machinery was introduced
+- \foo, @foo, and !foo are classified solely by their prefix;
+- an ordinary \command remains raw unless it has a top-level structural form;
+- an unknown environment still renders without registration;
+- an unknown special fails;
+- top-level colon and >> are deterministic;
+- group-internal colon and >> remain opaque;
+- starred environment names work;
+- implicit command suites produce exactly one long argument;
+- command and environment explicit modes reject mixing;
+- no block-scalar marker is accepted after a suite colon;
+- !block always has exactly its own brace group;
+- !arg around !block retains the intentional double brace;
+- >> is normalized before rendering and has no semantic terminal rule;
+- !items preserves overlay, label, multiline, and nested-list behavior;
+- source locations survive desugaring and special expansion;
+- exact-output golden tests cover the representative command/environment/special
+  example;
+- no speculative plugin, backend, or TeX-semantic machinery was introduced.

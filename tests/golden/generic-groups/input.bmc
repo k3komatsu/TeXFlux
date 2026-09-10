@@ -1,2 +1,2 @@
-@headuline<2->[CA]{モジュールA}
-@unknown{raw {TeX}}[optional]
+\headuline<2->[CA]{モジュールA}
+\unknown{raw {TeX}}[optional]

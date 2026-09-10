@@ -1,5 +1,5 @@
 @myenv:
-    @!arg:
+    !arg:
         ARG
-    @!body:
+    !body:
         BODY

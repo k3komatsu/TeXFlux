@@ -1,0 +1,6 @@
+@frame{Stacked lists} >> @center >> !items:
+    -<1->[A] First item
+        Continuation keeps extra raw indentation.
+        - Nested item
+        - Another nested item
+    -<2-> Second item

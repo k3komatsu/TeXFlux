@@ -1,4 +1,4 @@
-@foo{SHORT}:
-    @!arg{INLINE}
-    @!arg:
+\foo{SHORT}:
+    !arg{INLINE}
+    !arg:
         BLOCK

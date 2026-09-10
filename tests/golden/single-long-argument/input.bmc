@@ -1,0 +1,8 @@
+\rightnotebox{Note}:
+    @align*:
+        &x = y
+
+\outer:
+    \inner:
+        @bar{X} >> !items:
+            - item

@@ -2,1314 +2,764 @@
 
 ## 0. ステータス
 
-この文書は、Beamercraft の **TeX-first / ultra-thin preprocessor DSL v1** の正本仕様である。
+本書は Beamercraft v1 の normative specification である。実装、README、
+examples、unit test、golden test は本書に従う。
 
-v1 の設計目標は、LaTeX/Beamer の意味論を置き換えることではなく、LaTeX で特に冗長になりやすい
+Beamercraft は Python 3.11 以上で動作する TeX-first preprocessor である。
+TeX の意味論を置き換えず、行構造、indentation、environment の
+begin/end、構造化した required argument、itemize の定型だけを扱う。
 
-- `\\begin{...}` / `\\end{...}`
-- 深い environment nesting
-- 巨大な複数行 `{...}` 引数
-- `itemize` の反復記述
+利用者が覚える prefix は次の三つだけである。
 
-だけを、インデントベースの薄い構文で圧縮することである。
+~~~text
+\ = TeX command
+@ = TeX environment
+! = Beamercraft special construct
+~~~
 
-最重要原則は次のとおり。
+prefix の意味は字句的に決まり、template knowledge、package、command
+registry、environment registry、既知の LaTeX 名には依存しない。
 
-> **TeX の良いところはそのまま残し、構造上の boilerplate だけを Beamercraft が削る。**
+## 1. 設計原則
 
-特に、文章・数式・inline macro は原則として raw TeX のまま記述する。
+### 1.1 TeX-first
 
----
+通常の source line は raw TeX である。Beamercraft は inline/raw TeX を
+parse、validate、normalize、escape しない。
 
-# 1. コア設計原則
+~~~text
+\vspace{-1em}
+\headuline{CA}{タイトル}
+\includegraphics[width=.8\textwidth]{fig.pdf}
+\TextCA{foo}
+~~~
 
-## 1.1 通常の `@foo` は TeX そのもの
+上の行はそのまま出力される。先頭が backslash の行は、top-level の
+trailing colon または >> がある構造構文候補だけ header scanner に
+渡す。それ以外の command line は raw TeX として保持する。TeX 全文
+parser は v1 に存在しない。
 
-Beamercraft は `foo` という名前の意味を知らなくてよい。
+### 1.2 prefix の役割
 
-```text
-@foo{A}{B}
-```
+- \name は TeX command。
+- @name: は TeX environment。
+- !name は Beamercraft special construct。
 
-は常に、
+同じ名前でも prefix が違えば別の構文要素である。@ は environment
+専用であり、suite marker のない @name または @name{...} は syntax
+error である。
 
-```tex
-\\foo{A}{B}
-```
+! は Beamercraft special namespace 専用である。未登録の special は
+DirectiveError になる。組み込み special は block と items であり、
+arg と body は structured invocation の explicit fallback である。
 
-へ変換する。
+### 1.3 名前に関する知識を持たない
 
-```text
-@foo{A}{B}:
-    BODY
-```
+unknown environment name も構造が正しければ出力する。名前の存在、
+package、引数数、TeX 側の定義は LaTeX toolchain の責務である。
 
-は通常形では、
+environment name は狭い英数字 regex に固定しない。少なくとも
+@align*:、@equation*: のような star 付き名を受理する。scanner は
+prefix の後から最初の group opener、空白、top-level colon、>> までを
+environment name として読む。
 
-```tex
-\\begin{foo}{A}{B}
-BODY
-\\end{foo}
-```
+## 2. 物理行と indentation
 
-へ変換する。
+### 2.1 改行
 
-したがって、Beamercraft に未登録・未定義の command/environment であっても、とりあえず TeX へ変換できる。
+入力の CRLF と CR は LF に正規化してから物理行として扱う。出力は
+最後に newline を一つ持つ。tab は v1 では禁止する。
 
-command/environment が実際に LaTeX 側で定義されているか、引数数が正しいか、package が読み込まれているか等は **LaTeX コンパイラの責務**とする。
+### 2.2 indentation
 
-Beamercraft は TeX の型検査器にはならない。
+通常の Beamercraft nesting は ASCII space 四個単位である。
 
----
-
-## 1.2 `@!foo` は Beamercraft 専用名前空間
-
-```text
-@foo
-```
-
-は generic TeX directive である。
-
-一方、
-
-```text
-@!foo
-```
-
-は Beamercraft 自身が意味を持つ special directive / macro である。
-
-v1 の最低限の built-in は次の3つとする。
-
-```text
-@!arg:
-@!body:
-@!items:
-```
-
-原則:
-
-```text
-@foo   = TeX
-@!foo  = Beamercraft
-```
-
-この境界は v1 で固定する。
-
----
-
-## 1.3 TeX 本文は parse しない
-
-通常行は raw TeX である。
-
-```text
-@infobox{結果}:
-    圧縮率$\\alpha=N/K<1$では
-    \\TextCA{良好な誤り率特性}を達成
-```
-
-Beamercraft は `\\alpha` や `\\TextCA{...}` の意味を理解しない。そのまま TeX へ渡す。
-
-したがって、`ca(...)`, `math(...)`, `raw_inline(...)`, `text(...)`, `br(...)` のような inline abstraction は基本的に作らない。
-
----
-
-# 2. lexical / indentation rule
-
-## 2.1 directive line
-
-現在の indentation level において、最初の non-whitespace character が `@` の行を directive line とする。
-
-それ以外の行は raw TeX とする。
-
-## 2.2 literal `@`
-
-raw TeX として行頭 `@` を出したい場合は `@@` を使用する。
-
-```text
-@@example
-```
-
-は、
-
-```text
-@example
-```
-
-として出力する。
-
-行途中の `@` は特別扱いしない。
-
-## 2.3 indentation
-
-v1 では、
-
-```text
-1 level = 4 spaces
-```
-
-に固定する。tab は禁止する。
-
-通常の DSL block の nesting は常に4 ASCII spaces単位で表す。`@!items`
-suite 内だけは別の mini-grammar を持ち、item continuation の構造 prefix は
-2 spaces、nested list の各 level は4 spacesとする（12.3、12.4参照）。
-
-## 2.4 blank line
-
-blank line は indentation stack を終了させない。block の終了は、次の non-blank line の dedent により決定する。
-
-## 2.5 structural indentation の除去
-
-DSL 構造のための indentation は生成 TeX から除去する。ただし raw TeX 本文中で追加された indentation は保持する。
-
----
-
-# 3. generic TeX directive
-
-## 3.1 command compact form
-
-```text
-@name[opt]{arg1}{arg2}
-```
-
-は、
-
-```tex
-\\name[opt]{arg1}{arg2}
-```
-
-へ変換する。
-
-例:
-
-```text
-@vspace{-1em}
-@includegraphics[width=.8\\textwidth]{fig.pdf}
-@headuline{CA}{モジュールA}
-```
-
-## 3.2 environment compact form
-
-```text
-@name[opt]{arg}:
-    BODY
-```
-
-は、
-
-```tex
-\\begin{name}[opt]{arg}
-BODY
-\\end{name}
-```
-
-へ変換する。
-
----
-
-# 4. TeX-style argument groups
-
-generic directive は次の group をそのまま保持する。
-
-```text
-{...}   required argument
-[...]   optional argument
-<...>   overlay / angle argument
-```
-
-例:
-
-```text
-@foo<2->[fragile]{Title}
-```
-
-↓
-
-```tex
-\\foo<2->[fragile]{Title}
-```
-
-方針:
-
-- group の出現順序は保持する。
-- `{...}` と `[...]` は nested delimiter を認識する。
-- `<...>` は v1 では non-nesting group とする。
-- group 内部の TeX は解釈しない。
-- compact header は v1 では 1 physical line に限定する。
-- multiline argument が必要なら long form を使用する。
-
----
-
-# 5. generic name
-
-v1 の generic name は原則として、
-
-```text
-[A-Za-z][A-Za-z0-9_]*\\*?
-```
-
-を許可する。
-
-例:
-
-```text
-@align*:
-@equation*:
-@frame:
-@TextCA{...}
-```
-
-特殊な control sequence は raw TeX を直接記述する。
-
----
-
-# 6. `:` の意味
-
-`:` の意味は一つに統一する。
-
-> **この行に indented suite が続く。**
-
-`:` 自体が command/environment を意味するわけではない。
-
-つまり「下に何かぶら下がるなら必ず `:`」である。
-
----
-
-# 7. long-form arguments: `@!arg`
-
-TeX の巨大な複数行 `{...}` 引数は `@!arg:` へ展開できる。`@!arg:` は
-常に block layout の required argument を1個追加する。
-
-```text
-@mycommand:
-    @!arg:
-        超長い複数行の第1引数
-
-    @!arg:
-        超長い複数行の第2引数
-```
-
-↓
-
-```tex
-\\mycommand{
-超長い複数行の第1引数
-}{
-超長い複数行の第2引数
-}
-```
-
-`@!arg:` は required brace argument `{...}` を1個追加する。出現順が argument order になる。
-
-`@!arg0`, `@!arg1` のような番号は使用しない。
-
-structured generic invocation の direct child では、短い inline form
-`@!arg{...}` も使用できる。この form は required group をちょうど1個取り、
-inline layout の argument を1個追加する。suite は持てず、structured generic
-invocation の direct child 以外では使用できない。
-
-```text
-@foo{SHORT}:
-    @!arg{INLINE}
-    @!arg:
-        BLOCK
-```
-
-inline と block の form は混在でき、出現順をそのまま argument order とする。
-compact header の groups と long-form arguments は同じ canonical argument node
-shapeへ正規化するが、source location と `inline` / `block` の layout metadata
-は保持する。`@!body{...}` は v1 には導入しない。
-
-## 7.1 compact + long-form の混在
-
-```text
-@foo{SHORT}:
-    @!arg:
-        LONG ARG
-```
-
-↓
-
-```tex
-\\foo{SHORT}{
-LONG ARG
-}
-```
-
-optional / overlay group は header 側にそのまま置ける。
-
----
-
-# 8. environment body: `@!body`
-
-`@!body:` は environment の body を表す。
-
-```text
-@myenv:
-    @!arg:
-        ARG1
-
-    @!arg:
-        ARG2
-
-    @!body:
+~~~text
+@frame{タイトル}:
+    @center:
         BODY
-```
+~~~
 
-↓
+構造 node の direct child は suite base indentation に置く。raw TeX line
+に追加 indentation がある場合、その追加空白は raw TeX として保持する。
+blank line は現在の block に保持される。block の終了は次の nonblank line
+が suite base より dedent した時に決まる。ファイル末尾まで続く blank
+line は、開いている suite の外側に戻してから root block に保持する。
 
-```tex
-\\begin{myenv}{
-ARG1
-}{
-ARG2
-}
-BODY
-\\end{myenv}
-```
+### 2.3 literal at
 
-`@!body:` 内には raw TeX と通常の Beamercraft directive の両方を書ける。
-`@!body{...}` の inline form は v1 では使用しない。
+構造位置で raw line を @ から始めたい場合は @@ と書く。先頭の
+escape 用 @ 一個だけを除去し、残りを raw TeX として渡す。
 
----
+~~~text
+@@literal-at
+~~~
 
-# 9. command / environment の決定規則
+~~~tex
+@literal-at
+~~~
 
-v1 の重要原則:
+## 3. structural header
 
-> **TeX shape は directive 名ではなく、ソース構造だけで100%決定する。**
+### 3.1 字句分類
 
-Beamercraft は `foo` が command か environment かを registry や template から調べない。
+header の invocation prefix は次で確定する。
 
-## 9.1 suite なし
+~~~text
+\command
+@environment
+!special
+~~~
 
-```text
-@foo{A}{B}
-```
+\command は suite suffix がなければ raw TeX である。top-level trailing
+colon または >> があれば structured command 候補になる。
 
-→ command
+@environment は suite marker colon を必ず持つ。!special は special
+handler または親の explicit rule に従う。
 
-```tex
-\\foo{A}{B}
-```
+### 3.2 inline groups
 
-## 9.2 ordinary suite
+header の group は次の順序で任意個を持つ。
 
-```text
-@foo{A}:
-    BODY
-```
+~~~text
+{...}   required group
+[...]   optional group
+<...>   overlay group
+~~~
 
-→ environment
+group の内容は raw text であり、TeX として解釈しない。scanner は
+required、optional、overlay の delimiter depth だけを追跡する。
 
-```tex
-\\begin{foo}{A}
-BODY
-\\end{foo}
-```
+### 3.3 top-level structural token
 
-command/environment という構造上は、次の structured form と同じである。
-ただし、`@foo{A}:` の header group は inline layout のままであり、
-`@!arg:` に置き換えた場合は block layout になるため、TeX 出力の改行は
-同一とは限らない。
+header scanner が認識する structural token は header の group nesting
+depth 0 にあるものだけである。
 
-```text
-@foo:
-    @!arg{A}
-    @!body:
-        BODY
-```
+- 末尾の colon
+- 空白で区切った >>
 
-compact sugar として扱う。
+group 内部の colon と >> は opaque raw text である。
 
-## 9.3 structured suite + `@!arg` only
+~~~text
+\foo{A >> B}:
+    \bar
 
-```text
-@foo:
-    @!arg:
-        A
-    @!arg:
-        B
-```
+\foo{\texttt{A: B}}:
+    \bar
+~~~
 
-→ command
+上の group 内部の記号は operator や suite marker にならない。
 
-```tex
-\\foo{
-A
-}{
-B
-}
-```
+### 3.4 top-level trailing colon の予約
 
-## 9.4 structured suite + `@!body`
+top-level の末尾 colon は Beamercraft の予約構文である。
 
-```text
-@foo:
-    @!arg:
-        A
-
-    @!body:
-        BODY
-```
-
-→ environment
-
-```tex
-\\begin{foo}{
-A
-}
-BODY
-\\end{foo}
-```
-
-## 9.5 structured suite の制約
-
-direct child に `@!arg{...}`、`@!arg:`、または `@!body:` が現れた場合、その invocation は structured long form とする。
-
-structured long form では direct child に raw text や通常 directive を混在させてはならない。
-
-NG:
-
-```text
-@foo:
-    @!arg:
-        A
-
-    これは曖昧なので禁止
-```
-
-body が必要なら必ず、
-
-```text
-@foo:
-    @!arg:
-        A
-
-    @!body:
-        これは本文
-```
-
-とする。
-
-さらに、
-
-- `@!arg{...}` と `@!arg:` は合わせて0個以上
-- `@!arg{...}` は required inline argument exactly one
-- `@!arg:` は required block argument exactly one
-- `@!body:` は0個または1個
-- `@!body:` は最後
-- `@!body:` の後に `@!arg{...}` / `@!arg:` は置けない
-
-とする。
-
----
-
-# 10. 既存テンプレート型の重要ケース
-
-## 10.1 environment
-
-```text
-@infobox{目的}:
+~~~text
+\textbf{注意}:
     本文
-```
+~~~
 
-↓
+これは structured command であり、suite のない raw TeX 一行とは解釈
+しない。suite がなければ syntax error になる。この予約により v1 は
+完全な TeX superset ではない。
 
-```tex
-\\begin{infobox}{目的}
-本文
-\\end{infobox}
-```
+colon の後ろには header 終端以外の token を置けない。suite marker の
+後ろに vertical bar などを置く block-scalar variant は v1 に存在せず、
+parser は syntax error にする。
 
-## 10.2 ordinary command
+### 3.5 header comment
 
-```text
-@headuline{CA}{モジュールA}
-```
+v1 では structural header 末尾の TeX comment をサポートしない。
 
-↓
+~~~text
+@frame{Title}: % comment
+~~~
 
-```tex
-\\headuline{CA}{モジュールA}
-```
+これは structural header として受理しない。通常の raw TeX line 中の
+% はそのまま TeX に渡す。
 
-## 10.3 body-like argument を持つ command
+## 4. TeX environment: @name:
 
-```tex
-\\rightnotebox{Note}{
+environment の begin/end を @ と suite で簡略化する。
+
+~~~text
+@frame[t]{タイトル}:
     BODY
-}
-```
+~~~
 
-は v1 では明示的に command argument として書く。
+~~~tex
+\begin{frame}[t]{タイトル}
+BODY
+\end{frame}
+~~~
 
-```text
-@rightnotebox:
-    @!arg:
-        Note
-
-    @!arg:
-        BODY
-```
-
-`@!arg:` は block layout なので、生成される TeX は改行を含む
-`\\rightnotebox{\nNote\n}{\nBODY\n}` となる。上の TeX と意味は同じだが、空白は byte-for-byte に同一とは限らない。
-
-## 10.4 `diffdoublecolumn`
-
-```tex
-\\diffdoublecolumn{.78}{.27}{
-    LEFT
-}{
-    RIGHT
-}
-```
-
-は、
-
-```text
-@diffdoublecolumn{.78}{.27}:
-    @!arg:
-        LEFT
-
-    @!arg:
-        RIGHT
-```
-
-と書く。
-
-`@!body:` がないので command である。
-
-## 10.5 `framewithnote`
-
-```tex
-\\framewithnote[.5]{Title}{
+~~~text
+@center:
     BODY
-}{
-    NOTE
+~~~
+
+~~~tex
+\begin{center}
+BODY
+\end{center}
+~~~
+
+header の compact groups は begin line にそのまま出力する。
+
+~~~text
+@infobox{結果}:
+    BODY
+~~~
+
+~~~tex
+\begin{infobox}{結果}
+BODY
+\end{infobox}
+~~~
+
+suite marker のない environment header は、environment 名が unknown
+であるかどうかに関係なく syntax error である。
+
+## 5. Structured command: \name:
+
+### 5.1 implicit form
+
+\name: は suite 全体を一個の追加 required long argument とする。
+suite 内の statement は source order のまま同じ argument 内へ normalize
+される。blank line もその argument の内容として保持され、argument
+boundary は作らない。
+
+~~~text
+\foo:
+    \bar
+    \baz
+~~~
+
+~~~tex
+\foo{
+\bar
+\baz
 }
-```
+~~~
 
-は、
+compact groups は suite argument より先に出力される。
 
-```text
-@framewithnote[.5]{Title}:
-    @!arg:
-        BODY
+~~~text
+\foo{A}:
+    X
+    Y
+~~~
 
-    @!arg:
-        NOTE
-```
+~~~tex
+\foo{A}{
+X
+Y
+}
+~~~
 
-と書ける。
+suite 内は raw text 限定ではない。nested environment、special、
+stack も通常の Beamercraft 構文として normalize される。
 
-## 10.6 引数付き environment
+~~~text
+\foo:
+    説明文
 
-```tex
-\\begin{myenv}{
+    @infobox{結果}:
+        Hello
+~~~
+
+~~~tex
+\foo{
+説明文
+
+\begin{infobox}{結果}
+Hello
+\end{infobox}
+}
+~~~
+
+### 5.2 explicit form
+
+一個の suite を分割して複数の long arguments にしたい場合だけ、direct
+child に !arg を置く。各 !arg が一個の required argument になる。
+
+~~~text
+\foo:
+    !arg:
+        ARG1
+
+    !arg:
+        ARG2
+~~~
+
+~~~tex
+\foo{
 ARG1
 }{
 ARG2
 }
-BODY
-\\end{myenv}
-```
+~~~
 
-は、
+compact arguments は explicit long arguments より前に出力される。
+!arg{INLINE} は一個の inline required argument、!arg: は suite
+全体を一個の block required argument とする。inline と block は source
+order で混在できる。
 
-```text
+direct child に !arg または !body が現れた command は explicit mode
+になる。command の explicit mode では direct child は !arg だけで
+なければならず、ordinary statement、environment、special、!body は
+混在できない。!body は command では invalid である。
+
+## 6. Special constructs
+
+### 6.1 !block
+
+!block: は suite の canonical rendering を、実際の TeX { ... } で
+囲むだけである。文脈によって brace を吸収したり削除したりしない。
+
+~~~text
+!block:
+    foo
+    \bar
+~~~
+
+~~~tex
+{
+foo
+\bar
+}
+~~~
+
+local TeX scope としても使える。v1 では別の group/scope special は
+導入しない。
+
+implicit command suite の中では command 自身の long-argument braceも
+生成されるため、!block は意図的に二重 brace になる。
+
+~~~text
+\foo:
+    !block:
+        A
+~~~
+
+~~~tex
+\foo{
+{
+A
+}
+}
+~~~
+
+### 6.2 !arg
+
+!arg は structured command または explicit environment の direct
+child にだけ置ける。suite 全体を一個の required block argument とし、
+inline form !arg{...} は一個の required inline argument とする。
+
+!arg の suite 内に !block がある場合も !block の brace は消えない。
+
+~~~text
+\foo:
+    !arg:
+        !block:
+            A
+~~~
+
+~~~tex
+\foo{
+{
+A
+}
+}
+~~~
+
+### 6.3 !body
+
+!body: は explicit environment の suite 全体を environment body と
+する。inline form は v1 にない。
+
+~~~text
 @myenv:
-    @!arg:
-        ARG1
-
-    @!arg:
-        ARG2
-
-    @!body:
+    !arg:
+        VERY LONG ARG
+    !body:
         BODY
-```
+~~~
 
-と書ける。
-
----
-
-# 11. stacking `>>`
-
-一本道の environment nesting は `>>` で圧縮できる。
-
-```text
-@A >> B >> C:
-    BODY
-```
-
-は、
-
-```text
-@A:
-    @B:
-        @C:
-            BODY
-```
-
-と同値である。
-
-生成 TeX:
-
-```tex
-\\begin{A}
-\\begin{B}
-\\begin{C}
+~~~tex
+\begin{myenv}{
+VERY LONG ARG
+}
 BODY
-\\end{C}
-\\end{B}
-\\end{A}
-```
+\end{myenv}
+~~~
 
-## 11.1 引数付き stacking
+!arg と !body を構造 invocation の外に置くことはできない。
 
-```text
-@frame{本発表の概要} >> center >> minipage{.9\\textwidth}:
-    ...
-```
+## 7. Environment explicit form
 
-## 11.2 `@` は先頭だけ
+通常の environment は suite 全体を body とする。
 
-canonical syntax:
+~~~text
+@foo{A}:
+    BODY
+~~~
 
-```text
-@frame{Title} >> center:
-```
+~~~tex
+\begin{foo}{A}
+BODY
+\end{foo}
+~~~
 
-v1 では、
+environment の long arguments を明示する場合は direct child に
+!arg/!body だけを置く。
 
-```text
-@frame{Title} >> @center:
-```
+~~~text
+@myenv:
+    !arg:
+        ARG1
+    !arg:
+        ARG2
+    !body:
+        BODY
+~~~
 
-は禁止する。
+validation rule は次の通りである。
 
-## 11.3 `@!` special directive との stacking
+- !arg は 0 個以上。
+- !body は 0 個または 1 個。
+- !body がある場合は最後。
+- !body の後に !arg は置けない。
+- explicit mode の direct child は !arg または !body だけ。
+- ordinary body との混在は禁止。
 
-chain 内では `!name` と書く。
+!body を省略した environment はなお environment である。canonical
+AST には空の body block を保持し、begin/end を出力する。
 
-```text
-@frame{Title} >> !items:
+~~~text
+@myenv:
+    !arg:
+        ARG ONLY
+~~~
+
+~~~tex
+\begin{myenv}{
+ARG ONLY
+}
+\end{myenv}
+~~~
+
+## 8. >>: pure structural desugaring
+
+>> は command、environment、special の意味論を知らない structural
+sugar である。prefix 付きの各 segmentを一個の child suiteとして
+右から左へ nested syntax AST に変換し、その後は通常の normalization
+を行う。
+
+~~~text
+\foo >> @bar >> !block:
+    A
+~~~
+
+はまず次の syntax shape になる。
+
+~~~text
+\foo:
+    @bar:
+        !block:
+            A
+~~~
+
+その結果は次である。
+
+~~~tex
+\foo{
+\begin{bar}
+{
+A
+}
+\end{bar}
+}
+~~~
+
+>> header の各 segment は必ず \、@、! のいずれかで始める。segment
+に固有の terminal rule は持たせない。>> は normalization 完了後の
+canonical ASTにも rendererにも残らない。
+
+## 9. !items: itemize mini-grammar
+
+!items: は次へ展開される。
+
+~~~text
+!items:
     - A
     - B
-```
+~~~
 
-先頭から special directive の場合は、
+~~~tex
+\begin{itemize}
+\item A
+\item B
+\end{itemize}
+~~~
 
-```text
-@!items:
-    - A
-    - B
-```
+suite の item level を 0 とし、次の規則を使う。
 
-とする。
+- - が item marker。
+- overlay は marker 直後の <...>。
+- optional label はその後の [...]。
+- item の本文と continuation は raw TeX。
+- continuation は item depth より少なくとも2 space深い。
+- nested item は item depth より4 space深い。
+- nested list も itemize environment になる。
+- overlay、label、multiline、nested list を保持する。
 
-## 11.4 stacking の制約
+~~~text
+!items:
+    -<2->[A] first line
+      continuation
+        - nested
+          nested continuation
+~~~
 
-`>>` は一本道の container composition のみを意味する。
+!items suite 内では item syntax が予約される。suite の行は item parser
+へ raw line として渡し、suite の direct structure node は許可しない。
+item text と continuation 内の @、\、! は raw text であり、TeX semantics
+を解析しない。
 
-- generic TeX segment は `>>` 内では environment として扱う。
-- special directive は stacking 対応のものだけ利用可能。
-- long-form `@!arg:` / `@!body:` を chain の途中には置かない。
-- chain header は v1 では1 physical line。
+## 10. AST
 
----
+### 10.1 syntax AST
 
-# 12. `@!items`
+概念的な syntax node は次である。
 
-`itemize` boilerplate を減らすため、v1 に `@!items:` を持つ。
+~~~text
+RawTex
+ParsedInvocation(kind=command | environment)
+SpecialInvocation
+Stack
+Block
+Argument
+~~~
 
-```text
-@!items:
-    - 項目A
-    - 項目B
-    - 項目C
-```
+ParsedInvocation.kind は prefix から確定した command または
+environment である。ParsedInvocation は name、compact groups、suite、
+source location を持つ。syntax AST に suite scalar variant や
+block-scalar metadata は存在しない。
 
-↓
+SpecialInvocation は special name、groups、suite、source locationを
+持つ。Stack は prefix付き segment 列、suite、source location を持つ。
 
-```tex
-\\begin{itemize}
-\\item 項目A
-\\item 項目B
-\\item 項目C
-\\end{itemize}
-```
+### 10.2 canonical AST
 
-item 本文は raw TeX。
+normalization 後の canonical AST は次で十分である。
 
-```text
-@!items:
-    - OFDMより\\TextCA{狭い帯域幅で\\\\同一の伝送速度}で情報を伝送
-    - FFTサイズ$N\\ge512$で\\TextCA{良好な誤り率特性}
-```
+~~~text
+RawTex
+GenericInvocation
+BraceGroup
+Item
+Argument
+Block
+~~~
 
-## 12.1 item overlay
+GenericInvocation は name、arguments、body、location を持つ。bodyが
+None なら TeX command、Block なら TeX environment である。explicit
+environment で !body がない場合も空 Block を置くため、environment
+であることを失わない。
 
-```text
-@!items:
-    -<only@1> 1枚目だけ
-    -<only@2> 2枚目だけ
-```
+BraceGroup は単なる metadata ではなく、renderer が常に実際の TeX
+braces を出力する canonical node である。Argument.value は inline
+raw string または canonical Block であり、literal group を argument
+context が吸収する形は持たない。
 
-↓
+全 major node と diagnostic は file、1-based line、1-based columnを
+保持する。
 
-```tex
-\\item<only@1> 1枚目だけ
-\\item<only@2> 2枚目だけ
-```
+## 11. Normalization と renderer
 
-## 12.2 optional item label
+pipeline は次の通りである。
 
-```text
-@!items:
-    -[A] 項目A
-    -[B] 項目B
-```
+~~~text
+physical lines
+    -> indentation parser
+    -> syntax AST
+    -> pure >> desugaring
+    -> invocation/special normalization
+    -> canonical AST validation
+    -> TeX renderer
+~~~
 
-overlay と併用する場合は、
+normalization の規則は次である。
 
-```text
--<2->[A] 項目
-```
+1. >> を nested suite へ desugar する。
+2. prefix から command/environment/special を確定する。
+3. command の compact groups を header arguments にする。
+4. command の通常 suite を normalize して一個の required block argument
+   にする。
+5. command の direct child に explicit !arg/!body があれば explicit
+   validation を行い、各 !arg を一個の argument にする。
+6. environment の通常 suite を body にする。
+7. environment の explicit !arg/!body を validation して arguments と
+   body に分ける。
+8. !block は canonical BraceGroup、!items は canonical itemize
+   invocation に展開する。
+9. syntax-only node が canonical AST にないことを検証する。
 
-→
+renderer は canonical AST だけを受け取る。renderer は special name、
+>>、structured mode、template、registry を知らない。
 
-```tex
-\\item<2->[A] 項目
-```
+- command は \name と compact/long arguments を出力する。
+- environment は \begin{name}、arguments、body、\end{name} を出力する。
+- BraceGroup は常に {、body、} を出力する。
+- block argument は常に outer {...} を出力する。
+- BraceGroup が block argument の body 内にあれば inner brace も出力する。
+- raw TeX は改変せず出力する。
 
-## 12.3 multiline item
+special handler は TeX string ではなく canonical AST tuple を返す。
+handler の出力も canonical boundary で再帰的に normalize する。
 
-item より構造上2 spaces深い non-`-` 行は、その item の continuation body とする。
-最初の2 spacesは構造用 prefixとして除去し、それを超える spacesは raw TeX の
-indentationとして保持する。
+## 12. Diagnostics / source mapping
 
-```text
-@!items:
-    - 長い項目の1行目
-      2行目も同じitem
-      \\TextCA{TeXもそのまま}
-```
+ParseError、ValidationError、DirectiveError は発生源の location を指す。
+少なくとも次の location を保持する。
 
-## 12.4 nested items
+- header prefix と name
+- compact group
+- suite marker
+- stack segment
+- command suite の long-argument boundary
+- !block
+- explicit !arg / !body
+- item と item prefix
 
-item の continuation level に `-` が現れた場合、nested `itemize` とする。
+>> desugaring、command suite normalization、!block、!arg、!body、!items
+の展開で originating location を破棄しない。
 
-```text
-@!items:
-    - 確率推論
-        - GaBP
-        - AMP
-        - EP
-    - 固有モード伝送
-```
+将来の source map は概念的に次の bridge を提供できる。
 
-`@!items` suite は suite base をcolumn 0とした相対 indentationで解析する。
-list depth は0, 4, 8, ... spaces、item continuation は現在のdepth + 2 spaces
-以上、nested itemize は現在のdepth + 4 spacesである。nested markerが一度に
-2 level以上飛ぶ場合、またdepthにあるnon-item lineはエラーとする。同じdepth
-の次のitemまでのblank separatorは無視し、同じitemのcontinuationに属する
-blank lineはcontinuation内に保持する。
-
----
-
-# 13. `@!` namespace と extension
-
-v1 では `@!` を Beamercraft の special namespace として予約する。
-
-最低限:
-
-```text
-@!arg
-@!body
-@!items
-```
-
-方針:
-
-- `@!arg` / `@!body` は structural metadirective。
-- `@!items` は authoring sugar。
-- unknown `@foo` は generic TeX として許可。
-- unknown `@!foo` は compile error。
-
-将来的には、
-
-```text
-@!cols
-@!col
-@!inset
-@!fig
-@!result
-```
-
-などの built-in / project-defined macro を追加できる。
-
-ただし v1 では source-level の macro definition language、variables、loops、conditions、expression evaluator は導入しない。
-
-必要になった special directive は extension/registry 層で追加する。
-
----
-
-# 14. template integration
-
-Beamercraft は `template.tex` を解析しない。
-
-典型構成:
-
-```text
+~~~text
 Beamercraft source
-    ↓
-preprocessor
-    ↓
-generated content.tex
-    ↓
-user template.tex
-    ↓
-LaTeX
-    ↓
+    <-> Beamercraft source map
+generated .tex
+    <-> SyncTeX
 PDF
-```
-
-template 側が、
-
-```tex
-\\newcommand{\\foo}[2]{...}
-\\newenvironment{bar}[1]{...}{...}
-\\newtcolorbox{infobox}[1]{...}
-```
-
-などを定義していても、Beamercraft に登録する必要はない。
-
-利用側は、
-
-```text
-@foo{A}{B}
-```
-
-または、
-
-```text
-@bar{A}:
-    BODY
-```
-
-または、
-
-```text
-@infobox{Title}:
-    BODY
-```
-
-と書けばよい。
-
----
-
-# 15. raw TeX escape hatch
-
-通常行はすでに raw TeX なので、専用 `raw(...)` API は不要。
-
-Beamercraft 構文では表現しにくいものはそのまま書く。
-
-```text
-@frame{特殊な例}:
-    \\somecrazycommand{...}
-    \\begin{some-special-environment}
-        ...
-    \\end{some-special-environment}
-```
-
-v1 では `@\\foo` のような追加 escape syntax は導入しない。
-
-generic `@foo` と raw TeX の2経路だけで十分とする。
-
----
-
-# 16. error policy
-
-Beamercraft が検査するのは DSL structure であり、TeX semantics ではない。
-
-Beamercraft error:
-
-- 不正 indentation
-- tab indentation
-- `:` の後に indented suite がない
-- structured long form に raw body を直接混在
-- `@!body:` が複数存在
-- `@!body:` の後に `@!arg{...}` / `@!arg:` がある
-- `@!arg:` / `@!body:` が不正な位置にある
-- unknown `@!foo`
-- stacking 非対応 special directive を `>>` に入れる
-- directive header の delimiter が閉じていない
-- v1 で禁止される multiline header
-
-Beamercraft error にしない:
-
-```text
-@ThisCommandDoesNotExist{A}
-@NoSuchEnvironment:
-    BODY
-```
-
-これらは TeX へ変換し、未定義なら LaTeX がエラーを報告する。
-
----
-
-# 17. parser / AST
-
-Parser は template や TeX command definition を知らない。
-
-概念 AST:
-
-```text
-Document
-├── RawTex
-├── GenericInvocation
-│   ├── name
-│   ├── header_groups
-│   ├── long_args[]
-│   └── body?
-├── Stack
-└── SpecialInvocation
-```
-
-parser と canonical AST の major node は file、1-based line、1-based Unicode
-character column の source location を保持する。compact header group と
-long-form `@!arg` は canonical AST 上で同じ argument shapeになるが、argument
-の source location と inline/block layout metadata は失わない。
-
-command/environment を別 Node type にする必要はない。
-
-```text
-GenericInvocation(..., body=None)
-```
-
-なら command、
-
-```text
-GenericInvocation(..., body=...)
-```
-
-なら environment。
-
----
-
-# 18. normalization
-
-syntax sugar は早い段階で canonical AST に正規化する。
-
-```text
-@foo{A}:
-    BODY
-```
-
-と、inline `@!arg{A}` を使う次の structured form は、
-同じ canonical node kinds と argument layout になる。
-
-```text
-@foo:
-    @!arg{A}
-    @!body:
-        BODY
-```
-
-block `@!arg:` を使う structured form では、同じ command/environment 構造を
-保ちながら argument layout metadata が `block` になる。
-
-また、
-
-```text
-@A >> B >> C:
-    BODY
-```
-
-は、
-
-```text
-A(body=B(body=C(body=BODY)))
-```
-
-相当に desugar する。
-
-正規化後の canonical AST には syntax-only の `Stack`、`SpecialInvocation`、
-`@!arg`、`@!body` node を残さない。
-
-Renderer はできるだけ dumb / deterministic に保つ。
-
----
-
-# 19. source location
-
-各 AST node は最低限、
-
-```text
-file
-line
-column
-```
-
-を保持する。
-
-オプションで generated TeX に、
-
-```tex
-% beamercraft: slides.bmc:42
-```
-
-のような source comment を出力可能にする。
-
----
-
-# 20. canonical style
-
-### 短い command
-
-```text
-@foo{A}{B}
-```
-
-### 短い environment
-
-```text
-@foo{A}:
-    BODY
-```
-
-### 長い command arguments
-
-```text
-@foo:
-    @!arg:
-        A
-
-    @!arg:
-        B
-```
-
-### 長い environment arguments + body
-
-```text
-@foo:
-    @!arg:
-        A
-
-    @!arg:
-        B
-
-    @!body:
-        BODY
-```
-
-### stacking
-
-```text
-@frame{Title} >> center:
-    BODY
-```
-
-### itemize
-
-```text
-@!items:
-    - A
-    - B
-```
-
-### raw TeX
-
-```text
-$\\alpha=N/K$
-\\TextCA{そのままTeX}
-```
-
----
-
-# 21. 実スライド風の例
-
-```text
-@frame{スペクトル有効周波数分割多重：SEFDM}:
-
-    @vspace{-.5em}
-
-    @diffdoublecolumn{.48}{.48}:
-        @!arg:
-            @scalebox{.9}:
-                @!arg:
-                    @input{figs/sefdm_ofdm.tex}
-
-        @!arg:
-            @small
-            @scalebox{.9}:
-                @!arg:
-                    @input{figs/sefdm_mod.tex}
-
-    @diffdoublecolumn{.78}{.27}:
-        @!arg:
-            @!items:
-                - 直交周波数分割多重（OFDM）より\\TextCA{狭い帯域幅で\\\\同一の伝送速度}で情報を伝送する技術
-                - OFDMのように逆高速フーリエ変換（IFFT）を用いて\\TextCA{低計算量で変調が可能}
-
-        @!arg:
-            @rightnotebox:
-                @!arg:
-                    Note
-
-                @!arg:
-                    @align*:
-                        &\\text{圧縮率 } \\alpha = N/K < 1 \\\\
-                        &\\text{サブキャリア数} N \\\\
-                        &\\text{FFTサイズ} K
-```
-
-ここでは、
-
-- inline content は完全に TeX
-- `diffdoublecolumn` / `rightnotebox` を Beamercraft が知らなくてもよい
-- command の巨大な body-like argument は `@!arg:` で展開
-- `align*` は generic environment
-- `input`, `small`, `vspace` は generic command
-- list boilerplate だけ `@!items` が軽量化
-
-という v1 の思想が一通り現れる。
-
----
-
-# 22. v1 で意図的にやらないこと
-
-- TeX parser
-- template.tex の解析
-- LaTeX command/environment definition の自動検出
-- command/environment registry の必須化
-- inline TeX AST
-- 自動 escaping
-- Python embedded DSL
-- YAML authoring
-- source-level variables
-- loops
-- conditions
-- expression evaluator
-- source-level macro definition language
-- implicit columns
-- TeX command の argument count 検査
-- LaTeX package dependency 検査
-
-必要なら raw TeX にそのまま逃げられることを優先する。
-
----
-
-# 23. v1 grammar sketch
-
-```text
-document          ::= line*
-
-line              ::= blank
-                    | raw_tex
-                    | escaped_at
-                    | directive_line
-
-directive_line    ::= indent "@" chain [":"]
-
-chain             ::= segment (" >> " segment)*
-
-segment           ::= generic_segment
-                    | special_segment
-
-generic_segment   ::= name group*
-
-special_segment   ::= "!" name group*
-
-group             ::= required_group
-                    | optional_group
-                    | angle_group
-
-required_group    ::= "{" balanced_brace_content "}"
-
-optional_group    ::= "[" balanced_bracket_content "]"
-
-angle_group       ::= "<" angle_content ">"
-
-name              ::= identifier ["*"]
-
-identifier        ::= letter (letter | digit | "_")*
-
-escaped_at        ::= indent "@@" raw_content
-
-indent            ::= ("    ")*
-
-raw_tex           ::= any line whose first non-whitespace
-                      character is not "@"
-```
-
-suite parsing:
-
-```text
-directive without ":":
-    generic -> command
-    special -> special leaf
-
-directive with ":":
-    parse indented suite
-
-    if generic and suite is structured long form:
-        @!arg* + @!body?
-        body absent -> command
-        body present -> environment
-
-    else if generic:
-        ordinary suite -> environment body
-
-    if special:
-        special directive owns suite semantics
-```
-
-stacking:
-
-```text
-@A >> B >> C:
-    BODY
-```
-
-は canonical AST 上で、
-
-```text
-A(body=B(body=C(body=BODY)))
-```
-
-へ正規化する。
-
----
-
-# 24. 利用者の mental model
-
-利用者が最初に覚えるのは次だけでよい。
-
-```text
-普通の行       → そのまま TeX
-
-@foo           → \\foo
-@foo:          → 原則 \\begin{foo}...\\end{foo}
-
->>             → environment を横に stack
-
-@!arg:         → 長い {...} 引数
-@!body:        → environment body
-@!items:       → 簡潔な itemize
-
-@@             → literal @
-```
-
-より厳密には `@foo:` が structured long form の command にも使われるが、判断は常にソース構造だけで行う。
-
-最重要な不変条件:
-
-> **Beamercraft が `foo` の意味を知らなくても、ソース構造だけから TeX の形を決定できる。**
-
-そして、
-
-> **TeX の意味論は TeX に任せる。**
-
-この2点を v1 の中心原則とする。
+~~~
+
+v1 は PDF や SyncTeX 本体を実装しないが、AST を TeX string へ早期に
+潰して location を失う設計にはしない。
+
+## 13. Special extension
+
+将来の user-defined special は、Python 側の軽量な登録関数から
+AST-to-AST transformation として追加する。
+
+~~~python
+@directive("result")
+def result(node):
+    ...
+~~~
+
+~~~text
+!result:
+    ...
+~~~
+
+v1 で巨大な plugin framework、implicit extension loading、user sourceの
+dynamic import は導入しない。in-process registry の handler 契約だけを
+維持する。
+
+## 14. v1 で扱わないもの
+
+次は v1 の仕様外である。
+
+- TeX 全文 parser、template parser、package discovery
+- command/environment registry による形状推論
+- 自動 escape、TeX 引数数 validation、TeX semantic normalization
+- variables、expressions、loops、conditions、source macro language
+- YAML または Python embedded authoring DSL
+- id/ref による subtree reuse
+- renderer backend framework
+- runtime dependency
+- structural header 末尾 comment
+- suite marker後の block-scalar variant
+- command/environment 以外の新しい prefix 規則
+
+## 15. 形式的な構文スケッチ
+
+次は実装を拘束する簡略 grammar であり、TeX 本文の grammar ではない。
+
+~~~text
+document             ::= physical-line*
+structural-header    ::= segment (SP+ ">>" SP+ segment)* ":"
+segment              ::= command-segment | environment-segment | special-segment
+command-segment      ::= "\" command-name group*
+environment-segment  ::= "@" environment-name group*
+special-segment      ::= "!" special-name group*
+command-name         ::= ASCII-letter ASCII-name-char*
+environment-name     ::= ASCII-letter environment-char*
+special-name         ::= ASCII-letter ASCII-name-char*
+~~~
+
+colon、>>、group opener は header nesting depth 0 でだけ認識する。
+environment-char は空白、group opener、top-level colon、>> を除く文字
+であり、star や必要な environment punctuation を許す。
+
+\command の suite marker なしの行は structural-header grammar に入らず
+raw TeX となる。ただし top-level trailing colonを持つ行は suiteを要求
+する。@environment の suite markerなしは error となる。!special の
+suite 可否は special の契約で決まり、unknown special は error となる。
+
+## 16. 決定性と代表例
+
+同じ source から複数の AST を作らないため、次を固定する。
+
+~~~text
+\foo       -> command
+@foo:      -> environment header; suiteなしならerror
+!foo       -> special
+~~~
+
+さらに次を保証する。
+
+- top-level trailing colon だけが suite marker。
+- top-level group 内部の colon と >> は opaque。
+- \foo: の通常 suite 全体が一個の implicit long argument。
+- direct !arg/!body の存在が explicit mode を選ぶ。
+- implicit/explicit mode は混在不可。
+- !block は常に literal BraceGroup であり context により消えない。
+- >> は pure desugaring であり renderer に残らない。
+
+代表的な canonical example は次である。
+
+~~~text
+\diffdoublecolumn{0.78}{0.27}:
+    !items:
+        - 直交周波数分割多重（OFDM）より\TextCA{狭い帯域幅で\\同一の伝送速度}で情報を伝送する技術
+        - OFDMのように逆高速フーリエ変換（IFFT）を\\用いて\TextCA{低計算量で変調が可能}
+
+    \rightnotebox{Note} >> @align*:
+        &\text{圧縮率 } \alpha = N/K < 1 \\
+        &\text{サブキャリア数} N \\
+        &\text{FFTサイズ} K
+~~~
+
+概念的な出力:
+
+~~~tex
+\diffdoublecolumn{0.78}{0.27}{
+\begin{itemize}
+\item 直交周波数分割多重（OFDM）より\TextCA{狭い帯域幅で\\同一の伝送速度}で情報を伝送する技術
+\item OFDMのように逆高速フーリエ変換（IFFT）を\\用いて\TextCA{低計算量で変調が可能}
+\end{itemize}
+\rightnotebox{Note}{
+\begin{align*}
+&\text{圧縮率 } \alpha = N/K < 1 \\
+&\text{サブキャリア数} N \\
+&\text{FFTサイズ} K
+\end{align*}
+}
+}
+~~~
+
+この例を parser、normalization、renderer の主要 golden testにする。

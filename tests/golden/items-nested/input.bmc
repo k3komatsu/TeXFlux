@@ -1,4 +1,4 @@
-@!items:
+!items:
     -<1->[A] first
       continuation
         - nested

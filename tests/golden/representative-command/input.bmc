@@ -1,0 +1,9 @@
+\diffdoublecolumn{0.78}{0.27}:
+    !items:
+        - 直交周波数分割多重（OFDM）より\TextCA{狭い帯域幅で\\同一の伝送速度}で情報を伝送する技術
+        - OFDMのように逆高速フーリエ変換（IFFT）を\\用いて\TextCA{低計算量で変調が可能}
+
+    \rightnotebox{Note} >> @align*:
+        &\text{圧縮率 } \alpha = N/K < 1 \\
+        &\text{サブキャリア数} N \\
+        &\text{FFTサイズ} K

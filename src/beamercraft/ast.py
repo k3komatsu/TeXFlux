@@ -1,5 +1,7 @@
 """Syntax and canonical AST nodes for Beamercraft."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -20,6 +22,11 @@ class GroupKind(StrEnum):
 class ArgumentLayout(StrEnum):
     INLINE = "inline"
     BLOCK = "block"
+
+
+class InvocationKind(StrEnum):
+    COMMAND = "command"
+    ENVIRONMENT = "environment"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +50,8 @@ class RawTex:
 
 
 @dataclass(frozen=True, slots=True)
-class ParsedGeneric:
+class ParsedInvocation:
+    kind: InvocationKind
     name: str
     groups: tuple[Argument, ...]
     suite: Block | None
@@ -60,7 +68,7 @@ class SpecialInvocation:
 
 @dataclass(frozen=True, slots=True)
 class Stack:
-    segments: tuple[ParsedGeneric | SpecialInvocation, ...]
+    segments: tuple[ParsedInvocation | SpecialInvocation, ...]
     suite: Block
     loc: SourceLocation
 
@@ -70,6 +78,12 @@ class GenericInvocation:
     name: str
     arguments: tuple[Argument, ...]
     body: Block | None
+    loc: SourceLocation
+
+
+@dataclass(frozen=True, slots=True)
+class BraceGroup:
+    body: Block
     loc: SourceLocation
 
 
@@ -88,22 +102,24 @@ class Document:
     loc: SourceLocation
 
 
-SyntaxNode = RawTex | ParsedGeneric | SpecialInvocation | Stack
-CanonicalNode = RawTex | GenericInvocation | Item
+SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack
+CanonicalNode = RawTex | GenericInvocation | BraceGroup | Item
 Node = SyntaxNode | CanonicalNode
 
 
 __all__ = [
     "Argument",
     "ArgumentLayout",
+    "BraceGroup",
     "Block",
     "CanonicalNode",
     "Document",
     "GenericInvocation",
     "GroupKind",
+    "InvocationKind",
     "Item",
     "Node",
-    "ParsedGeneric",
+    "ParsedInvocation",
     "RawTex",
     "SourceLocation",
     "SpecialInvocation",

@@ -15,9 +15,11 @@ class GoldenTests(unittest.TestCase):
                 "items-nested",
                 "nested-environments",
                 "real-slide",
+                "representative-command",
                 "source-comments",
                 "stack-items",
                 "stack-three-level",
+                "single-long-argument",
                 "structured-command",
                 "structured-environment",
                 "structured-mixed",
@@ -32,6 +34,26 @@ class GoldenTests(unittest.TestCase):
                     source_comments=input_path.parent.name == "source-comments",
                 ).encode("utf-8")
                 self.assertEqual(actual, expected)
+
+    def test_small_examples_match_documented_goldens(self):
+        root = Path(__file__).parents[1] / "examples"
+        for stem in ("basic", "structured", "stacked-items"):
+            with self.subTest(example=stem):
+                actual = compile_text(
+                    (root / f"{stem}.bmc").read_text(encoding="utf-8"),
+                    filename=f"examples/{stem}.bmc",
+                )
+                expected = (root / f"{stem}.tex").read_text(encoding="utf-8")
+                self.assertEqual(actual, expected)
+
+    def test_converted_content_example_compiles(self):
+        root = Path(__file__).parents[1] / "examples"
+        output = compile_text(
+            (root / "content.bmc").read_text(encoding="utf-8"),
+            filename="examples/content.bmc",
+        )
+        self.assertIn("\\rightnotebox{Note}{", output)
+        self.assertIn("\\begin{itemize}", output)
 
 
 if __name__ == "__main__":

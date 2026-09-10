@@ -4,11 +4,13 @@ from .ast import (
     Argument,
     ArgumentLayout,
     Block,
+    BraceGroup,
     Document,
     GenericInvocation,
     GroupKind,
+    InvocationKind,
     Item,
-    ParsedGeneric,
+    ParsedInvocation,
     RawTex,
     SourceLocation,
     SpecialInvocation,
@@ -32,10 +34,6 @@ def compile_text(
     filename: str = "<string>",
     source_comments: bool = False,
 ) -> str:
-    from .normalize import normalize
-    from .parser import parse
-    from .render import render
-
     return render(normalize(parse(source, filename=filename)), source_comments=source_comments)
 
 
@@ -45,6 +43,7 @@ __all__ = [
     "BeamercraftError",
     "BUILTIN_DIRECTIVES",
     "Block",
+    "BraceGroup",
     "DirectiveError",
     "DirectiveRegistry",
     "DirectiveSpec",
@@ -52,9 +51,10 @@ __all__ = [
     "GenericInvocation",
     "GroupKind",
     "HeaderScanner",
+    "InvocationKind",
     "Item",
     "ParseError",
-    "ParsedGeneric",
+    "ParsedInvocation",
     "RawTex",
     "SourceLocation",
     "SpecialInvocation",

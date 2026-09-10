@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from .ast import Argument, ArgumentLayout, Block, Document, GenericInvocation, GroupKind, Item, RawTex
+from .ast import (
+    Argument,
+    ArgumentLayout,
+    Block,
+    BraceGroup,
+    Document,
+    GenericInvocation,
+    GroupKind,
+    Item,
+    RawTex,
+)
 
 
 def _group(argument: Argument) -> str:
@@ -32,6 +42,12 @@ def _render_block(block: Block, source_comments: bool) -> list[str]:
             if source_comments:
                 lines.append(f"% beamercraft: {node.loc.file}:{node.loc.line}")
             lines.extend(_render_item(node, source_comments))
+        elif isinstance(node, BraceGroup):
+            if source_comments:
+                lines.append(f"% beamercraft: {node.loc.file}:{node.loc.line}")
+            lines.append("{")
+            lines.extend(_render_block(node.body, source_comments))
+            lines.append("}")
         else:
             raise TypeError(
                 "renderer accepts canonical AST only; "
@@ -46,8 +62,10 @@ def _render_arguments(prefix: str, arguments: tuple[Argument, ...], source_comme
         if argument.layout is ArgumentLayout.INLINE:
             lines[-1] += _group(argument)
             continue
-        if argument.layout is not ArgumentLayout.BLOCK or not isinstance(argument.value, Block):
+        if argument.layout is not ArgumentLayout.BLOCK:
             raise TypeError("renderer received an invalid argument layout")
+        if not isinstance(argument.value, Block):
+            raise TypeError("renderer received an invalid argument value")
         lines[-1] += "{"
         lines.extend(_render_block(argument.value, source_comments))
         lines.append("}")

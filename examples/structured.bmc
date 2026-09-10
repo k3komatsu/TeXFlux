@@ -1,0 +1,21 @@
+\callout{Compact header}:
+    !arg{Inline argument}
+    !arg:
+        This is a multiline block argument.
+        It remains raw TeX: $x^2$.
+
+\rightnotebox{Long argument}:
+    @align*:
+        &x = y
+
+\scope:
+    !block:
+        \small
+        A literal group inside the command argument.
+
+@note:
+    !arg:
+        Title
+    !body:
+        The body can contain raw TeX.
+        \emph{Generic directives are allowed here.}
