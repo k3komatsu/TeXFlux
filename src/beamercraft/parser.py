@@ -286,14 +286,8 @@ class _Parser:
             raise ParseError("unexpected indentation", self._line_loc(line))
         return Document(body, loc)
 
-    def _line_loc(
-        self,
-        line: _PhysicalLine,
-        *,
-        first_nonspace: bool = True,
-    ) -> SourceLocation:
-        column = line.indent + 1 if first_nonspace else 1
-        return SourceLocation(self.filename, line.number, column)
+    def _line_loc(self, line: _PhysicalLine) -> SourceLocation:
+        return SourceLocation(self.filename, line.number, line.indent + 1)
 
     def _next_nonblank(self, index: int) -> int | None:
         while index < len(self.lines) and self.lines[index].blank:
@@ -318,24 +312,10 @@ class _Parser:
                 ):
                     self.index += 1
                 next_index = self.index
-                if (
+                if base != 0 and (
                     next_index >= len(self.lines)
                     or self.lines[next_index].indent < base
                 ):
-                    if base == 0:
-                        for blank_index in range(run_start, self.index):
-                            blank_line = self.lines[blank_index]
-                            nodes.append(
-                                RawTex(
-                                    "",
-                                    SourceLocation(
-                                        self.filename,
-                                        blank_line.number,
-                                        1,
-                                    ),
-                                )
-                            )
-                        continue
                     self.index = run_start
                     break
                 for blank_index in range(run_start, self.index):
@@ -412,7 +392,7 @@ class _Parser:
             return None
         if not result.suite and len(result.segments) == 1:
             return None
-        return self._directive_result(line, base, result, directive_loc)
+        return self._directive_result(base, result, directive_loc)
 
     def _directive(self, line: _PhysicalLine, base: int):
         if line.indent != base:
@@ -422,11 +402,10 @@ class _Parser:
             )
         directive_loc = SourceLocation(self.filename, line.number, base + 1)
         result = HeaderScanner(line.text[base:], loc=directive_loc).scan()
-        return self._directive_result(line, base, result, directive_loc)
+        return self._directive_result(base, result, directive_loc)
 
     def _directive_result(
         self,
-        line: _PhysicalLine,
         base: int,
         result: HeaderScanResult,
         directive_loc: SourceLocation,

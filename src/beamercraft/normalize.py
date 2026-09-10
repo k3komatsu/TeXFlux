@@ -126,18 +126,12 @@ def _header_arguments(
     return tuple(_normalize_argument(argument, context) for argument in arguments)
 
 
-_NO_SUITE = object()
-
-
 def _normalize_invocation(
     node: ParsedInvocation,
     context: TransformContext,
-    *,
-    suite: Block | None | object = _NO_SUITE,
 ) -> GenericInvocation:
-    actual_suite = node.suite if suite is _NO_SUITE else suite
     arguments = _header_arguments(node.groups, context)
-    if actual_suite is None:
+    if node.suite is None:
         if node.kind is InvocationKind.ENVIRONMENT:
             raise ValidationError(
                 "environment directives require a suite marker ':'",
@@ -145,8 +139,8 @@ def _normalize_invocation(
             )
         return GenericInvocation(node.name, arguments, None, node.loc)
 
-    assert isinstance(actual_suite, Block)
-    direct = tuple(child for child in actual_suite.nodes if not _blank(child))
+    suite = node.suite
+    direct = tuple(child for child in suite.nodes if not _blank(child))
     explicit = any(
         isinstance(child, SpecialInvocation)
         and child.name in {"arg", "body"}
@@ -157,7 +151,7 @@ def _normalize_invocation(
         return _normalize_command(
             node,
             arguments,
-            actual_suite,
+            suite,
             direct,
             explicit,
             context,
@@ -167,7 +161,7 @@ def _normalize_invocation(
         arguments,
         direct,
         explicit,
-        actual_suite,
+        suite,
         context,
     )
 
