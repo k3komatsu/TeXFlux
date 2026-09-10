@@ -82,6 +82,11 @@ Normal DSL nesting uses four ASCII spaces.
 
 The top-level trailing colon is reserved by Beamercraft. Thus
 \textbf{注意}: is a structured-command header and requires an indented suite.
+When a depth-0 colon follows a structural segment, it is reserved immediately;
+the colon must be the final non-space token or the line is a syntax error.
+Malformed backslash headers that end in a depth-0 colon are also structural
+candidates and produce a syntax error. Therefore `\textbf{注意}: 本文` and
+`\verb|x|:` are not raw TeX in v1. Spaces before a terminal colon are accepted.
 Group-internal colons and >> remain raw group content.
 
 ## Commands and environments

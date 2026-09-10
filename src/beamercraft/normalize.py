@@ -44,6 +44,11 @@ class DirectiveRegistry:
     def __init__(self):
         self._handlers: dict[str, SpecialHandler] = {}
 
+    def copy(self) -> "DirectiveRegistry":
+        registry = DirectiveRegistry()
+        registry._handlers.update(self._handlers)
+        return registry
+
     def register(self, name: str, handler: SpecialHandler) -> None:
         self._handlers[name] = handler
 
@@ -55,7 +60,43 @@ def _blank(node: Node) -> bool:
     return isinstance(node, RawTex) and node.text == ""
 
 
+def _desugar_block(block: Block) -> Block:
+    """Replace direct stack nodes with their nested syntax shape."""
+
+    nodes = tuple(
+        _desugar_stack(node) if isinstance(node, Stack) else node
+        for node in block.nodes
+    )
+    if nodes == block.nodes:
+        return block
+    return Block(nodes, block.loc)
+
+
+def _desugar_stack(
+    node: Stack,
+) -> ParsedInvocation | SpecialInvocation:
+    if len(node.segments) < 2:
+        raise ValidationError(
+            "stack requires at least two segments",
+            node.loc,
+        )
+
+    # >> is only a structural abbreviation. Give each segment a one-child
+    # suite from right to left, before invocation mode is inspected.
+    tail: ParsedInvocation | SpecialInvocation = replace(
+        node.segments[-1],
+        suite=node.suite,
+    )
+    for segment in reversed(node.segments[:-1]):
+        tail = replace(
+            segment,
+            suite=Block((tail,), segment.loc),
+        )
+    return tail
+
+
 def _normalize_block(block: Block, context: TransformContext) -> Block:
+    block = _desugar_block(block)
     nodes: list[CanonicalNode] = []
     for node in block.nodes:
         nodes.extend(_normalize_node(node, context))
@@ -73,7 +114,7 @@ def _normalize_node(
     if isinstance(node, SpecialInvocation):
         return _normalize_special(node, context)
     if isinstance(node, Stack):
-        return _normalize_stack(node, context)
+        return _normalize_node(_desugar_stack(node), context)
     if isinstance(node, (GenericInvocation, BraceGroup, Item)):
         return (_normalize_canonical(node, context),)
     raise TypeError(f"unsupported AST node: {type(node).__name__}")
@@ -130,7 +171,7 @@ def _normalize_invocation(
             )
         return GenericInvocation(node.name, arguments, None, node.loc)
 
-    suite = node.suite
+    suite = _desugar_block(node.suite)
     direct = tuple(child for child in suite.nodes if not _blank(child))
     explicit = any(
         isinstance(child, SpecialInvocation)
@@ -326,37 +367,6 @@ def _normalize_special(
     )
 
 
-def _with_suite(
-    segment: ParsedInvocation | SpecialInvocation,
-    suite: Block,
-) -> ParsedInvocation | SpecialInvocation:
-    return replace(segment, suite=suite)
-
-
-def _normalize_stack(
-    node: Stack,
-    context: TransformContext,
-) -> tuple[CanonicalNode, ...]:
-    if len(node.segments) < 2:
-        raise ValidationError(
-            "stack requires at least two segments",
-            node.loc,
-        )
-
-    # >> is only a structural abbreviation.  Give each segment a one-child
-    # suite from right to left, then use the ordinary normalizer.
-    tail: ParsedInvocation | SpecialInvocation = _with_suite(
-        node.segments[-1],
-        node.suite,
-    )
-    for segment in reversed(node.segments[:-1]):
-        tail = _with_suite(
-            segment,
-            Block((tail,), segment.loc),
-        )
-    return _normalize_node(tail, context)
-
-
 def _block_handler(
     node: SpecialInvocation,
     _context: TransformContext,
@@ -535,7 +545,7 @@ def _parse_item_level(
             if next_indent < depth:
                 return items, index
             raise ValidationError(
-                "unexpected blank before a nested item",
+                "item indentation skips the current list level",
                 lines[next_index].loc,
             )
 

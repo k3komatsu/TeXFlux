@@ -54,6 +54,11 @@ top-level trailing colon は予約する。group 内部の colon と >> は raw
 group content として扱う。environment name は registry なしで scanし、
 star や必要な punctuation を許す。
 
+depth 0 の colon を segment の後ろで認識した場合は Beamercraft syntax
+として予約し、末尾の non-space token でなければ error にする。segment
+と colon の間の空白は許容する。これにより `\textbf{注意}: 本文` は
+raw TeX へ戻らない。
+
 ## 3. Pipeline
 
 ~~~text
@@ -126,14 +131,20 @@ handwritten scanner で次を行う。
 - name と compact groups を読む
 - required/optional/overlay group の delimiter depthだけを追跡
 - top-level trailing colon と空白で区切った >> だけを認識
+- >> は前後両方に空白がある場合だけ構造 token として認識
 - group 内容を opaque に保つ
 - environment name に star/punctuation を許す
 - colon 後の trailing token と header comment を reject
 
 backslash raw line は scanner error が出ても、top-level structural token
-を見る前なら raw line へ戻す。structural token を見た後の error は
-ParseError として返す。これにより verb、includegraphics 等の raw TeX
-を不必要に parse しない。
+を見る前なら raw line へ戻す。ただし depth 0 の trailing colon で終わる
+行は有効な segment を scanできなくても構造候補として ParseError にする。
+structural token を見た後の error も ParseError として返す。これにより
+verb、includegraphics 等の通常の raw TeX を不必要に parse しない。
+
+構造構文候補の backslash 行を suite base より深く置く場合は invalid
+structural indentation とする。候補でない raw TeX 行の追加 indentation は
+保持する。
 
 ### Phase 3: directive construction
 
@@ -201,7 +212,7 @@ command に suite scalar metadataや複数の暗黙 argument boundaryを追加�
 
 内部 registry は name から AST-to-AST handler を解決する。
 
-- block: suite を normalize して BraceGroup 一個を返す
+- block: suite を BraceGroup 一個に包み、canonical boundaryで normalize
 - items: raw item mini-grammar を Item/itemize AST へ変換
 - !items の item text/continuation にある @、\\、! は raw text として保持
 - arg/body: 親の structured normalizer だけが消費

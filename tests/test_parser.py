@@ -65,6 +65,24 @@ class ParserTests(unittest.TestCase):
             ],
         )
 
+    def test_non_space_separated_stack_marker_is_ordinary_raw_tex(self):
+        for source in (
+            "\\alpha>>\\beta\n",
+            "\\alpha >>\\beta\n",
+            "\\alpha>> \\beta\n",
+        ):
+            with self.subTest(source=source):
+                document = parse(source, "x.bmc")
+                self.assertEqual(
+                    document.body.nodes,
+                    (
+                        RawTex(
+                            source.rstrip("\n"),
+                            document.body.nodes[0].loc,
+                        ),
+                    ),
+                )
+
     def test_groups_are_scanned_without_parsing_tex(self):
         document = parse(
             r"\foo{a{b}c}[x{y]z}]<2->:"
@@ -136,6 +154,8 @@ class ParserTests(unittest.TestCase):
     def test_invalid_directive_indentation_and_missing_colon_have_locations(self):
         with self.assertRaisesRegex(ParseError, r"x\.bmc:2:7: parse error"):
             parse("@foo:\n      @bar\n", "x.bmc")
+        with self.assertRaisesRegex(ParseError, r"x\.bmc:2:5: parse error"):
+            parse("root\n    \\foo:\n        BODY\n", "x.bmc")
         with self.assertRaisesRegex(ParseError, "environment directives"):
             parse("@foo{A}\n", "x.bmc")
 
@@ -149,6 +169,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(node.kind, InvocationKind.COMMAND)
         with self.assertRaisesRegex(ParseError, "indented suite"):
             parse("\\textbf{注意}:\n", "x.bmc")
+        with self.assertRaisesRegex(ParseError, "trailing token"):
+            parse("\\textbf{注意}: 本文\n", "x.bmc")
+        spaced = parse("\\foo :\n    BODY\n", "x.bmc").body.nodes[0]
+        self.assertIsInstance(spaced, ParsedInvocation)
+        self.assertIsNotNone(spaced.suite)
+        with self.assertRaises(ParseError):
+            parse("\\verb|x|:\n    BODY\n", "x.bmc")
+
+    def test_failed_group_scan_without_structure_stays_raw(self):
+        document = parse("\\centering{\n", "x.bmc")
+        self.assertEqual(document.body.nodes[0].text, "\\centering{")
 
     def test_tabs_are_rejected_at_first_tab(self):
         with self.assertRaisesRegex(ParseError, r"x\.bmc:2:3: parse error"):
@@ -160,6 +191,11 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(raw.text, "日本語")
         self.assertEqual(invocation.loc.line, 2)
         self.assertEqual(invocation.groups[0].loc.column, 5)
+        cr_only = parse("first\rsecond\r", "x.bmc")
+        self.assertEqual(
+            [line.text for line in cr_only.body.nodes],
+            ["first", "second"],
+        )
 
     def test_unclosed_and_invalid_headers_fail(self):
         for source in (
@@ -168,6 +204,7 @@ class ParserTests(unittest.TestCase):
             "@foo {A}\n",
             "!items |\n",
             "\\foo: comment\n",
+            "\\section*{Title}:\n    BODY\n",
         ):
             with self.subTest(source=source):
                 with self.assertRaises(ParseError):

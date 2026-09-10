@@ -114,6 +114,22 @@ def scan_group(
     raise ParseError("invalid group opener", loc)
 
 
+def _has_top_level_trailing_colon(text: str, *, loc: SourceLocation) -> bool:
+    """Check a failed command scan for a reserved trailing colon."""
+
+    end = len(text.rstrip(" "))
+    index = 0
+    while index < end:
+        if text[index] in "{[<":
+            try:
+                index, _ = scan_group(text, index, loc=loc)
+            except ParseError:
+                return False
+            continue
+        index += 1
+    return end > 0 and text[end - 1] == ":"
+
+
 class HeaderScanner:
     """Scan one structural header while keeping group contents opaque."""
 
@@ -164,7 +180,6 @@ class HeaderScanner:
                 break
 
             if self.text.startswith(">>", position):
-                self.saw_structure = True
                 if spaces == 0:
                     raise self._error(
                         "stack separator requires surrounding spaces",
@@ -176,6 +191,7 @@ class HeaderScanner:
                         "stack separator requires surrounding spaces",
                         position,
                     )
+                self.saw_structure = True
                 while position < self.end and self.text[position] == " ":
                     position += 1
                 if position == self.end:
@@ -290,9 +306,6 @@ class _Parser:
     def parse(self) -> Document:
         loc = SourceLocation(self.filename, 1, 1)
         body = self._block(0, loc)
-        if self.index != len(self.lines):
-            line = self.lines[self.index]
-            raise ParseError("unexpected indentation", self._line_loc(line))
         return Document(body, loc)
 
     def _line_loc(self, line: _PhysicalLine) -> SourceLocation:
@@ -348,14 +361,14 @@ class _Parser:
             extra = len(rest) - len(rest.lstrip(" "))
             first = rest[extra : extra + 1]
 
-            if first == "@" and rest[extra : extra + 2] == "@@":
-                raw_text = rest[:extra] + rest[extra + 1 :]
-                nodes.append(RawTex(raw_text, self._line_loc(line)))
+            if raw_suite:
+                nodes.append(RawTex(line.text[base:], self._line_loc(line)))
                 self.index += 1
                 continue
 
-            if raw_suite:
-                nodes.append(RawTex(line.text[base:], self._line_loc(line)))
+            if first == "@" and rest[extra : extra + 2] == "@@":
+                raw_text = rest[:extra] + rest[extra + 1 :]
+                nodes.append(RawTex(raw_text, self._line_loc(line)))
                 self.index += 1
                 continue
 
@@ -366,6 +379,14 @@ class _Parser:
                 )
 
             if line.indent != base:
+                if first == "\\" and self._scan_command_header(
+                    line,
+                    line.indent,
+                ) is not None:
+                    raise ParseError(
+                        "invalid structural indentation",
+                        self._line_loc(line),
+                    )
                 nodes.append(RawTex(line.text[base:], self._line_loc(line)))
                 self.index += 1
                 continue
@@ -386,7 +407,7 @@ class _Parser:
 
         return Block(tuple(nodes), loc)
 
-    def _try_structural_command(
+    def _scan_command_header(
         self,
         line: _PhysicalLine,
         base: int,
@@ -396,11 +417,25 @@ class _Parser:
         try:
             result = scanner.scan()
         except ParseError:
-            if scanner.saw_structure:
+            if scanner.saw_structure or _has_top_level_trailing_colon(
+                scanner.text,
+                loc=directive_loc,
+            ):
                 raise
             return None
         if not result.suite and len(result.segments) == 1:
             return None
+        return result, directive_loc
+
+    def _try_structural_command(
+        self,
+        line: _PhysicalLine,
+        base: int,
+    ):
+        scanned = self._scan_command_header(line, base)
+        if scanned is None:
+            return None
+        result, directive_loc = scanned
         return self._directive_result(base, result, directive_loc)
 
     def _directive(self, line: _PhysicalLine, base: int):

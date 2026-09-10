@@ -82,6 +82,9 @@ environment name として読む。
 
 構造 node の direct child は suite base indentation に置く。raw TeX line
 に追加 indentation がある場合、その追加空白は raw TeX として保持する。
+ただし、追加 indentation の位置にある `@`、`!`、または構造構文候補の
+`\\` 行は invalid structural indentation とする。構造構文候補でない通常の
+raw TeX 行だけが追加 indentation を保持する。
 blank line は現在の block に保持される。block の終了は次の nonblank line
 が suite base より dedent した時に決まる。ファイル末尾まで続く blank
 line は、開いている suite の外側に戻してから root block に保持する。
@@ -166,6 +169,14 @@ top-level の末尾 colon は Beamercraft の予約構文である。
 colon の後ろには header 終端以外の token を置けない。suite marker の
 後ろに vertical bar などを置く block-scalar variant は v1 に存在せず、
 parser は syntax error にする。
+
+scanner が depth 0 の colon を segment の後ろで認識した時点で、その
+colon は予約される。したがって colon は末尾の non-space token でなければ
+ならず、`\textbf{注意}: 本文` のような行は raw TeX へ戻さず syntax
+error とする。segment と colon の間の空白は許容する。これは v1 が
+完全な TeX superset ではないことを明確にするための意図的な境界である。
+有効な segment を最後まで scan できない場合でも、行末の depth 0 colon は
+構造構文候補として扱い、parser は syntax error を返す。
 
 ### 3.5 header comment
 
@@ -525,7 +536,8 @@ suite の item level を 0 とし、次の規則を使う。
 !items suite 内では item syntax が予約される。suite の行は item parser
 へ raw line として渡し、suite の direct structure node は許可しない。
 item text と continuation 内の @、\、! は raw text であり、TeX semantics
-を解析しない。
+を解析しない。したがってこの位置の `@@` も unescape せず、raw text として
+保持する。
 
 ## 10. AST
 
@@ -691,7 +703,7 @@ dynamic import は導入しない。in-process registry の handler 契約だけ
 
 ~~~text
 document             ::= physical-line*
-structural-header    ::= segment (SP+ ">>" SP+ segment)* ":"
+structural-header    ::= segment (SP+ ">>" SP+ segment)* SP* ":"
 segment              ::= command-segment | environment-segment | special-segment
 command-segment      ::= "\" command-name group*
 environment-segment  ::= "@" environment-name group*

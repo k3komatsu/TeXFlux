@@ -13,7 +13,11 @@ from beamercraft.ast import (
     Stack,
 )
 from beamercraft.errors import DirectiveError, ParseError, ValidationError
-from beamercraft.normalize import DirectiveRegistry, normalize
+from beamercraft.normalize import (
+    BUILTIN_DIRECTIVES,
+    DirectiveRegistry,
+    normalize,
+)
 from beamercraft.parser import parse
 from beamercraft.render import render
 
@@ -212,6 +216,14 @@ class CompileTests(unittest.TestCase):
                 "        A\n"
             )
         with self.assertRaises(ValidationError):
+            compile_text(
+                "@foo:\n"
+                "    !body:\n"
+                "        BODY 1\n"
+                "    !body:\n"
+                "        BODY 2\n"
+            )
+        with self.assertRaises(ValidationError):
             compile_text("@foo:\n    !body{bad}:\n        BODY\n")
 
     def test_environment_accepts_inline_explicit_arg(self):
@@ -277,6 +289,38 @@ class CompileTests(unittest.TestCase):
             "\\end{frame}\n",
         )
 
+    def test_stack_special_segments_select_explicit_mode(self):
+        self.assertEqual(
+            compile_text(
+                "\\foo:\n"
+                "    !arg >> @bar:\n"
+                "        X\n"
+            ),
+            "\\foo{\n"
+            "\\begin{bar}\n"
+            "X\n"
+            "\\end{bar}\n"
+            "}\n",
+        )
+        self.assertEqual(
+            compile_text(
+                "@foo:\n"
+                "    !body >> @bar:\n"
+                "        X\n"
+            ),
+            "\\begin{foo}\n"
+            "\\begin{bar}\n"
+            "X\n"
+            "\\end{bar}\n"
+            "\\end{foo}\n",
+        )
+
+    def test_unspaced_stack_marker_stays_raw_tex(self):
+        self.assertEqual(
+            compile_text("\\alpha>>\\beta\n"),
+            "\\alpha>>\\beta\n",
+        )
+
     def test_stack_normalization_preserves_segment_locations(self):
         document = normalize(
             parse(
@@ -312,6 +356,32 @@ class CompileTests(unittest.TestCase):
             "\\end{itemize}\n"
             "\\item\n"
             "\\end{itemize}\n",
+        )
+
+    def test_item_locations_are_preserved(self):
+        document = normalize(
+            parse(
+                "!items:\n"
+                "    -<2->[Label] first\n"
+                "      continuation\n",
+                filename="items.bmc",
+            )
+        )
+        itemize = document.body.nodes[0]
+        item = itemize.body.nodes[0]
+        self.assertEqual((item.loc.line, item.loc.column), (2, 5))
+        self.assertEqual(
+            (item.overlay.loc.line, item.overlay.loc.column),
+            (2, 6),
+        )
+        self.assertEqual(
+            (item.label.loc.line, item.label.loc.column),
+            (2, 10),
+        )
+        continuation = item.continuation.nodes[0]
+        self.assertEqual(
+            (continuation.loc.line, continuation.loc.column),
+            (3, 7),
         )
 
     def test_items_keep_raw_tex_and_reject_directives(self):
@@ -362,11 +432,11 @@ class CompileTests(unittest.TestCase):
             "\\end{itemize}\n",
         )
 
-    def test_item_continuation_can_escape_directive_looking_tex(self):
+    def test_item_continuation_keeps_directive_looking_tex_raw(self):
         source = "!items:\n    - first\n      @@literal-at\n"
         self.assertEqual(
             compile_text(source),
-            "\\begin{itemize}\n\\item first\n@literal-at\n\\end{itemize}\n",
+            "\\begin{itemize}\n\\item first\n@@literal-at\n\\end{itemize}\n",
         )
 
     def test_special_namespace_and_structured_constraints(self):
@@ -391,6 +461,25 @@ class CompileTests(unittest.TestCase):
             compile_text("!arg{INLINE}\n")
         with self.assertRaises(DirectiveError):
             compile_text("!body{INLINE}\n")
+
+    def test_validation_and_directive_errors_keep_source_locations(self):
+        with self.assertRaisesRegex(
+            ValidationError,
+            r"mix\.bmc:4:5: validation error",
+        ):
+            compile_text(
+                "\\foo:\n"
+                "    !arg:\n"
+                "        A\n"
+                "    @bar:\n"
+                "        B\n",
+                filename="mix.bmc",
+            )
+        with self.assertRaisesRegex(
+            DirectiveError,
+            r"unknown\.bmc:1:1: directive error",
+        ):
+            compile_text("!unknown\n", filename="unknown.bmc")
 
     def test_source_comments_and_final_lf(self):
         source = "@foo:\n    raw\n\n@@at\n"
@@ -483,8 +572,12 @@ class CompileTests(unittest.TestCase):
                 GenericInvocation("infobox", (), node.suite, node.loc),
             )
 
-        registry = DirectiveRegistry()
+        registry = BUILTIN_DIRECTIVES.copy()
         registry.register("result", result)
+        self.assertEqual(
+            render(normalize(parse("!block:\n    A\n"), registry)),
+            "{\nA\n}\n",
+        )
         document = normalize(
             parse("!result:\n    \\foo{A}\n"),
             registry,
@@ -498,7 +591,7 @@ class CompileTests(unittest.TestCase):
         def result(node, _context):
             return (RawTex("generated", node.loc),)
 
-        registry = DirectiveRegistry()
+        registry = BUILTIN_DIRECTIVES.copy()
         registry.register("result", result)
         document = normalize(
             parse("!result:\n    ignored\n"),
@@ -519,6 +612,15 @@ class CompileTests(unittest.TestCase):
             render(normalize(parse("!grouped:\n    ignored\n"), registry)),
             "{\ninside\n}\n",
         )
+
+    def test_custom_handler_must_return_canonical_tuple(self):
+        def invalid(_node, _context):
+            return "generated TeX"
+
+        registry = BUILTIN_DIRECTIVES.copy()
+        registry.register("invalid", invalid)
+        with self.assertRaises(TypeError):
+            normalize(parse("!invalid\n"), registry)
 
 
 if __name__ == "__main__":
