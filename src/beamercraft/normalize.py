@@ -380,6 +380,46 @@ def _block_handler(
     return (BraceGroup(node.suite, node.loc),)
 
 
+def _vspace(group: Argument) -> GenericInvocation:
+    return GenericInvocation("vspace", (group,), None, group.loc)
+
+
+def _vpad_handler(
+    node: SpecialInvocation,
+    context: TransformContext,
+) -> tuple[CanonicalNode, ...]:
+    if node.suite is None:
+        raise ValidationError(
+            "!vpad requires a block suite",
+            node.loc,
+        )
+    if not 1 <= len(node.groups) <= 2:
+        raise ValidationError(
+            "!vpad requires one or two required inline groups",
+            node.loc,
+        )
+    invalid_group = next((
+        group
+        for group in node.groups
+        if group.kind is not GroupKind.REQUIRED
+        or group.layout is not ArgumentLayout.INLINE
+        or not isinstance(group.value, str)
+    ), None)
+    if invalid_group is not None:
+        raise ValidationError(
+            "!vpad requires one or two required inline groups",
+            invalid_group.loc,
+        )
+
+    before = node.groups[0]
+    body = _normalize_block(node.suite, context)
+    result: list[CanonicalNode] = [_vspace(before)]
+    result.extend(body.nodes)
+    if len(node.groups) == 2:
+        result.append(_vspace(node.groups[1]))
+    return tuple(result)
+
+
 def _items_handler(
     node: SpecialInvocation,
     _context: TransformContext,
@@ -648,6 +688,7 @@ def _parse_item_level(
 BUILTIN_DIRECTIVES = DirectiveRegistry()
 BUILTIN_DIRECTIVES.register("block", _block_handler)
 BUILTIN_DIRECTIVES.register("items", _items_handler)
+BUILTIN_DIRECTIVES.register("vpad", _vpad_handler)
 
 
 def _assert_canonical_block(block: Block) -> None:

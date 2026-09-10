@@ -77,6 +77,7 @@ Normal DSL nesting uses four ASCII spaces.
 - \foo: with a suite — structured command; the whole suite is one long argument
 - !block: — one actual TeX brace group
 - !items: — itemize sugar
+- !vpad{before}{after}: — vertical padding around a suite; `after` is optional
 - \foo >> @bar >> !block: — pure nested-suite desugaring
 - @@foo — raw @foo at a structural position
 
@@ -175,6 +176,26 @@ Local TeX scope
 
 !block always creates its own brace group, including when it appears inside a
 command's long argument.
+
+## Vertical padding
+
+`!vpad` emits a leading `\vspace` and, when a second group is present, a
+trailing `\vspace` around its suite:
+
+~~~text
+!vpad{-1em}{2em}:
+    contents
+~~~
+
+~~~tex
+\vspace{-1em}
+contents
+\vspace{2em}
+~~~
+
+The second required inline group is optional. With one group, only the leading
+spacing is emitted. `!vpad` can also be used as a `>>` segment, for example
+`@frame{Title} >> !vpad{-.7em} >> \singlecolumn[.11]:`.
 
 ## Explicit fallback forms
 

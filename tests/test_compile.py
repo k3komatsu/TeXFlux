@@ -289,6 +289,115 @@ class CompileTests(unittest.TestCase):
             "\\end{frame}\n",
         )
 
+    def test_vpad_emits_before_and_optional_after_spacing(self):
+        self.assertEqual(
+            compile_text(
+                "!vpad{-1em}{2em}:\n"
+                "    contents\n"
+            ),
+            "\\vspace{-1em}\n"
+            "contents\n"
+            "\\vspace{2em}\n",
+        )
+        self.assertEqual(
+            compile_text(
+                "!vpad{-1em}:\n"
+                "    contents\n"
+            ),
+            "\\vspace{-1em}\n"
+            "contents\n",
+        )
+
+    def test_vpad_preserves_generated_and_body_locations(self):
+        document = normalize(
+            parse(
+                "!vpad{-1em}{2em}:\n"
+                "    contents\n",
+                filename="vpad.bmc",
+            )
+        )
+        before, contents, after = document.body.nodes
+        self.assertEqual((before.loc.line, before.loc.column), (1, 6))
+        self.assertEqual(
+            (before.arguments[0].loc.line, before.arguments[0].loc.column),
+            (1, 6),
+        )
+        self.assertEqual((contents.loc.line, contents.loc.column), (2, 5))
+        self.assertEqual(
+            (after.arguments[0].loc.line, after.arguments[0].loc.column),
+            (1, 12),
+        )
+        self.assertEqual((after.loc.line, after.loc.column), (1, 12))
+
+    def test_vpad_works_as_a_stack_segment(self):
+        self.assertEqual(
+            compile_text(
+                "@frame[t]{Title} >> !vpad{-0.7em} >> "
+                "\\singlecolumn[0.11]:\n"
+                "    contents\n"
+            ),
+            "\\begin{frame}[t]{Title}\n"
+            "\\vspace{-0.7em}\n"
+            "\\singlecolumn[0.11]{\n"
+            "contents\n"
+            "}\n"
+            "\\end{frame}\n",
+        )
+
+    def test_vpad_handles_nested_body_inside_one_command_argument(self):
+        self.assertEqual(
+            compile_text(
+                "\\foo:\n"
+                "    !vpad{-1em}{2em}:\n"
+                "        @center:\n"
+                "            X\n"
+                "        !block:\n"
+                "            Y\n"
+            ),
+            "\\foo{\n"
+            "\\vspace{-1em}\n"
+            "\\begin{center}\n"
+            "X\n"
+            "\\end{center}\n"
+            "{\n"
+            "Y\n"
+            "}\n"
+            "\\vspace{2em}\n"
+            "}\n",
+        )
+
+    def test_vpad_can_be_the_terminal_stack_segment(self):
+        self.assertEqual(
+            compile_text(
+                "@frame{Title} >> !vpad{1em}:\n"
+                "    contents\n"
+            ),
+            "\\begin{frame}{Title}\n"
+            "\\vspace{1em}\n"
+            "contents\n"
+            "\\end{frame}\n",
+        )
+
+    def test_vpad_requires_one_or_two_required_groups_and_a_suite(self):
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad:\n    contents\n")
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad{-1em}{2em}{3em}:\n    contents\n")
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad[-1em]:\n    contents\n")
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad{1em}[2em]:\n    contents\n")
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad<1em>{2em}:\n    contents\n")
+        with self.assertRaises(ValidationError):
+            compile_text("!vpad{-1em}\n")
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            r"vpad\.bmc:1:6: validation error",
+        ):
+            compile_text("!vpad[-1em]:\n    contents\n", filename="vpad.bmc")
+
     def test_stack_special_segments_select_explicit_mode(self):
         self.assertEqual(
             compile_text(

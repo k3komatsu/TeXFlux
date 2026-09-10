@@ -23,6 +23,7 @@ class GoldenTests(unittest.TestCase):
                 "structured-command",
                 "structured-environment",
                 "structured-mixed",
+                "vpad",
             },
         )
         for input_path in input_paths:

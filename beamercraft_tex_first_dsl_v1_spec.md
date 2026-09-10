@@ -50,7 +50,7 @@ parser は v1 に存在しない。
 error である。
 
 ! は Beamercraft special namespace 専用である。未登録の special は
-DirectiveError になる。組み込み special は block と items であり、
+DirectiveError になる。組み込み special は block、items、vpad であり、
 arg と body は structured invocation の explicit fallback である。
 
 ### 1.3 名前に関する知識を持たない
@@ -407,6 +407,42 @@ BODY
 
 !arg と !body を構造 invocation の外に置くことはできない。
 
+### 6.4 !vpad
+
+`!vpad` は suite の前後に vertical spacing command を挿入する special
+である。required inline group を一個または二個受け取り、suite は必須
+である。
+
+~~~text
+!vpad{-1em}{2em}:
+    contents
+~~~
+
+~~~tex
+\vspace{-1em}
+contents
+\vspace{2em}
+~~~
+
+group が一個だけの場合は leading `\vspace` だけを出力する。
+二個目の group がある場合は、suite の正規化された body の後ろに
+trailing `\vspace` を出力する。group が 0 個、3 個以上、required inline
+以外の group、または suite なしは validation error である。
+
+`!vpad` は AST-to-AST special であり、TeX string を直接返さない。
+normalization 後は `vspace` の canonical command、suite の canonical
+nodes、必要ならもう一つの `vspace` command の順になる。`>>` は
+special の意味を知らずに先に nested suite へ desugar されるため、次の
+ような stacking にも使える。
+
+~~~text
+@frame[t]{Title} >> !vpad{-.7em} >> \singlecolumn[.11]:
+    contents
+~~~
+
+`!vpad` の生成した `vspace` command と body はいずれも `!vpad` または
+元の suite node の source location を保持する。
+
 ## 7. Environment explicit form
 
 通常の environment は suite 全体を body とする。
@@ -615,7 +651,8 @@ normalization の規則は次である。
 7. environment の explicit !arg/!body を validation して arguments と
    body に分ける。
 8. !block は canonical BraceGroup、!items は canonical itemize
-   invocation に展開する。
+   invocation、!vpad は canonical `vspace` command と body の sequence
+   に展開する。
 9. syntax-only node が canonical AST にないことを検証する。
 
 renderer は canonical AST だけを受け取る。renderer は special name、
@@ -645,8 +682,8 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - explicit !arg / !body
 - item と item prefix
 
->> desugaring、command suite normalization、!block、!arg、!body、!items
-の展開で originating location を破棄しない。
+>> desugaring、command suite normalization、!block、!arg、!body、!items、
+!vpad の展開で originating location を破棄しない。
 
 将来の source map は概念的に次の bridge を提供できる。
 
@@ -740,6 +777,8 @@ suite 可否は special の契約で決まり、unknown special は error とな
 - direct !arg/!body の存在が explicit mode を選ぶ。
 - implicit/explicit mode は混在不可。
 - !block は常に literal BraceGroup であり context により消えない。
+- !vpad は一個または二個の required inline group と suite を受け取り、
+  canonical `vspace` sequence に展開する。
 - >> は pure desugaring であり renderer に残らない。
 
 代表的な canonical example は次である。

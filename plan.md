@@ -16,6 +16,7 @@ pipelineに固定する。
 - command suite 全体を一個の required long argument とする構文
 - 複数 long argument の explicit !arg
 - literal brace group を生成する !block
+- suite の前後に `\vspace` を挿入する !vpad
 - explicit environment argument/body の !arg / !body
 - prefix付き stack の pure desugaring
 - overlay、label、multiline、nested list を持つ items
@@ -214,6 +215,8 @@ command に suite scalar metadataや複数の暗黙 argument boundaryを追加�
 
 - block: suite を BraceGroup 一個に包み、canonical boundaryで normalize
 - items: raw item mini-grammar を Item/itemize AST へ変換
+- vpad: required inline groupsからcanonicalなvspace commandとnormalized
+  suiteのsequenceへ展開
 - !items の item text/continuation にある @、\\、! は raw text として保持
 - arg/body: 親の structured normalizer だけが消費
 - unknown special: DirectiveError
@@ -251,7 +254,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - item と item prefix
 
 >> desugaring、command suite normalization、!block、!arg、!body、!items
-の展開で originating location を破棄しない。
+、!vpad の展開で originating location を破棄しない。
 
 ## 9. Test plan
 
@@ -284,6 +287,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - pure stack の command/environment/special 組合せ
 - unknown environment と unknown special
 - items overlay/label/multiline/nested
+- !vpad の before/after と stack segment
 - custom handler の AST-to-AST contract
 
 ### Golden
@@ -329,6 +333,7 @@ skip する。runtime で LaTeX を要求しない。
 - command/environment implicit と explicitを混在させない
 - suite 後の block-scalar variant を受理しない
 - !block の braceを context で消さない
+- !vpad の一個/二個の spacing group と suite を一意に処理する
 - stack に semantic terminal rule を入れない
 - canonical AST に syntax-only node を残さない
 - source location を全変換で保つ

@@ -34,6 +34,8 @@ The approved syntax is:
 - >> is pure single-child-suite desugaring.
 - !block: always emits one actual TeX brace group.
 - !items: is the itemize mini-grammar.
+- !vpad{before}{after}: emits \vspace{before} before its suite and an
+  optional \vspace{after} after it.
 - !arg and !body are explicit fallback forms only.
 
 Unknown environment names must render because environment names are not looked
@@ -139,6 +141,7 @@ Before finishing a DSL change, verify:
 - command and environment explicit modes reject mixing;
 - no block-scalar marker is accepted after a suite colon;
 - !block always has exactly its own brace group;
+- !vpad accepts one or two required inline groups and preserves suite order;
 - !arg around !block retains the intentional double brace;
 - >> is normalized before rendering and has no semantic terminal rule;
 - !items preserves overlay, label, multiline, and nested-list behavior;
