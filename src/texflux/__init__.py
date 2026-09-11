@@ -27,6 +27,16 @@ from .normalize import (
     normalize,
 )
 from .parser import HeaderScanner, parse
+from .remap import (
+    RemapError,
+    SourceMap,
+    SourceMapSource,
+    SourceMapping,
+    load_source_map,
+    remap_document,
+    remap_synctex,
+    remap_synctex_file,
+)
 from .render import (
     CompilationResult,
     GeneratedSpan,
@@ -100,6 +110,10 @@ __all__ = [
     "RawTex",
     "RenderedDocument",
     "RenderedFragment",
+    "RemapError",
+    "SourceMap",
+    "SourceMapSource",
+    "SourceMapping",
     "SourcePosition",
     "SourceSpan",
     "SpecialInvocation",
@@ -120,6 +134,10 @@ __all__ = [
     "compile_with_map",
     "normalize",
     "parse",
+    "load_source_map",
+    "remap_document",
+    "remap_synctex",
+    "remap_synctex_file",
     "render",
     "render_with_provenance",
     "parse_synctex",

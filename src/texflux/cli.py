@@ -10,7 +10,9 @@ from typing import Sequence
 
 from . import compile_with_map
 from .errors import TeXFluxError
+from .remap import RemapError, remap_synctex_file
 from .source_map import serialize_source_map
+from .synctex import SyncTeXError
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,6 +22,21 @@ def _parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("input", metavar="INPUT")
     compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT")
     compile_parser.add_argument("--source-comments", action="store_true")
+    synctex_parser = commands.add_parser("synctex")
+    synctex_commands = synctex_parser.add_subparsers(
+        dest="synctex_command",
+        required=True,
+    )
+    remap_parser = synctex_commands.add_parser("remap")
+    remap_parser.add_argument("input", metavar="SYNCTEX")
+    remap_parser.add_argument(
+        "--map",
+        dest="maps",
+        action="append",
+        required=True,
+        metavar="MAP",
+    )
+    remap_parser.add_argument("--output", metavar="OUTPUT")
     return parser
 
 
@@ -42,6 +59,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(error.code, int):
             return error.code
         return 0 if error.code is None else 1
+
+    if args.command == "synctex" and args.synctex_command == "remap":
+        try:
+            remap_synctex_file(
+                args.input,
+                map_paths=args.maps,
+                output_path=args.output,
+            )
+        except (OSError, RemapError, SyncTeXError) as error:
+            print(f"texflux: {error}", file=sys.stderr)
+            return 1
+        return 0
+    if args.command != "compile":
+        print(f"texflux: unsupported command {args.command}", file=sys.stderr)
+        return 1
 
     input_path = Path(args.input)
     output_path = Path(args.output)
