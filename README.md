@@ -71,6 +71,91 @@ compile therefore leaves existing output and `.tfxmap` files unchanged. A
 successful compile writes `OUTPUT.tex.tfxmap` beside the generated TeX. Input
 and output must be different paths.
 
+## TeX engine and LaTeX Workshop
+
+TeXFlux does not wrap `latexmk` or add a watcher. Use the TeX recipe already
+used by the project, with SyncTeX enabled, then remap the generated file:
+
+~~~bash
+texflux compile slides.tfx -o slides.tex
+latexmk -pdf -synctex=1 slides.tex
+texflux synctex remap slides.synctex.gz --map slides.tex.tfxmap
+~~~
+
+The remap command may be given more than one `--map`; use `--output` to write a
+separate SyncTeX file instead of replacing the input:
+
+~~~bash
+texflux synctex remap slides.synctex.gz \
+    --map slides.tex.tfxmap \
+    --output slides.remapped.synctex.gz
+~~~
+
+For VS Code with LaTeX Workshop, associate `.tfx` buffers with the existing
+LaTeX language ID so forward search recognizes them:
+
+~~~json
+{
+  "files.associations": {
+    "*.tfx": "latex"
+  }
+}
+~~~
+
+A minimal LaTeX Workshop tool and recipe configuration is:
+
+~~~json
+{
+  "latex-workshop.latex.tools": [
+    {
+      "name": "texflux-compile",
+      "command": "texflux",
+      "args": ["compile", "%DOC_EXT%", "-o", "%DOC%.tex"]
+    },
+    {
+      "name": "latexmk-synctex",
+      "command": "latexmk",
+      "args": ["-pdf", "-synctex=1", "%DOC%.tex"]
+    },
+    {
+      "name": "texflux-remap",
+      "command": "texflux",
+      "args": [
+        "synctex", "remap", "%DOC%.synctex.gz",
+        "--map", "%DOC%.tex.tfxmap"
+      ]
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "TeXFlux",
+      "tools": ["texflux-compile", "latexmk-synctex", "texflux-remap"]
+    }
+  ]
+}
+~~~
+
+`%DOC_EXT%` is the authoring filename including `.tfx`; `%DOC%` is the
+extensionless job name used for generated TeX and its SyncTeX/map artifacts.
+These placeholders refer to LaTeX Workshop's detected root file, so configure
+the `.tfx` document containing `\documentclass` as the root when working with
+fragments. The paths above assume the default output directory beside the
+generated TeX; if `latex-workshop.latex.outDir` is set, update the SyncTeX and
+map paths in the final tool accordingly. Engines configured to write plain
+`*.synctex` instead of `*.synctex.gz` need the corresponding plain filename in
+the remap command and tool configuration.
+
+Reverse search is extension-agnostic after remapping because SyncTeX returns
+the `.tfx` path. Forward search requires the association above. A dedicated
+TeXFlux language ID or editor extension is intentionally deferred.
+
+If remapping reports a stale hash, re-run `texflux compile` and the TeX engine
+from the same generated `.tex` file; do not edit generated TeX between those
+steps. If no source is returned, check that the TeX engine was run with
+`-synctex=1` or another positive SyncTeX option and that the `.synctex.gz`
+file belongs to the same generated output. LaTeX is an external toolchain and
+is not a TeXFlux runtime dependency.
+
 ## Syntax at a glance
 
 Normal DSL nesting uses four ASCII spaces.
@@ -347,7 +432,8 @@ Run the complete suite:
 PYTHONPATH=src python3 -m unittest discover -v
 ~~~
 
-The optional LaTeX integration test skips when pdflatex is unavailable. The
-normative language definition is in
+The optional LaTeX integration tests skip when `pdflatex` is unavailable; the
+end-to-end test additionally requires the `synctex` client. The normative
+language definition is in
 [texflux_tex_first_dsl_v1_spec.md](texflux_tex_first_dsl_v1_spec.md),
 and the implementation phases are in [plan.md](plan.md).
