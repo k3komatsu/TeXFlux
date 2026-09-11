@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from beamercraft import compile_text
+from texflux import compile_text
 
 
 @unittest.skipUnless(shutil.which("pdflatex"), "pdflatex is not installed")

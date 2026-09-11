@@ -1,10 +1,10 @@
-"""User-facing Beamercraft errors."""
+"""User-facing TeXFlux errors."""
 
 from .ast import SourceLocation
 
 
-class BeamercraftError(Exception):
-    error_kind = "beamercraft error"
+class TeXFluxError(Exception):
+    error_kind = "texflux error"
 
     def __init__(self, message: str, loc: SourceLocation):
         self.message = message
@@ -21,21 +21,21 @@ class BeamercraftError(Exception):
         return self.diagnostic()
 
 
-class ParseError(BeamercraftError):
+class ParseError(TeXFluxError):
     error_kind = "parse error"
 
 
-class ValidationError(BeamercraftError):
+class ValidationError(TeXFluxError):
     error_kind = "validation error"
 
 
-class DirectiveError(BeamercraftError):
+class DirectiveError(TeXFluxError):
     error_kind = "directive error"
 
 
 __all__ = [
-    "BeamercraftError",
     "DirectiveError",
     "ParseError",
+    "TeXFluxError",
     "ValidationError",
 ]

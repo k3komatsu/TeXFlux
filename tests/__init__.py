@@ -1,4 +1,4 @@
-"""Beamercraft tests."""
+"""TeXFlux tests."""
 
 from pathlib import Path
 import sys

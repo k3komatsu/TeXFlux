@@ -1,5 +1,5 @@
 % Ordinary lines are raw TeX.
-\section{Beamercraft}
+\section{TeXFlux}
 
 @frame{A small example}:
     \vspace{-.5em}

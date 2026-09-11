@@ -16,7 +16,7 @@ from .ast import (
     SpecialInvocation,
     Stack,
 )
-from .errors import BeamercraftError, DirectiveError, ParseError, ValidationError
+from .errors import DirectiveError, ParseError, TeXFluxError, ValidationError
 from .normalize import (
     BUILTIN_DIRECTIVES,
     DirectiveRegistry,
@@ -40,7 +40,6 @@ def compile_text(
 __all__ = [
     "Argument",
     "ArgumentLayout",
-    "BeamercraftError",
     "BUILTIN_DIRECTIVES",
     "Block",
     "BraceGroup",
@@ -58,6 +57,7 @@ __all__ = [
     "SourceLocation",
     "SpecialInvocation",
     "Stack",
+    "TeXFluxError",
     "TransformContext",
     "ValidationError",
     "compile_text",

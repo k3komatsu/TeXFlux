@@ -1,4 +1,4 @@
-"""Command-line interface for Beamercraft."""
+"""Command-line interface for TeXFlux."""
 
 from __future__ import annotations
 
@@ -9,14 +9,16 @@ import sys
 from typing import Sequence
 
 from . import compile_text
-from .errors import BeamercraftError
+from .errors import TeXFluxError
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="beamercraft")
-    parser.add_argument("input", metavar="INPUT")
-    parser.add_argument("-o", "--output", required=True, metavar="OUTPUT")
-    parser.add_argument("--source-comments", action="store_true")
+    parser = argparse.ArgumentParser(prog="texflux")
+    commands = parser.add_subparsers(dest="command", required=True)
+    compile_parser = commands.add_parser("compile")
+    compile_parser.add_argument("input", metavar="INPUT")
+    compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT")
+    compile_parser.add_argument("--source-comments", action="store_true")
     return parser
 
 
@@ -42,8 +44,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     input_path = Path(args.input)
     output_path = Path(args.output)
+    if input_path.suffix != ".tfx":
+        print("texflux: input must have a .tfx extension", file=sys.stderr)
+        return 1
     if _same_path(input_path, output_path):
-        print("beamercraft: input and output must be different paths", file=sys.stderr)
+        print("texflux: input and output must be different paths", file=sys.stderr)
         return 1
 
     try:
@@ -54,11 +59,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_comments=args.source_comments,
         )
         output_path.write_text(output, encoding="utf-8", newline="\n")
-    except BeamercraftError as error:
+    except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
     except (OSError, UnicodeError) as error:
-        print(f"beamercraft: {error}", file=sys.stderr)
+        print(f"texflux: {error}", file=sys.stderr)
         return 1
     return 0
 

@@ -35,12 +35,12 @@ def _render_block(block: Block, source_comments: bool) -> list[str]:
     for node in block.nodes:
         if isinstance(node, RawTex):
             if source_comments and node.text != "":
-                lines.append(f"% beamercraft: {node.loc.file}:{node.loc.line}")
+                lines.append(f"% texflux: {node.loc.file}:{node.loc.line}")
             lines.append(node.text)
             continue
 
         if source_comments:
-            lines.append(f"% beamercraft: {node.loc.file}:{node.loc.line}")
+            lines.append(f"% texflux: {node.loc.file}:{node.loc.line}")
         if isinstance(node, GenericInvocation):
             lines.extend(_render_invocation(node, source_comments))
         elif isinstance(node, Item):

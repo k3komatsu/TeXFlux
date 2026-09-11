@@ -1,11 +1,11 @@
-# Beamercraft TeX-first DSL v1 仕様
+# TeXFlux TeX-first DSL v1 仕様
 
 ## 0. ステータス
 
-本書は Beamercraft v1 の normative specification である。実装、README、
+本書は TeXFlux v1 の normative specification である。実装、README、
 examples、unit test、golden test は本書に従う。
 
-Beamercraft は Python 3.11 以上で動作する TeX-first preprocessor である。
+TeXFlux は Python 3.11 以上で動作する TeX-first preprocessor である。
 TeX の意味論を置き換えず、行構造、indentation、environment の
 begin/end、構造化した required argument、itemize の定型だけを扱う。
 
@@ -14,7 +14,7 @@ begin/end、構造化した required argument、itemize の定型だけを扱う
 ~~~text
 \ = TeX command
 @ = TeX environment
-! = Beamercraft special construct
+! = TeXFlux special construct
 ~~~
 
 prefix の意味は字句的に決まり、template knowledge、package、command
@@ -24,7 +24,7 @@ registry、environment registry、既知の LaTeX 名には依存しない。
 
 ### 1.1 TeX-first
 
-通常の source line は raw TeX である。Beamercraft は inline/raw TeX を
+通常の source line は raw TeX である。TeXFlux は inline/raw TeX を
 parse、validate、normalize、escape しない。
 
 ~~~text
@@ -43,13 +43,13 @@ parser は v1 に存在しない。
 
 - \name は TeX command。
 - @name: は TeX environment。
-- !name は Beamercraft special construct。
+- !name は TeXFlux special construct。
 
 同じ名前でも prefix が違えば別の構文要素である。@ は environment
 専用であり、suite marker のない @name または @name{...} は syntax
 error である。
 
-! は Beamercraft special namespace 専用である。未登録の special は
+! は TeXFlux special namespace 専用である。未登録の special は
 DirectiveError になる。組み込み special は block、items、vpad であり、
 arg と body は structured invocation の explicit fallback である。
 
@@ -72,7 +72,7 @@ environment name として読む。
 
 ### 2.2 indentation
 
-通常の Beamercraft nesting は ASCII space 四個単位である。
+通常の TeXFlux nesting は ASCII space 四個単位である。
 
 ~~~text
 @frame{タイトル}:
@@ -155,7 +155,7 @@ group 内部の colon と >> は opaque raw text である。
 
 ### 3.4 top-level trailing colon の予約
 
-top-level の末尾 colon は Beamercraft の予約構文である。
+top-level の末尾 colon は TeXFlux の予約構文である。
 
 ~~~text
 \textbf{注意}:
@@ -269,7 +269,7 @@ Y
 ~~~
 
 suite 内は raw text 限定ではない。nested environment、special、
-stack も通常の Beamercraft 構文として normalize される。
+stack も通常の TeXFlux 構文として normalize される。
 
 ~~~text
 \foo:
@@ -688,8 +688,8 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 将来の source map は概念的に次の bridge を提供できる。
 
 ~~~text
-Beamercraft source
-    <-> Beamercraft source map
+TeXFlux source
+    <-> TeXFlux source map
 generated .tex
     <-> SyncTeX
 PDF

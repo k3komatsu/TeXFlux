@@ -1,6 +1,6 @@
 import unittest
 
-from beamercraft.ast import (
+from texflux.ast import (
     ArgumentLayout,
     GroupKind,
     InvocationKind,
@@ -9,8 +9,8 @@ from beamercraft.ast import (
     SpecialInvocation,
     Stack,
 )
-from beamercraft.errors import ParseError
-from beamercraft.parser import parse
+from texflux.errors import ParseError
+from texflux.parser import parse
 
 
 class ParserTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class ParserTests(unittest.TestCase):
             "    BODY\n"
             "!items:\n"
             "    - A\n",
-            "x.bmc",
+            "x.tfx",
         )
         raw, environment, special = document.body.nodes
         self.assertIsInstance(raw, RawTex)
@@ -35,7 +35,7 @@ class ParserTests(unittest.TestCase):
     def test_raw_and_literal_at_lines(self):
         document = parse(
             "  raw\n@@directive\ninside @not-a-directive\n",
-            "x.bmc",
+            "x.tfx",
         )
         self.assertEqual(
             document.body.nodes,
@@ -54,7 +54,7 @@ class ParserTests(unittest.TestCase):
             "\\foo{A}\n"
             "\\verb|a >> b|\n"
             "\\includegraphics[width=.8\\textwidth]{fig.pdf}\n",
-            "x.bmc",
+            "x.tfx",
         )
         self.assertEqual(
             [node.text for node in document.body.nodes],
@@ -72,7 +72,7 @@ class ParserTests(unittest.TestCase):
             "\\alpha>> \\beta\n",
         ):
             with self.subTest(source=source):
-                document = parse(source, "x.bmc")
+                document = parse(source, "x.tfx")
                 self.assertEqual(
                     document.body.nodes,
                     (
@@ -87,7 +87,7 @@ class ParserTests(unittest.TestCase):
         document = parse(
             r"\foo{a{b}c}[x{y]z}]<2->:"
             "\n    BODY\n",
-            "x.bmc",
+            "x.tfx",
         )
         node = document.body.nodes[0]
         self.assertIsInstance(node, ParsedInvocation)
@@ -107,12 +107,12 @@ class ParserTests(unittest.TestCase):
         first = parse(
             r"\foo{A >> B}:"
             "\n    \\bar\n",
-            "x.bmc",
+            "x.tfx",
         ).body.nodes[0]
         second = parse(
             r"\foo{\texttt{A: B}}:"
             "\n    \\bar\n",
-            "x.bmc",
+            "x.tfx",
         ).body.nodes[0]
         self.assertIsInstance(first, ParsedInvocation)
         self.assertEqual(first.groups[0].value, "A >> B")
@@ -123,7 +123,7 @@ class ParserTests(unittest.TestCase):
         document = parse(
             "\\foo{x} >> @bar[y] >> !items:\n"
             "    - A\n",
-            "x.bmc",
+            "x.tfx",
         )
         node = document.body.nodes[0]
         self.assertIsInstance(node, Stack)
@@ -133,7 +133,7 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(node.segments[2].name, "items")
 
     def test_starred_environment_names_are_scanned(self):
-        node = parse("@align*:\n    x &= y\n", "x.bmc").body.nodes[0]
+        node = parse("@align*:\n    x &= y\n", "x.tfx").body.nodes[0]
         self.assertIsInstance(node, ParsedInvocation)
         self.assertEqual(node.name, "align*")
         self.assertEqual(node.kind, InvocationKind.ENVIRONMENT)
@@ -144,7 +144,7 @@ class ParserTests(unittest.TestCase):
             "    @bar:\n"
             "        BODY\n"
             "            indented\n",
-            "x.bmc",
+            "x.tfx",
         )
         outer = document.body.nodes[0]
         inner = outer.suite.nodes[0]
@@ -152,46 +152,46 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(inner.suite.nodes[1].text, "    indented")
 
     def test_invalid_directive_indentation_and_missing_colon_have_locations(self):
-        with self.assertRaisesRegex(ParseError, r"x\.bmc:2:7: parse error"):
-            parse("@foo:\n      @bar\n", "x.bmc")
-        with self.assertRaisesRegex(ParseError, r"x\.bmc:2:5: parse error"):
-            parse("root\n    \\foo:\n        BODY\n", "x.bmc")
+        with self.assertRaisesRegex(ParseError, r"x\.tfx:2:7: parse error"):
+            parse("@foo:\n      @bar\n", "x.tfx")
+        with self.assertRaisesRegex(ParseError, r"x\.tfx:2:5: parse error"):
+            parse("root\n    \\foo:\n        BODY\n", "x.tfx")
         with self.assertRaisesRegex(ParseError, "environment directives"):
-            parse("@foo{A}\n", "x.bmc")
+            parse("@foo{A}\n", "x.tfx")
 
     def test_top_level_trailing_colon_reserves_structural_syntax(self):
         node = parse(
             "\\textbf{注意}:\n"
             "    本文\n",
-            "x.bmc",
+            "x.tfx",
         ).body.nodes[0]
         self.assertIsInstance(node, ParsedInvocation)
         self.assertEqual(node.kind, InvocationKind.COMMAND)
         with self.assertRaisesRegex(ParseError, "indented suite"):
-            parse("\\textbf{注意}:\n", "x.bmc")
+            parse("\\textbf{注意}:\n", "x.tfx")
         with self.assertRaisesRegex(ParseError, "trailing token"):
-            parse("\\textbf{注意}: 本文\n", "x.bmc")
-        spaced = parse("\\foo :\n    BODY\n", "x.bmc").body.nodes[0]
+            parse("\\textbf{注意}: 本文\n", "x.tfx")
+        spaced = parse("\\foo :\n    BODY\n", "x.tfx").body.nodes[0]
         self.assertIsInstance(spaced, ParsedInvocation)
         self.assertIsNotNone(spaced.suite)
         with self.assertRaises(ParseError):
-            parse("\\verb|x|:\n    BODY\n", "x.bmc")
+            parse("\\verb|x|:\n    BODY\n", "x.tfx")
 
     def test_failed_group_scan_without_structure_stays_raw(self):
-        document = parse("\\centering{\n", "x.bmc")
+        document = parse("\\centering{\n", "x.tfx")
         self.assertEqual(document.body.nodes[0].text, "\\centering{")
 
     def test_tabs_are_rejected_at_first_tab(self):
-        with self.assertRaisesRegex(ParseError, r"x\.bmc:2:3: parse error"):
-            parse("ok\n  \tbad\n", "x.bmc")
+        with self.assertRaisesRegex(ParseError, r"x\.tfx:2:3: parse error"):
+            parse("ok\n  \tbad\n", "x.tfx")
 
     def test_crlf_is_normalized_and_columns_count_unicode_characters(self):
-        document = parse("日本語\r\n\\foo{A}:\r\n    BODY\r\n", "x.bmc")
+        document = parse("日本語\r\n\\foo{A}:\r\n    BODY\r\n", "x.tfx")
         raw, invocation = document.body.nodes
         self.assertEqual(raw.text, "日本語")
         self.assertEqual(invocation.loc.line, 2)
         self.assertEqual(invocation.groups[0].loc.column, 5)
-        cr_only = parse("first\rsecond\r", "x.bmc")
+        cr_only = parse("first\rsecond\r", "x.tfx")
         self.assertEqual(
             [line.text for line in cr_only.body.nodes],
             ["first", "second"],
@@ -208,7 +208,7 @@ class ParserTests(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 with self.assertRaises(ParseError):
-                    parse(source, "x.bmc")
+                    parse(source, "x.tfx")
 
     def test_inline_and_block_explicit_nodes_are_parsed(self):
         document = parse(
@@ -216,7 +216,7 @@ class ParserTests(unittest.TestCase):
             "    !arg{INLINE}\n"
             "    !arg:\n"
             "        BLOCK\n",
-            "x.bmc",
+            "x.tfx",
         )
         invocation = document.body.nodes[0]
         inline, block = invocation.suite.nodes
@@ -229,7 +229,7 @@ class ParserTests(unittest.TestCase):
             "\\foo{HEADER}:\n"
             "    @bar:\n"
             "        BODY\n",
-            "x.bmc",
+            "x.tfx",
         )
         invocation = document.body.nodes[0]
         self.assertIsInstance(invocation, ParsedInvocation)
@@ -250,15 +250,15 @@ class ParserTests(unittest.TestCase):
         for source in invalid:
             with self.subTest(source=source):
                 with self.assertRaises(ParseError):
-                    parse(source, "x.bmc")
+                    parse(source, "x.tfx")
         with self.assertRaisesRegex(ParseError, "indented suite"):
-            parse("\\foo:\n", "x.bmc")
+            parse("\\foo:\n", "x.tfx")
 
     def test_stack_requires_a_suite_and_prefixes(self):
         with self.assertRaisesRegex(ParseError, "suite marker"):
-            parse("\\foo >> @bar\n", "x.bmc")
+            parse("\\foo >> @bar\n", "x.tfx")
         with self.assertRaisesRegex(ParseError, "each stack segment"):
-            parse("\\foo >> bar:\n    BODY\n", "x.bmc")
+            parse("\\foo >> bar:\n    BODY\n", "x.tfx")
 
 
 if __name__ == "__main__":

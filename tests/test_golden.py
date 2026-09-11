@@ -1,13 +1,13 @@
 from pathlib import Path
 import unittest
 
-from beamercraft import compile_text
+from texflux import compile_text
 
 
 class GoldenTests(unittest.TestCase):
     def test_golden_outputs_are_exact(self):
         root = Path(__file__).with_name("golden")
-        input_paths = sorted(root.glob("*/input.bmc"))
+        input_paths = sorted(root.glob("*/input.tfx"))
         self.assertEqual(
             {path.parent.name for path in input_paths},
             {
@@ -41,8 +41,8 @@ class GoldenTests(unittest.TestCase):
         for stem in ("basic", "structured", "stacked-items"):
             with self.subTest(example=stem):
                 actual = compile_text(
-                    (root / f"{stem}.bmc").read_text(encoding="utf-8"),
-                    filename=f"examples/{stem}.bmc",
+                    (root / f"{stem}.tfx").read_text(encoding="utf-8"),
+                    filename=f"examples/{stem}.tfx",
                 )
                 expected = (root / f"{stem}.tex").read_text(encoding="utf-8")
                 self.assertEqual(actual, expected)
@@ -50,8 +50,8 @@ class GoldenTests(unittest.TestCase):
     def test_converted_content_example_compiles(self):
         root = Path(__file__).parents[1] / "examples"
         output = compile_text(
-            (root / "content.bmc").read_text(encoding="utf-8"),
-            filename="examples/content.bmc",
+            (root / "content.tfx").read_text(encoding="utf-8"),
+            filename="examples/content.tfx",
         )
         self.assertIn("\\rightnotebox{Note}{", output)
         self.assertIn("\\begin{itemize}", output)

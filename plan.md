@@ -1,6 +1,6 @@
-# Beamercraft v1 実装計画
+# TeXFlux v1 実装計画
 
-この計画は beamercraft_tex_first_dsl_v1_spec.md の実装計画である。
+この計画は texflux_tex_first_dsl_v1_spec.md の実装計画である。
 prefix の責務と structured command の long argument を一つの決定的な
 pipelineに固定する。
 
@@ -43,7 +43,7 @@ pipelineに固定する。
 ~~~text
 \foo    = TeX command
 @foo    = TeX environment
-!foo    = Beamercraft special
+!foo    = TeXFlux special
 ~~~
 
 ordinary command line は raw TeX である。先頭が backslash の行は、
@@ -55,7 +55,7 @@ top-level trailing colon は予約する。group 内部の colon と >> は raw
 group content として扱う。environment name は registry なしで scanし、
 star や必要な punctuation を許す。
 
-depth 0 の colon を segment の後ろで認識した場合は Beamercraft syntax
+depth 0 の colon を segment の後ろで認識した場合は TeXFlux syntax
 として予約し、末尾の non-space token でなければ error にする。segment
 と colon の間の空白は許容する。これにより `\textbf{注意}: 本文` は
 raw TeX へ戻らない。
@@ -159,7 +159,7 @@ structural indentation とする。候補でない raw TeX 行の追加 indentat
 - !items の suite は構造 node を作らず raw lines として item parser に渡す
 
 colon 以下の suite は通常の Block parser へ渡す。suite内の
-Beamercraft syntax は command、environment、special を問わず使用できる。
+TeXFlux syntax は command、environment、special を問わず使用できる。
 
 ## 6. Normalization 実装
 
@@ -276,7 +276,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - command suite 全体が一個の long argument
 - compact argument と suite argument の順序
 - suite 内の複数 statement が同一 argument
-- suite 内 nested Beamercraft node
+- suite 内 nested TeXFlux node
 - !block standalone
 - command implicit suite 内の !block が double brace
 - explicit !arg の複数 long argument

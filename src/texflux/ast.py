@@ -1,4 +1,4 @@
-"""Syntax and canonical AST nodes for Beamercraft."""
+"""Syntax and canonical AST nodes for TeXFlux."""
 
 from __future__ import annotations
 

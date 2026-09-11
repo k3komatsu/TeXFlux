@@ -1,6 +1,6 @@
 import unittest
 
-from beamercraft.ast import (
+from texflux.ast import (
     Argument,
     ArgumentLayout,
     Block,
@@ -15,7 +15,7 @@ from beamercraft.ast import (
 
 class AstTests(unittest.TestCase):
     def test_nodes_are_frozen_and_keep_locations(self):
-        loc = SourceLocation("slides.bmc", 3, 5)
+        loc = SourceLocation("slides.tfx", 3, 5)
         raw = RawTex("BODY", loc)
         argument = Argument(GroupKind.REQUIRED, "A", ArgumentLayout.INLINE, loc)
         node = GenericInvocation("foo", (argument,), Block((raw,), loc), loc)
@@ -26,7 +26,7 @@ class AstTests(unittest.TestCase):
             raw.text = "changed"
 
     def test_brace_group_is_a_canonical_node_with_a_location(self):
-        loc = SourceLocation("slides.bmc", 8, 5)
+        loc = SourceLocation("slides.tfx", 8, 5)
         group = BraceGroup(Block((RawTex("BODY", loc),), loc), loc)
 
         self.assertEqual(group.loc, loc)

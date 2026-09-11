@@ -1,6 +1,6 @@
-# Beamercraft
+# TeXFlux
 
-Beamercraft is a small TeX-first preprocessor for LaTeX and Beamer. It removes
+TeXFlux is a small TeX-first preprocessor for LaTeX and Beamer. It removes
 structural boilerplate such as begin/end pairs, nested environments, long
 brace arguments, and repeated itemize markup without replacing TeX semantics.
 
@@ -9,10 +9,10 @@ The mental model is intentionally small:
 ~~~text
 \ = TeX command
 @ = TeX environment
-! = Beamercraft special
+! = TeXFlux special
 ~~~
 
-Ordinary source lines are raw TeX. Beamercraft does not parse, escape, or
+Ordinary source lines are raw TeX. TeXFlux does not parse, escape, or
 normalize TeX content.
 
 ## Requirements and installation
@@ -35,10 +35,10 @@ python -m pip install -e .
 
 ## Quick start
 
-Write a .bmc file:
+Write a .tfx file:
 
 ~~~text
-@frame{Hello, Beamercraft}:
+@frame{Hello, TeXFlux}:
     \vspace{-.5em}
     !items:
         - TeX remains raw
@@ -48,22 +48,25 @@ Write a .bmc file:
 Compile it:
 
 ~~~bash
-beamercraft slides.bmc -o slides.tex
+texflux compile slides.tfx -o slides.tex
 ~~~
 
 The module form is also available:
 
 ~~~bash
-python -m beamercraft slides.bmc -o slides.tex
+python -m texflux compile slides.tfx -o slides.tex
 ~~~
 
 Use source comments when inspecting generated TeX:
 
 ~~~bash
-beamercraft slides.bmc -o slides.tex --source-comments
+texflux compile slides.tfx -o slides.tex --source-comments
 ~~~
 
-Beamercraft compiles the complete input before writing the output. A failed
+With `--source-comments`, generated source lines are prefixed with comments
+such as `% texflux: slides.tfx:1`.
+
+TeXFlux compiles the complete input before writing the output. A failed
 compile therefore leaves an existing output file unchanged. Input and output
 must be different paths.
 
@@ -81,7 +84,7 @@ Normal DSL nesting uses four ASCII spaces.
 - \foo >> @bar >> !block: — pure nested-suite desugaring
 - @@foo — raw @foo at a structural position
 
-The top-level trailing colon is reserved by Beamercraft. Thus
+The top-level trailing colon is reserved by TeXFlux. Thus
 \textbf{注意}: is a structured-command header and requires an indented suite.
 When a depth-0 colon follows a structural segment, it is reserved immediately;
 the colon must be the final non-space token or the line is a syntax error.
@@ -274,29 +277,29 @@ levels use four spaces.
 ## Python API
 
 ~~~python
-from beamercraft import compile_text
+from texflux import compile_text
 
 source = r"""@frame{API example}:
     Body in raw TeX
 """
-tex = compile_text(source, filename="slides.bmc")
+tex = compile_text(source, filename="slides.tfx")
 ~~~
 
 The pipeline stages are also available:
 
 ~~~python
-from beamercraft import normalize, parse, render
+from texflux import normalize, parse, render
 
-document = normalize(parse(source, filename="slides.bmc"))
+document = normalize(parse(source, filename="slides.tfx"))
 tex = render(document)
 ~~~
 
 The renderer accepts canonical AST only. Syntax-only invocation, special, and
 stack nodes are removed or expanded before rendering.
 
-## What Beamercraft does not do
+## What TeXFlux does not do
 
-Beamercraft deliberately does not parse TeX, discover LaTeX packages, validate
+TeXFlux deliberately does not parse TeX, discover LaTeX packages, validate
 command argument counts, escape user text, provide variables or expressions,
 or load user-defined plugins implicitly. TeX semantics remain the responsibility
 of the TeX toolchain.
@@ -309,24 +312,24 @@ directive can turn !result into canonical nodes without returning a TeX string.
 The [examples/](examples/) directory contains runnable sources and exact output
 for the small examples:
 
-- [basic.bmc](examples/basic.bmc) — raw TeX, an environment, and items
-- [structured.bmc](examples/structured.bmc) — explicit arguments, block,
+- [basic.tfx](examples/basic.tfx) — raw TeX, an environment, and items
+- [structured.tfx](examples/structured.tfx) — explicit arguments, block,
   and environment body
-- [stacked-items.bmc](examples/stacked-items.bmc) — pure stacking and nested items
-- [content.bmc](examples/content.bmc) — converted real-world Beamer content
+- [stacked-items.tfx](examples/stacked-items.tfx) — pure stacking and nested items
+- [content.tfx](examples/content.tfx) — converted real-world Beamer content
 - [content.tex](examples/content.tex) — original TeX reference
 
 Compile a small example from the repository root:
 
 ~~~bash
-PYTHONPATH=src python3 -m beamercraft examples/basic.bmc -o /tmp/basic.tex
+PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
 diff -u examples/basic.tex /tmp/basic.tex
 ~~~
 
 Compile the converted content example:
 
 ~~~bash
-PYTHONPATH=src python3 -m beamercraft examples/content.bmc -o /tmp/content.generated.tex
+PYTHONPATH=src python3 -m texflux compile examples/content.tfx -o /tmp/content.generated.tex
 ~~~
 
 ## Development
@@ -339,5 +342,5 @@ PYTHONPATH=src python3 -m unittest discover -v
 
 The optional LaTeX integration test skips when pdflatex is unavailable. The
 normative language definition is in
-[beamercraft_tex_first_dsl_v1_spec.md](beamercraft_tex_first_dsl_v1_spec.md),
+[texflux_tex_first_dsl_v1_spec.md](texflux_tex_first_dsl_v1_spec.md),
 and the implementation phases are in [plan.md](plan.md).

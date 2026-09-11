@@ -1,7 +1,7 @@
 import unittest
 
-from beamercraft import compile_text
-from beamercraft.ast import (
+from texflux import compile_text
+from texflux.ast import (
     Argument,
     Block,
     BraceGroup,
@@ -12,14 +12,14 @@ from beamercraft.ast import (
     SpecialInvocation,
     Stack,
 )
-from beamercraft.errors import DirectiveError, ParseError, ValidationError
-from beamercraft.normalize import (
+from texflux.errors import DirectiveError, ParseError, ValidationError
+from texflux.normalize import (
     BUILTIN_DIRECTIVES,
     DirectiveRegistry,
     normalize,
 )
-from beamercraft.parser import parse
-from beamercraft.render import render
+from texflux.parser import parse
+from texflux.render import render
 
 
 class CompileTests(unittest.TestCase):
@@ -313,7 +313,7 @@ class CompileTests(unittest.TestCase):
             parse(
                 "!vpad{-1em}{2em}:\n"
                 "    contents\n",
-                filename="vpad.bmc",
+                filename="vpad.tfx",
             )
         )
         before, contents, after = document.body.nodes
@@ -394,9 +394,9 @@ class CompileTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             ValidationError,
-            r"vpad\.bmc:1:6: validation error",
+            r"vpad\.tfx:1:6: validation error",
         ):
-            compile_text("!vpad[-1em]:\n    contents\n", filename="vpad.bmc")
+            compile_text("!vpad[-1em]:\n    contents\n", filename="vpad.tfx")
 
     def test_stack_special_segments_select_explicit_mode(self):
         self.assertEqual(
@@ -435,7 +435,7 @@ class CompileTests(unittest.TestCase):
             parse(
                 "\\foo >> @bar >> !block:\n"
                 "    A\n",
-                filename="stack.bmc",
+                filename="stack.tfx",
             )
         )
         outer = document.body.nodes[0]
@@ -473,7 +473,7 @@ class CompileTests(unittest.TestCase):
                 "!items:\n"
                 "    -<2->[Label] first\n"
                 "      continuation\n",
-                filename="items.bmc",
+                filename="items.tfx",
             )
         )
         itemize = document.body.nodes[0]
@@ -574,7 +574,7 @@ class CompileTests(unittest.TestCase):
     def test_validation_and_directive_errors_keep_source_locations(self):
         with self.assertRaisesRegex(
             ValidationError,
-            r"mix\.bmc:4:5: validation error",
+            r"mix\.tfx:4:5: validation error",
         ):
             compile_text(
                 "\\foo:\n"
@@ -582,29 +582,29 @@ class CompileTests(unittest.TestCase):
                 "        A\n"
                 "    @bar:\n"
                 "        B\n",
-                filename="mix.bmc",
+                filename="mix.tfx",
             )
         with self.assertRaisesRegex(
             DirectiveError,
-            r"unknown\.bmc:1:1: directive error",
+            r"unknown\.tfx:1:1: directive error",
         ):
-            compile_text("!unknown\n", filename="unknown.bmc")
+            compile_text("!unknown\n", filename="unknown.tfx")
 
     def test_source_comments_and_final_lf(self):
         source = "@foo:\n    raw\n\n@@at\n"
         self.assertEqual(
             compile_text(
                 source,
-                filename="slides.bmc",
+                filename="slides.tfx",
                 source_comments=True,
             ),
-            "% beamercraft: slides.bmc:1\n"
+            "% texflux: slides.tfx:1\n"
             "\\begin{foo}\n"
-            "% beamercraft: slides.bmc:2\n"
+            "% texflux: slides.tfx:2\n"
             "raw\n"
             "\\end{foo}\n"
             "\n"
-            "% beamercraft: slides.bmc:4\n"
+            "% texflux: slides.tfx:4\n"
             "@at\n",
         )
 
@@ -618,15 +618,15 @@ class CompileTests(unittest.TestCase):
             "            B\n"
         )
         self.assertEqual(
-            compile_text(source, filename="slides.bmc", source_comments=True),
-            "% beamercraft: slides.bmc:1\n"
+            compile_text(source, filename="slides.tfx", source_comments=True),
+            "% texflux: slides.tfx:1\n"
             "\\foo{\n"
-            "% beamercraft: slides.bmc:3\n"
+            "% texflux: slides.tfx:3\n"
             "A\n"
             "}{\n"
-            "% beamercraft: slides.bmc:5\n"
+            "% texflux: slides.tfx:5\n"
             "{\n"
-            "% beamercraft: slides.bmc:6\n"
+            "% texflux: slides.tfx:6\n"
             "B\n"
             "}\n"
             "}\n",

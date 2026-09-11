@@ -2,13 +2,15 @@
 
 ## Project
 
-Beamercraft is a Python 3.11+ OSS project: a TeX-first, indentation-based
+TeXFlux is a Python 3.11+ OSS project: a TeX-first, indentation-based
 preprocessor that removes structural LaTeX/Beamer boilerplate without
 replacing TeX semantics.
 
 There is no legacy compatibility target. The normative language definition is
-beamercraft_tex_first_dsl_v1_spec.md; the approved implementation plan is
-plan.md. Read both completely before changing the DSL.
+texflux_tex_first_dsl_v1_spec.md; the TeX-first DSL implementation plan is
+plan.md, and the approved source-map/SyncTeX expansion plan is
+texflux_source_map_synctex_plan.md. Read the relevant plans completely before
+changing the DSL.
 
 ## Source-of-truth rules
 
@@ -17,7 +19,7 @@ The current v1 mental model is fixed:
 ~~~text
 \ = TeX command
 @ = TeX environment
-! = Beamercraft special construct
+! = TeXFlux special construct
 ~~~
 
 Do not reintroduce prefix-based command/environment inference. Do not inspect
@@ -29,8 +31,8 @@ The approved syntax is:
 - Ordinary TeX commands such as \vspace{...} are raw TeX.
 - \foo: and \foo >> ...: are structural command candidates.
 - @foo: is an environment. An @foo header without a suite is an error.
-- !foo is a Beamercraft special construct.
-- A top-level trailing colon is reserved by Beamercraft.
+- !foo is a TeXFlux special construct.
+- A top-level trailing colon is reserved by TeXFlux.
 - >> is pure single-child-suite desugaring.
 - !block: always emits one actual TeX brace group.
 - !items: is the itemize mini-grammar.
@@ -40,9 +42,9 @@ The approved syntax is:
 
 Unknown environment names must render because environment names are not looked
 up. Unknown special names must fail. Ordinary/raw TeX must remain opaque:
-Beamercraft may scan a leading command line only when a top-level structural
+TeXFlux may scan a leading command line only when a top-level structural
 token makes it a structural candidate. Group contents are never scanned for
-Beamercraft operators.
+TeXFlux operators.
 
 Structured command rules are deterministic:
 
@@ -105,7 +107,8 @@ has stopped.
 
 ## Implementation workflow
 
-Work test-first in the phases in plan.md:
+Work test-first in the phases in plan.md and, for source-map/SyncTeX work,
+texflux_source_map_synctex_plan.md:
 
 1. Read the affected specification sections and existing tests.
 2. Add the smallest failing unit or exact-output golden test.
@@ -124,7 +127,7 @@ python -m unittest discover
 ~~~
 
 LaTeX integration tests must detect the toolchain and skip when unavailable;
-LaTeX is never a Beamercraft runtime dependency.
+LaTeX is never a TeXFlux runtime dependency.
 
 ## Review checklist
 
