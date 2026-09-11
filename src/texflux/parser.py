@@ -13,7 +13,8 @@ from .ast import (
     InvocationKind,
     ParsedInvocation,
     RawTex,
-    SourceLocation,
+    SourcePosition,
+    SourceSpan,
     SpecialInvocation,
     Stack,
 )
@@ -40,6 +41,23 @@ class _PhysicalLine:
         return not self.text.strip(" ")
 
 
+def _source_end(source: str) -> SourcePosition:
+    if not source:
+        return SourcePosition(1, 1)
+    lines = source.split("\n")
+    if lines[-1] == "":
+        return SourcePosition(len(lines), 1)
+    return SourcePosition(len(lines), len(lines[-1]) + 1)
+
+
+def _block_span(boundary: SourceSpan, nodes: list) -> SourceSpan:
+    end = boundary.end
+    for node in nodes:
+        if node.span.end > end:
+            end = node.span.end
+    return SourceSpan(boundary.file, boundary.start, end)
+
+
 def _is_ascii_letter(char: str) -> bool:
     return "A" <= char <= "Z" or "a" <= char <= "z"
 
@@ -61,7 +79,7 @@ def scan_group(
     text: str,
     start: int,
     *,
-    loc: SourceLocation,
+    span: SourceSpan,
 ) -> tuple[int, str]:
     """Scan one inline group, returning the end offset and raw content."""
 
@@ -72,7 +90,7 @@ def scan_group(
             if text[index] == ">" and not _is_escaped(text, index):
                 return index + 1, text[start + 1 : index]
             index += 1
-        raise ParseError("unclosed overlay group", loc)
+        raise ParseError("unclosed overlay group", span)
 
     if opener == "{":
         depth = 1
@@ -87,7 +105,7 @@ def scan_group(
                     if depth == 0:
                         return index + 1, text[start + 1 : index]
             index += 1
-        raise ParseError("unclosed required group", loc)
+        raise ParseError("unclosed required group", span)
 
     if opener == "[":
         bracket_depth = 1
@@ -100,7 +118,7 @@ def scan_group(
                     brace_depth += 1
                 elif char == "}":
                     if brace_depth == 0:
-                        raise ParseError("mismatched group delimiter", loc)
+                        raise ParseError("mismatched group delimiter", span)
                     brace_depth -= 1
                 elif brace_depth == 0 and char == "[":
                     bracket_depth += 1
@@ -109,12 +127,12 @@ def scan_group(
                     if bracket_depth == 0:
                         return index + 1, text[start + 1 : index]
             index += 1
-        raise ParseError("unclosed optional group", loc)
+        raise ParseError("unclosed optional group", span)
 
-    raise ParseError("invalid group opener", loc)
+    raise ParseError("invalid group opener", span)
 
 
-def _has_top_level_trailing_colon(text: str, *, loc: SourceLocation) -> bool:
+def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
     """Check a failed command scan for a reserved trailing colon."""
 
     end = len(text.rstrip(" "))
@@ -122,7 +140,7 @@ def _has_top_level_trailing_colon(text: str, *, loc: SourceLocation) -> bool:
     while index < end:
         if text[index] in "{[<":
             try:
-                index, _ = scan_group(text, index, loc=loc)
+                index, _ = scan_group(text, index, span=span)
             except ParseError:
                 return False
             continue
@@ -135,17 +153,24 @@ class HeaderScanner:
 
     _PREFIXES = {"\\": InvocationKind.COMMAND, "@": InvocationKind.ENVIRONMENT}
 
-    def __init__(self, text: str, *, loc: SourceLocation):
+    def __init__(self, text: str, *, span: SourceSpan):
         self.text = text
-        self.loc = loc
+        self.span = span
         self.end = len(text.rstrip(" "))
         self.saw_structure = False
 
-    def _loc(self, offset: int) -> SourceLocation:
-        return SourceLocation(self.loc.file, self.loc.line, self.loc.column + offset)
+    def _span(self, start: int, end: int | None = None) -> SourceSpan:
+        if end is None:
+            end = start
+        return SourceSpan(
+            self.span.file,
+            SourcePosition(self.span.start.line, self.span.start.column + start),
+            SourcePosition(self.span.start.line, self.span.start.column + end),
+        )
 
     def _error(self, message: str, offset: int = 0) -> ParseError:
-        return ParseError(message, self._loc(offset))
+        end = min(offset + 1, self.end)
+        return ParseError(message, self._span(offset, end))
 
     def scan(self) -> HeaderScanResult:
         if self.end == 0:
@@ -265,10 +290,16 @@ class HeaderScanner:
                 "[": GroupKind.OPTIONAL,
                 "<": GroupKind.OVERLAY,
             }[opener]
-            group_loc = self._loc(position)
-            position, value = scan_group(self.text, position, loc=group_loc)
+            group_start = position
+            group_span = self._span(group_start, group_start + 1)
+            position, value = scan_group(
+                self.text,
+                position,
+                span=group_span,
+            )
+            group_span = self._span(group_start, position)
             groups.append(
-                Argument(group_kind, value, ArgumentLayout.INLINE, group_loc)
+                Argument(group_kind, value, ArgumentLayout.INLINE, group_span)
             )
 
         if position < self.end and self.text[position] not in " :>":
@@ -277,10 +308,10 @@ class HeaderScanner:
                 position,
             )
 
-        loc = self._loc(segment_start)
+        segment_span = self._span(segment_start, position)
         if prefix == "!":
-            return SpecialInvocation(name, tuple(groups), None, loc), position
-        return ParsedInvocation(kind, name, tuple(groups), None, loc), position
+            return SpecialInvocation(name, tuple(groups), None, segment_span), position
+        return ParsedInvocation(kind, name, tuple(groups), None, segment_span), position
 
 
 class _Parser:
@@ -290,6 +321,11 @@ class _Parser:
         if physical and physical[-1] == "":
             physical.pop()
         self.filename = filename
+        self.document_span = SourceSpan(
+            filename,
+            SourcePosition(1, 1),
+            _source_end(source),
+        )
         self.lines = tuple(
             _PhysicalLine(text, number)
             for number, text in enumerate(physical, 1)
@@ -300,16 +336,34 @@ class _Parser:
             if tab >= 0:
                 raise ParseError(
                     "tab characters are not allowed",
-                    SourceLocation(filename, line.number, tab + 1),
+                    SourceSpan(
+                        filename,
+                        SourcePosition(line.number, tab + 1),
+                        SourcePosition(line.number, tab + 2),
+                    ),
                 )
 
     def parse(self) -> Document:
-        loc = SourceLocation(self.filename, 1, 1)
-        body = self._block(0, loc)
-        return Document(body, loc)
+        body = self._block(0, self.document_span)
+        return Document(body, self.document_span)
 
-    def _line_loc(self, line: _PhysicalLine) -> SourceLocation:
-        return SourceLocation(self.filename, line.number, line.indent + 1)
+    def _line_span(
+        self,
+        line: _PhysicalLine,
+        start_column: int = 1,
+        text: str | None = None,
+    ) -> SourceSpan:
+        if text is None:
+            text = line.text[start_column - 1 :]
+        return SourceSpan(
+            self.filename,
+            SourcePosition(line.number, start_column),
+            SourcePosition(line.number, start_column + len(text)),
+        )
+
+    def _header_span(self, line: _PhysicalLine, base: int) -> SourceSpan:
+        text = line.text[base:].rstrip(" ")
+        return self._line_span(line, base + 1, text)
 
     def _next_nonblank(self, index: int) -> int | None:
         while index < len(self.lines) and self.lines[index].blank:
@@ -319,7 +373,7 @@ class _Parser:
     def _block(
         self,
         base: int,
-        loc: SourceLocation,
+        boundary: SourceSpan,
         *,
         raw_suite: bool = False,
     ) -> Block:
@@ -345,11 +399,7 @@ class _Parser:
                     nodes.append(
                         RawTex(
                             "",
-                            SourceLocation(
-                                self.filename,
-                                blank_line.number,
-                                1,
-                            ),
+                            self._line_span(blank_line),
                         )
                     )
                 continue
@@ -362,20 +412,25 @@ class _Parser:
             first = rest[extra : extra + 1]
 
             if raw_suite:
-                nodes.append(RawTex(line.text[base:], self._line_loc(line)))
+                raw_text = line.text[base:]
+                nodes.append(
+                    RawTex(raw_text, self._line_span(line, base + 1, raw_text))
+                )
                 self.index += 1
                 continue
 
             if first == "@" and rest[extra : extra + 2] == "@@":
                 raw_text = rest[:extra] + rest[extra + 1 :]
-                nodes.append(RawTex(raw_text, self._line_loc(line)))
+                nodes.append(
+                    RawTex(raw_text, self._line_span(line, base + 1, rest))
+                )
                 self.index += 1
                 continue
 
             if first in {"@", "!"} and line.indent != base:
                 raise ParseError(
                     "invalid structural indentation",
-                    self._line_loc(line),
+                    self._line_span(line, line.indent + 1),
                 )
 
             if line.indent != base:
@@ -385,9 +440,12 @@ class _Parser:
                 ) is not None:
                     raise ParseError(
                         "invalid structural indentation",
-                        self._line_loc(line),
+                        self._line_span(line, line.indent + 1),
                     )
-                nodes.append(RawTex(line.text[base:], self._line_loc(line)))
+                raw_text = line.text[base:]
+                nodes.append(
+                    RawTex(raw_text, self._line_span(line, base + 1, raw_text))
+                )
                 self.index += 1
                 continue
 
@@ -402,30 +460,32 @@ class _Parser:
                     continue
 
             raw_text = line.text[base:]
-            nodes.append(RawTex(raw_text, self._line_loc(line)))
+            nodes.append(
+                RawTex(raw_text, self._line_span(line, base + 1, raw_text))
+            )
             self.index += 1
 
-        return Block(tuple(nodes), loc)
+        return Block(tuple(nodes), _block_span(boundary, nodes))
 
     def _scan_command_header(
         self,
         line: _PhysicalLine,
         base: int,
     ):
-        directive_loc = SourceLocation(self.filename, line.number, base + 1)
-        scanner = HeaderScanner(line.text[base:], loc=directive_loc)
+        header_span = self._header_span(line, base)
+        scanner = HeaderScanner(line.text[base:], span=header_span)
         try:
             result = scanner.scan()
         except ParseError:
             if scanner.saw_structure or _has_top_level_trailing_colon(
                 scanner.text,
-                loc=directive_loc,
+                span=header_span,
             ):
                 raise
             return None
         if not result.suite and len(result.segments) == 1:
             return None
-        return result, directive_loc
+        return result, header_span
 
     def _try_structural_command(
         self,
@@ -435,24 +495,24 @@ class _Parser:
         scanned = self._scan_command_header(line, base)
         if scanned is None:
             return None
-        result, directive_loc = scanned
-        return self._directive_result(base, result, directive_loc)
+        result, header_span = scanned
+        return self._directive_result(base, result, header_span)
 
     def _directive(self, line: _PhysicalLine, base: int):
         if line.indent != base:
             raise ParseError(
                 "invalid structural indentation",
-                self._line_loc(line),
+                self._line_span(line, line.indent + 1),
             )
-        directive_loc = SourceLocation(self.filename, line.number, base + 1)
-        result = HeaderScanner(line.text[base:], loc=directive_loc).scan()
-        return self._directive_result(base, result, directive_loc)
+        header_span = self._header_span(line, base)
+        result = HeaderScanner(line.text[base:], span=header_span).scan()
+        return self._directive_result(base, result, header_span)
 
     def _directive_result(
         self,
         base: int,
         result: HeaderScanResult,
-        directive_loc: SourceLocation,
+        header_span: SourceSpan,
     ):
         self.index += 1
 
@@ -460,7 +520,7 @@ class _Parser:
             if len(result.segments) > 1:
                 raise ParseError(
                     "stack requires a suite marker ':'",
-                    directive_loc,
+                    header_span,
                 )
             segment = result.segments[0]
             if (
@@ -469,7 +529,7 @@ class _Parser:
             ):
                 raise ParseError(
                     "environment directives require a suite marker ':'",
-                    segment.loc,
+                    segment.span,
                 )
             next_index = self._next_nonblank(self.index)
             if (
@@ -478,7 +538,10 @@ class _Parser:
             ):
                 raise ParseError(
                     "indented lines require a suite marker ':'",
-                    self._line_loc(self.lines[next_index]),
+                    self._line_span(
+                        self.lines[next_index],
+                        self.lines[next_index].indent + 1,
+                    ),
                 )
             return segment
 
@@ -490,7 +553,7 @@ class _Parser:
         ):
             raise ParseError(
                 "suite marker ':' requires an indented suite",
-                directive_loc,
+                header_span,
             )
         raw_suite = (
             isinstance(result.segments[-1], SpecialInvocation)
@@ -498,13 +561,13 @@ class _Parser:
         )
         suite = self._block(
             suite_base,
-            directive_loc,
+            header_span,
             raw_suite=raw_suite,
         )
 
         if len(result.segments) == 1:
-            return replace(result.segments[0], suite=suite)
-        return Stack(result.segments, suite, directive_loc)
+            return replace(result.segments[0], suite=suite, span=header_span)
+        return Stack(result.segments, suite, header_span)
 
 
 def parse(source: str, filename: str = "<string>") -> Document:

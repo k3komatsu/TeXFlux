@@ -40,11 +40,11 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(
             document.body.nodes,
             (
-                RawTex("  raw", document.body.nodes[0].loc),
-                RawTex("@directive", document.body.nodes[1].loc),
+                RawTex("  raw", document.body.nodes[0].span),
+                RawTex("@directive", document.body.nodes[1].span),
                 RawTex(
                     "inside @not-a-directive",
-                    document.body.nodes[2].loc,
+                    document.body.nodes[2].span,
                 ),
             ),
         )
@@ -78,7 +78,7 @@ class ParserTests(unittest.TestCase):
                     (
                         RawTex(
                             source.rstrip("\n"),
-                            document.body.nodes[0].loc,
+                            document.body.nodes[0].span,
                         ),
                     ),
                 )
@@ -189,8 +189,8 @@ class ParserTests(unittest.TestCase):
         document = parse("日本語\r\n\\foo{A}:\r\n    BODY\r\n", "x.tfx")
         raw, invocation = document.body.nodes
         self.assertEqual(raw.text, "日本語")
-        self.assertEqual(invocation.loc.line, 2)
-        self.assertEqual(invocation.groups[0].loc.column, 5)
+        self.assertEqual(invocation.span.start.line, 2)
+        self.assertEqual(invocation.groups[0].span.start.column, 5)
         cr_only = parse("first\rsecond\r", "x.tfx")
         self.assertEqual(
             [line.text for line in cr_only.body.nodes],

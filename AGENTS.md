@@ -148,7 +148,7 @@ Before finishing a DSL change, verify:
 - !arg around !block retains the intentional double brace;
 - >> is normalized before rendering and has no semantic terminal rule;
 - !items preserves overlay, label, multiline, and nested-list behavior;
-- source locations survive desugaring and special expansion;
+- source spans survive desugaring and special expansion;
 - exact-output golden tests cover the representative command/environment/special
   example;
 - no speculative plugin, backend, or TeX-semantic machinery was introduced.

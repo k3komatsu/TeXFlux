@@ -297,6 +297,11 @@ tex = render(document)
 The renderer accepts canonical AST only. Syntax-only invocation, special, and
 stack nodes are removed or expanded before rendering.
 
+Use `compile_with_map` when generated fragments need source provenance. The
+returned `CompilationResult.text` is the same TeX string as `compile_text`,
+and `CompilationResult.rendered.fragments` contains generated ranges, source
+spans, and rendering roles.
+
 ## What TeXFlux does not do
 
 TeXFlux deliberately does not parse TeX, discover LaTeX packages, validate

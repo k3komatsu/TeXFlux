@@ -317,17 +317,17 @@ class CompileTests(unittest.TestCase):
             )
         )
         before, contents, after = document.body.nodes
-        self.assertEqual((before.loc.line, before.loc.column), (1, 6))
+        self.assertEqual((before.span.start.line, before.span.start.column), (1, 6))
         self.assertEqual(
-            (before.arguments[0].loc.line, before.arguments[0].loc.column),
+            (before.arguments[0].span.start.line, before.arguments[0].span.start.column),
             (1, 6),
         )
-        self.assertEqual((contents.loc.line, contents.loc.column), (2, 5))
+        self.assertEqual((contents.span.start.line, contents.span.start.column), (2, 5))
         self.assertEqual(
-            (after.arguments[0].loc.line, after.arguments[0].loc.column),
+            (after.arguments[0].span.start.line, after.arguments[0].span.start.column),
             (1, 12),
         )
-        self.assertEqual((after.loc.line, after.loc.column), (1, 12))
+        self.assertEqual((after.span.start.line, after.span.start.column), (1, 12))
 
     def test_vpad_works_as_a_stack_segment(self):
         self.assertEqual(
@@ -439,13 +439,13 @@ class CompileTests(unittest.TestCase):
             )
         )
         outer = document.body.nodes[0]
-        self.assertEqual((outer.loc.line, outer.loc.column), (1, 1))
+        self.assertEqual((outer.span.start.line, outer.span.start.column), (1, 1))
         outer_argument = outer.arguments[0].value
         middle = outer_argument.nodes[0]
-        self.assertEqual((middle.loc.line, middle.loc.column), (1, 9))
+        self.assertEqual((middle.span.start.line, middle.span.start.column), (1, 9))
         inner = middle.body.nodes[0]
-        self.assertEqual((inner.loc.line, inner.loc.column), (1, 17))
-        self.assertEqual((inner.body.nodes[0].loc.line, inner.body.nodes[0].loc.column), (2, 5))
+        self.assertEqual((inner.span.start.line, inner.span.start.column), (1, 17))
+        self.assertEqual((inner.body.nodes[0].span.start.line, inner.body.nodes[0].span.start.column), (2, 5))
 
     def test_items_forms_and_nested_lists(self):
         source = (
@@ -478,18 +478,18 @@ class CompileTests(unittest.TestCase):
         )
         itemize = document.body.nodes[0]
         item = itemize.body.nodes[0]
-        self.assertEqual((item.loc.line, item.loc.column), (2, 5))
+        self.assertEqual((item.span.start.line, item.span.start.column), (2, 5))
         self.assertEqual(
-            (item.overlay.loc.line, item.overlay.loc.column),
+            (item.overlay.span.start.line, item.overlay.span.start.column),
             (2, 6),
         )
         self.assertEqual(
-            (item.label.loc.line, item.label.loc.column),
+            (item.label.span.start.line, item.label.span.start.column),
             (2, 10),
         )
         continuation = item.continuation.nodes[0]
         self.assertEqual(
-            (continuation.loc.line, continuation.loc.column),
+            (continuation.span.start.line, continuation.span.start.column),
             (3, 7),
         )
 
@@ -571,7 +571,7 @@ class CompileTests(unittest.TestCase):
         with self.assertRaises(DirectiveError):
             compile_text("!body{INLINE}\n")
 
-    def test_validation_and_directive_errors_keep_source_locations(self):
+    def test_validation_and_directive_errors_keep_source_spans(self):
         with self.assertRaisesRegex(
             ValidationError,
             r"mix\.tfx:4:5: validation error",
@@ -678,7 +678,7 @@ class CompileTests(unittest.TestCase):
     def test_custom_handler_is_ast_to_ast_and_is_normalized(self):
         def result(node, _context):
             return (
-                GenericInvocation("infobox", (), node.suite, node.loc),
+                GenericInvocation("infobox", (), node.suite, node.span),
             )
 
         registry = BUILTIN_DIRECTIVES.copy()
@@ -698,7 +698,7 @@ class CompileTests(unittest.TestCase):
 
     def test_custom_handler_may_return_raw_tex_or_brace_group(self):
         def result(node, _context):
-            return (RawTex("generated", node.loc),)
+            return (RawTex("generated", node.span),)
 
         registry = BUILTIN_DIRECTIVES.copy()
         registry.register("result", result)
@@ -711,8 +711,8 @@ class CompileTests(unittest.TestCase):
         def grouped(node, _context):
             return (
                 BraceGroup(
-                    Block((RawTex("inside", node.loc),), node.loc),
-                    node.loc,
+                    Block((RawTex("inside", node.span),), node.span),
+                    node.span,
                 ),
             )
 

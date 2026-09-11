@@ -12,7 +12,8 @@ from .ast import (
     Item,
     ParsedInvocation,
     RawTex,
-    SourceLocation,
+    SourcePosition,
+    SourceSpan,
     SpecialInvocation,
     Stack,
 )
@@ -24,7 +25,14 @@ from .normalize import (
     normalize,
 )
 from .parser import HeaderScanner, parse
-from .render import render
+from .render import (
+    CompilationResult,
+    GeneratedSpan,
+    RenderedDocument,
+    RenderedFragment,
+    render,
+    render_with_provenance,
+)
 
 
 def compile_text(
@@ -33,8 +41,25 @@ def compile_text(
     filename: str = "<string>",
     source_comments: bool = False,
 ) -> str:
+    return compile_with_map(
+        source,
+        filename=filename,
+        source_comments=source_comments,
+    ).text
+
+
+def compile_with_map(
+    source: str,
+    *,
+    filename: str = "<string>",
+    source_comments: bool = False,
+) -> CompilationResult:
     document = normalize(parse(source, filename=filename))
-    return render(document, source_comments=source_comments)
+    rendered = render_with_provenance(
+        document,
+        source_comments=source_comments,
+    )
+    return CompilationResult(rendered.text, rendered)
 
 
 __all__ = [
@@ -43,10 +68,12 @@ __all__ = [
     "BUILTIN_DIRECTIVES",
     "Block",
     "BraceGroup",
+    "CompilationResult",
     "DirectiveError",
     "DirectiveRegistry",
     "Document",
     "GenericInvocation",
+    "GeneratedSpan",
     "GroupKind",
     "HeaderScanner",
     "InvocationKind",
@@ -54,14 +81,19 @@ __all__ = [
     "ParseError",
     "ParsedInvocation",
     "RawTex",
-    "SourceLocation",
+    "RenderedDocument",
+    "RenderedFragment",
+    "SourcePosition",
+    "SourceSpan",
     "SpecialInvocation",
     "Stack",
     "TeXFluxError",
     "TransformContext",
     "ValidationError",
     "compile_text",
+    "compile_with_map",
     "normalize",
     "parse",
     "render",
+    "render_with_provenance",
 ]

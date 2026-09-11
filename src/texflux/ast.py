@@ -6,11 +6,19 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 
-@dataclass(frozen=True, slots=True)
-class SourceLocation:
-    file: str
+@dataclass(frozen=True, slots=True, order=True)
+class SourcePosition:
+    """One-based position whose columns count Python Unicode characters."""
+
     line: int
     column: int
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSpan:
+    file: str
+    start: SourcePosition
+    end: SourcePosition
 
 
 class GroupKind(StrEnum):
@@ -32,7 +40,7 @@ class InvocationKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class Block:
     nodes: tuple["Node", ...]
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,13 +48,13 @@ class Argument:
     kind: GroupKind
     value: str | Block
     layout: ArgumentLayout
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
 class RawTex:
     text: str
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +63,7 @@ class ParsedInvocation:
     name: str
     groups: tuple[Argument, ...]
     suite: Block | None
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,14 +71,14 @@ class SpecialInvocation:
     name: str
     groups: tuple[Argument, ...]
     suite: Block | None
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
 class Stack:
     segments: tuple[ParsedInvocation | SpecialInvocation, ...]
     suite: Block
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,13 +86,13 @@ class GenericInvocation:
     name: str
     arguments: tuple[Argument, ...]
     body: Block | None
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
 class BraceGroup:
     body: Block
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,13 +101,13 @@ class Item:
     label: Argument | None
     first_line: str
     continuation: Block
-    loc: SourceLocation
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
 class Document:
     body: Block
-    loc: SourceLocation
+    span: SourceSpan
 
 
 SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack
@@ -121,7 +129,8 @@ __all__ = [
     "Node",
     "ParsedInvocation",
     "RawTex",
-    "SourceLocation",
+    "SourcePosition",
+    "SourceSpan",
     "SpecialInvocation",
     "Stack",
     "SyntaxNode",

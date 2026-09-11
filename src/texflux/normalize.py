@@ -19,7 +19,8 @@ from .ast import (
     Node,
     ParsedInvocation,
     RawTex,
-    SourceLocation,
+    SourcePosition,
+    SourceSpan,
     SpecialInvocation,
     Stack,
 )
@@ -69,7 +70,7 @@ def _desugar_block(block: Block) -> Block:
     )
     if nodes == block.nodes:
         return block
-    return Block(nodes, block.loc)
+    return Block(nodes, block.span)
 
 
 def _desugar_stack(
@@ -78,7 +79,7 @@ def _desugar_stack(
     if len(node.segments) < 2:
         raise ValidationError(
             "stack requires at least two segments",
-            node.loc,
+            node.span,
         )
 
     # >> is only a structural abbreviation. Give each segment a one-child
@@ -88,9 +89,17 @@ def _desugar_stack(
         suite=node.suite,
     )
     for segment in reversed(node.segments[:-1]):
+        child_end = tail.span.end
+        if tail.suite is not None and tail.suite.span.end > child_end:
+            child_end = tail.suite.span.end
+        suite_span = SourceSpan(
+            segment.span.file,
+            segment.span.start,
+            child_end,
+        )
         tail = replace(
             segment,
-            suite=Block((tail,), segment.loc),
+            suite=Block((tail,), suite_span),
         )
     return tail
 
@@ -100,7 +109,7 @@ def _normalize_block(block: Block, context: TransformContext) -> Block:
     nodes: list[CanonicalNode] = []
     for node in block.nodes:
         nodes.extend(_normalize_node(node, context))
-    return Block(tuple(nodes), block.loc)
+    return Block(tuple(nodes), block.span)
 
 
 def _normalize_node(
@@ -167,9 +176,9 @@ def _normalize_invocation(
         if node.kind is InvocationKind.ENVIRONMENT:
             raise ValidationError(
                 "environment directives require a suite marker ':'",
-                node.loc,
+                node.span,
             )
-        return GenericInvocation(node.name, arguments, None, node.loc)
+        return GenericInvocation(node.name, arguments, None, node.span)
 
     suite = _desugar_block(node.suite)
     direct = tuple(child for child in suite.nodes if not _blank(child))
@@ -212,21 +221,21 @@ def _normalize_command(
             if not isinstance(child, SpecialInvocation) or child.name != "arg":
                 raise ValidationError(
                     "explicit command mode accepts only !arg direct children",
-                    child.loc,
+                    child.span,
                 )
             long_arguments.append(_structured_argument(child, context))
         return GenericInvocation(
             node.name,
             arguments + tuple(long_arguments),
             None,
-            node.loc,
+            node.span,
         )
 
     return GenericInvocation(
         node.name,
-        arguments + (_long_argument(suite, node.loc, context),),
+        arguments + (_long_argument(suite, node.span, context),),
         None,
-        node.loc,
+        node.span,
     )
 
 
@@ -243,7 +252,7 @@ def _normalize_environment(
             node.name,
             arguments,
             _normalize_block(suite, context),
-            node.loc,
+            node.span,
         )
 
     long_arguments: list[Argument] = []
@@ -255,13 +264,13 @@ def _normalize_environment(
         }:
             raise ValidationError(
                 "explicit environment mode accepts only !arg or !body direct children",
-                child.loc,
+                child.span,
             )
         if child.name == "arg":
             if body is not None:
                 raise ValidationError(
                     "!arg must appear before !body",
-                    child.loc,
+                    child.span,
                 )
             long_arguments.append(_structured_argument(child, context))
             continue
@@ -269,12 +278,12 @@ def _normalize_environment(
         if body is not None:
             raise ValidationError(
                 "!body may appear only once",
-                child.loc,
+                child.span,
             )
         if child.groups or child.suite is None:
             raise ValidationError(
                 "!body requires a block suite and no groups",
-                child.loc,
+                child.span,
             )
         body = _normalize_block(child.suite, context)
 
@@ -282,26 +291,26 @@ def _normalize_environment(
         # An explicit environment with arguments but no !body is still an
         # environment.  An empty canonical body preserves that distinction
         # without teaching the renderer about syntax-only nodes.
-        body = Block((), node.loc)
+        body = Block((), node.span)
 
     return GenericInvocation(
         node.name,
         arguments + tuple(long_arguments),
         body,
-        node.loc,
+        node.span,
     )
 
 
 def _long_argument(
     suite: Block,
-    loc: SourceLocation,
+    span: SourceSpan,
     context: TransformContext,
 ) -> Argument:
     return Argument(
         GroupKind.REQUIRED,
         _normalize_block(suite, context),
         ArgumentLayout.BLOCK,
-        loc,
+        span,
     )
 
 
@@ -311,30 +320,30 @@ def _structured_argument(
 ) -> Argument:
     if node.groups:
         if node.suite is not None:
-            raise ValidationError("inline !arg cannot have a suite", node.loc)
+            raise ValidationError("inline !arg cannot have a suite", node.span)
         if len(node.groups) != 1 or node.groups[0].kind is not GroupKind.REQUIRED:
             raise ValidationError(
                 "inline !arg requires exactly one required group",
-                node.loc,
+                node.span,
             )
         group = node.groups[0]
         return Argument(
             GroupKind.REQUIRED,
             group.value,
             ArgumentLayout.INLINE,
-            group.loc,
+            group.span,
         )
 
     if node.suite is None:
         raise ValidationError(
             "!arg requires one inline group or a block suite",
-            node.loc,
+            node.span,
         )
     return Argument(
         GroupKind.REQUIRED,
         _normalize_block(node.suite, context),
         ArgumentLayout.BLOCK,
-        node.loc,
+        node.span,
     )
 
 
@@ -345,13 +354,13 @@ def _normalize_special(
     if node.name in {"arg", "body"}:
         raise DirectiveError(
             f"!{node.name} is valid only as a direct child of a structured invocation",
-            node.loc,
+            node.span,
         )
     handler = context.registry.lookup(node.name)
     if handler is None:
         raise DirectiveError(
             f"unknown special directive '!{node.name}'",
-            node.loc,
+            node.span,
         )
     result = handler(node, context)
     if not isinstance(result, tuple) or any(
@@ -374,14 +383,14 @@ def _block_handler(
     if node.groups or node.suite is None:
         raise ValidationError(
             "!block requires a block suite and no groups",
-            node.loc,
+            node.span,
         )
     # _normalize_special normalizes handler output at the canonical boundary.
-    return (BraceGroup(node.suite, node.loc),)
+    return (BraceGroup(node.suite, node.span),)
 
 
 def _vspace(group: Argument) -> GenericInvocation:
-    return GenericInvocation("vspace", (group,), None, group.loc)
+    return GenericInvocation("vspace", (group,), None, group.span)
 
 
 def _vpad_handler(
@@ -391,12 +400,12 @@ def _vpad_handler(
     if node.suite is None:
         raise ValidationError(
             "!vpad requires a block suite",
-            node.loc,
+            node.span,
         )
     if not 1 <= len(node.groups) <= 2:
         raise ValidationError(
             "!vpad requires one or two required inline groups",
-            node.loc,
+            node.span,
         )
     invalid_group = next((
         group
@@ -408,7 +417,7 @@ def _vpad_handler(
     if invalid_group is not None:
         raise ValidationError(
             "!vpad requires one or two required inline groups",
-            invalid_group.loc,
+            invalid_group.span,
         )
 
     before = node.groups[0]
@@ -427,7 +436,7 @@ def _items_handler(
     if node.groups or node.suite is None:
         raise ValidationError(
             "!items requires a nonempty block suite and no groups",
-            node.loc,
+            node.span,
         )
     invalid = next(
         (child for child in node.suite.nodes if not isinstance(child, RawTex)),
@@ -436,21 +445,21 @@ def _items_handler(
     if invalid is not None:
         raise ValidationError(
             "!items suites may contain raw lines only",
-            invalid.loc,
+            invalid.span,
         )
 
     raw_lines = node.suite.nodes
     if not any(line.text for line in raw_lines):
         raise ValidationError(
             "!items suite must contain at least one item",
-            node.loc,
+            node.span,
         )
     items, index = _parse_item_level(raw_lines, 0, 0)
     if index != len(raw_lines):
         line = raw_lines[index]
-        raise ValidationError("invalid !items indentation", line.loc)
-    body = Block(tuple(items), node.suite.loc)
-    return (GenericInvocation("itemize", (), body, node.loc),)
+        raise ValidationError("invalid !items indentation", line.span)
+    body = Block(tuple(items), node.suite.span)
+    return (GenericInvocation("itemize", (), body, node.span),)
 
 
 def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
@@ -459,16 +468,18 @@ def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
     return None if index == len(lines) else index
 
 
-def _source_loc_at(
+def _source_span_at(
     line: RawTex,
     text_index: int,
-    indent: int,
-) -> SourceLocation:
-    line_start = line.loc.column - indent
-    return SourceLocation(
-        line.loc.file,
-        line.loc.line,
-        line_start + text_index,
+) -> SourceSpan:
+    start = SourcePosition(
+        line.span.start.line,
+        line.span.start.column + text_index,
+    )
+    return SourceSpan(
+        line.span.file,
+        start,
+        SourcePosition(start.line, start.column + 1),
     )
 
 
@@ -481,46 +492,62 @@ def _item_prefix(
     depth: int,
 ) -> tuple[Argument | None, Argument | None, str]:
     text = line.text
-    marker_loc = _source_loc_at(line, depth, depth)
+    marker_span = _source_span_at(line, depth)
     if len(text) <= depth or text[depth] != "-":
-        raise ValidationError("expected an item marker '-'", marker_loc)
+        raise ValidationError("expected an item marker '-'", marker_span)
     cursor = depth + 1
     if cursor < len(text) and text[cursor] not in " <[":
         raise ValidationError(
             "item marker must be followed by a space, group, or end",
-            marker_loc,
+            marker_span,
         )
 
     overlay = None
     label = None
     if cursor < len(text) and text[cursor] == "<":
-        group_loc = _source_loc_at(line, cursor, depth)
-        end, value = scan_group(text, cursor, loc=group_loc)
+        group_span = _source_span_at(line, cursor)
+        end, value = scan_group(text, cursor, span=group_span)
+        group_span = SourceSpan(
+            group_span.file,
+            group_span.start,
+            SourcePosition(
+                group_span.start.line,
+                group_span.start.column + end - cursor,
+            ),
+        )
         overlay = Argument(
             GroupKind.OVERLAY,
             value,
             ArgumentLayout.INLINE,
-            group_loc,
+            group_span,
         )
         cursor = end
         if cursor < len(text) and text[cursor] == "<":
             raise ValidationError(
                 "duplicate item overlay prefix",
-                group_loc,
+                group_span,
             )
 
     if cursor < len(text) and text[cursor] == "[":
-        group_loc = _source_loc_at(line, cursor, depth)
-        end, value = scan_group(text, cursor, loc=group_loc)
+        group_span = _source_span_at(line, cursor)
+        end, value = scan_group(text, cursor, span=group_span)
+        group_span = SourceSpan(
+            group_span.file,
+            group_span.start,
+            SourcePosition(
+                group_span.start.line,
+                group_span.start.column + end - cursor,
+            ),
+        )
         label = Argument(
             GroupKind.OPTIONAL,
             value,
             ArgumentLayout.INLINE,
-            group_loc,
+            group_span,
         )
         cursor = end
     elif cursor < len(text) and text[cursor] == "]":
-        raise ValidationError("invalid item label prefix", marker_loc)
+        raise ValidationError("invalid item label prefix", marker_span)
 
     if (
         overlay is None
@@ -530,22 +557,22 @@ def _item_prefix(
     ):
         raise ValidationError(
             "item label must not precede its overlay",
-            label.loc,
+            label.span,
         )
     if cursor < len(text) and text[cursor] in "<[":
         raise ValidationError(
             "duplicate item prefix",
-            _source_loc_at(line, cursor, depth),
+            _source_span_at(line, cursor),
         )
     if cursor < len(text) and text[cursor] != " ":
         if overlay is not None or label is not None:
             raise ValidationError(
                 "item prefix must be followed by a space or end",
-                marker_loc,
+                marker_span,
             )
         raise ValidationError(
             "item marker must be followed by a space, group, or end",
-            marker_loc,
+            marker_span,
         )
     if cursor < len(text) and text[cursor] == " ":
         cursor += 1
@@ -558,12 +585,12 @@ def _nested_itemize(
     depth: int,
 ) -> tuple[GenericInvocation, int]:
     nested_items, end = _parse_item_level(lines, index, depth)
-    loc = nested_items[0].loc if nested_items else lines[index].loc
+    span = nested_items[0].span if nested_items else lines[index].span
     return GenericInvocation(
         "itemize",
         (),
-        Block(tuple(nested_items), loc),
-        loc,
+        Block(tuple(nested_items), span),
+        span,
     ), end
 
 
@@ -586,7 +613,7 @@ def _parse_item_level(
                 return items, index
             raise ValidationError(
                 "item indentation skips the current list level",
-                lines[next_index].loc,
+                lines[next_index].span,
             )
 
         if index >= len(lines):
@@ -598,11 +625,16 @@ def _parse_item_level(
         if indent > depth:
             raise ValidationError(
                 "item indentation skips the current list level",
-                line.loc,
+                line.span,
             )
 
         overlay, label, first_line = _item_prefix(line, depth)
-        item_loc = _source_loc_at(line, depth, depth)
+        item_marker_span = _source_span_at(line, depth)
+        item_span = SourceSpan(
+            item_marker_span.file,
+            item_marker_span.start,
+            line.span.end,
+        )
         index += 1
         continuation: list[CanonicalNode] = []
 
@@ -636,7 +668,7 @@ def _parse_item_level(
                 if next_indent < depth + 2:
                     raise ValidationError(
                         "item continuation requires at least two spaces",
-                        next_line.loc,
+                        next_line.span,
                     )
                 continuation.extend(lines[index:next_index])
                 index = next_index
@@ -662,15 +694,23 @@ def _parse_item_level(
             ):
                 raise ValidationError(
                     "nested item indentation skips a list level",
-                    current.loc,
+                    current.span,
                 )
             if indent < depth + 2:
                 raise ValidationError(
                     "item continuation requires at least two spaces",
-                    current.loc,
+                    current.span,
                 )
+            continuation_span = SourceSpan(
+                current.span.file,
+                SourcePosition(
+                    current.span.start.line,
+                    current.span.start.column + depth + 2,
+                ),
+                current.span.end,
+            )
             continuation.append(
-                RawTex(current.text[depth + 2 :], current.loc)
+                RawTex(current.text[depth + 2 :], continuation_span)
             )
             index += 1
 
@@ -679,8 +719,8 @@ def _parse_item_level(
                 overlay,
                 label,
                 first_line,
-                Block(tuple(continuation), item_loc),
-                item_loc,
+                Block(tuple(continuation), item_span),
+                item_span,
             )
         )
 
@@ -723,7 +763,7 @@ def normalize(
     context = TransformContext(registry)
     normalized = Document(
         _normalize_block(document.body, context),
-        document.loc,
+        document.span,
     )
     _assert_canonical_block(normalized.body)
     return normalized

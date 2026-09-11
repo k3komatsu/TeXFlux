@@ -1,19 +1,19 @@
 """User-facing TeXFlux errors."""
 
-from .ast import SourceLocation
+from .ast import SourceSpan
 
 
 class TeXFluxError(Exception):
     error_kind = "texflux error"
 
-    def __init__(self, message: str, loc: SourceLocation):
+    def __init__(self, message: str, span: SourceSpan):
         self.message = message
-        self.loc = loc
+        self.span = span
         super().__init__(message)
 
     def diagnostic(self) -> str:
         return (
-            f"{self.loc.file}:{self.loc.line}:{self.loc.column}: "
+            f"{self.span.file}:{self.span.start.line}:{self.span.start.column}: "
             f"{self.error_kind}: {self.message}"
         )
 

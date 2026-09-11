@@ -441,7 +441,7 @@ special の意味を知らずに先に nested suite へ desugar されるため�
 ~~~
 
 `!vpad` の生成した `vspace` command と body はいずれも `!vpad` または
-元の suite node の source location を保持する。
+元の suite node の source span を保持する。
 
 ## 7. Environment explicit form
 
@@ -592,11 +592,11 @@ Argument
 
 ParsedInvocation.kind は prefix から確定した command または
 environment である。ParsedInvocation は name、compact groups、suite、
-source location を持つ。syntax AST に suite scalar variant や
+SourceSpan を持つ。各 span は half-open である。syntax AST に suite scalar variant や
 block-scalar metadata は存在しない。
 
-SpecialInvocation は special name、groups、suite、source locationを
-持つ。Stack は prefix付き segment 列、suite、source location を持つ。
+SpecialInvocation は special name、groups、suite、SourceSpan を持つ。
+Stack は prefix付き segment 列、suite、SourceSpan を持つ。
 
 ### 10.2 canonical AST
 
@@ -611,7 +611,7 @@ Argument
 Block
 ~~~
 
-GenericInvocation は name、arguments、body、location を持つ。bodyが
+GenericInvocation は name、arguments、body、SourceSpan を持つ。bodyが
 None なら TeX command、Block なら TeX environment である。explicit
 environment で !body がない場合も空 Block を置くため、environment
 であることを失わない。
@@ -670,8 +670,10 @@ handler の出力も canonical boundary で再帰的に normalize する。
 
 ## 12. Diagnostics / source mapping
 
-ParseError、ValidationError、DirectiveError は発生源の location を指す。
-少なくとも次の location を保持する。
+ParseError、ValidationError、DirectiveError は発生源の SourceSpan を指す。
+SourceSpan は file、1-based の start/end line と column を持つ half-open
+範囲である。suite marker はそれを含む enclosing header span で保持し、
+少なくとも次の span を保持する。
 
 - header prefix と name
 - compact group
@@ -683,7 +685,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - item と item prefix
 
 >> desugaring、command suite normalization、!block、!arg、!body、!items、
-!vpad の展開で originating location を破棄しない。
+!vpad の展開で originating span を破棄しない。
 
 将来の source map は概念的に次の bridge を提供できる。
 
@@ -696,7 +698,7 @@ PDF
 ~~~
 
 v1 は PDF や SyncTeX 本体を実装しないが、AST を TeX string へ早期に
-潰して location を失う設計にはしない。
+潰して span を失う設計にはしない。
 
 ## 13. Special extension
 

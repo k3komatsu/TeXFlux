@@ -20,7 +20,7 @@ pipelineに固定する。
 - explicit environment argument/body の !arg / !body
 - prefix付き stack の pure desugaring
 - overlay、label、multiline、nested list を持つ items
-- source location の保持
+- source span の保持
 - canonical AST だけを renderer へ渡す
 - future AST-to-AST special extension の handler 契約
 
@@ -80,12 +80,12 @@ ASTからASTへ展開する。renderer は special、stack、syntax mode を参�
 
 ### 4.1 syntax AST
 
-- RawTex(text, loc)
-- ParsedInvocation(kind, name, groups, suite, loc)
-- SpecialInvocation(name, groups, suite, loc)
-- Stack(segments, suite, loc)
-- Block(nodes, loc)
-- Argument(kind, value, layout, loc)
+- RawTex(text, span)
+- ParsedInvocation(kind, name, groups, suite, span)
+- SpecialInvocation(name, groups, suite, span)
+- Stack(segments, suite, span)
+- Block(nodes, span)
+- Argument(kind, value, layout, span)
 
 ParsedInvocation.kind は COMMAND または ENVIRONMENT であり、prefix の
 結果を保持する。suite scalar用の別metadataは持たない。
@@ -96,8 +96,8 @@ SpecialInvocation である。
 ### 4.2 canonical AST
 
 - RawTex
-- GenericInvocation(name, arguments, body, loc)
-- BraceGroup(body, loc)
+- GenericInvocation(name, arguments, body, span)
+- BraceGroup(body, span)
 - Item
 - Argument
 - Block
@@ -241,7 +241,7 @@ Argument value に BraceGroup を使って outer brace を省略する処理は�
 
 ## 8. Diagnostics / source mapping
 
-ParseError、ValidationError、DirectiveError は発生源の location を指す。
+ParseError、ValidationError、DirectiveError は発生源の SourceSpan を指す。
 最低限、次を保持する。
 
 - header prefix と name
@@ -254,7 +254,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - item と item prefix
 
 >> desugaring、command suite normalization、!block、!arg、!body、!items
-、!vpad の展開で originating location を破棄しない。
+、!vpad の展開で originating span を破棄しない。
 
 ## 9. Test plan
 
@@ -269,7 +269,7 @@ ParseError、ValidationError、DirectiveError は発生源の location を指す
 - required/optional/overlay group scanning
 - starred environment
 - prefix付き stack
-- missing prefix、missing suite、indent、source location
+- missing prefix、missing suite、indent、source span
 
 ### Normalization / renderer unit
 
@@ -336,5 +336,5 @@ skip する。runtime で LaTeX を要求しない。
 - !vpad の一個/二個の spacing group と suite を一意に処理する
 - stack に semantic terminal rule を入れない
 - canonical AST に syntax-only node を残さない
-- source location を全変換で保つ
+- source span を全変換で保つ
 - future AST-to-AST special と SyncTeX bridge を阻害しない
