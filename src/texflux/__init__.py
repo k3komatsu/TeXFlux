@@ -1,5 +1,7 @@
 """TeX-first, indentation-based LaTeX preprocessor."""
 
+__version__ = "0.1.0"
+
 from .ast import (
     Argument,
     ArgumentLayout,
@@ -33,6 +35,7 @@ from .render import (
     render,
     render_with_provenance,
 )
+from .source_map import serialize_source_map
 
 
 def compile_text(
@@ -90,10 +93,12 @@ __all__ = [
     "TeXFluxError",
     "TransformContext",
     "ValidationError",
+    "__version__",
     "compile_text",
     "compile_with_map",
     "normalize",
     "parse",
     "render",
     "render_with_provenance",
+    "serialize_source_map",
 ]

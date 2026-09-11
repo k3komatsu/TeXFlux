@@ -67,8 +67,9 @@ With `--source-comments`, generated source lines are prefixed with comments
 such as `% texflux: slides.tfx:1`.
 
 TeXFlux compiles the complete input before writing the output. A failed
-compile therefore leaves an existing output file unchanged. Input and output
-must be different paths.
+compile therefore leaves existing output and `.tfxmap` files unchanged. A
+successful compile writes `OUTPUT.tex.tfxmap` beside the generated TeX. Input
+and output must be different paths.
 
 ## Syntax at a glance
 
@@ -300,7 +301,8 @@ stack nodes are removed or expanded before rendering.
 Use `compile_with_map` when generated fragments need source provenance. The
 returned `CompilationResult.text` is the same TeX string as `compile_text`,
 and `CompilationResult.rendered.fragments` contains generated ranges, source
-spans, and rendering roles.
+spans, and rendering roles. `serialize_source_map` can serialize that result;
+its `source_path` must match the filename used when compiling the source.
 
 ## What TeXFlux does not do
 

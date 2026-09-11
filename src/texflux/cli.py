@@ -8,8 +8,9 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
-from . import compile_text
+from . import compile_with_map
 from .errors import TeXFluxError
+from .source_map import serialize_source_map
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,13 +53,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        source = input_path.read_text(encoding="utf-8")
-        output = compile_text(
+        source_bytes = input_path.read_bytes()
+        source = source_bytes.decode("utf-8")
+        result = compile_with_map(
             source,
             filename=str(input_path),
             source_comments=args.source_comments,
         )
-        output_path.write_text(output, encoding="utf-8", newline="\n")
+        output_bytes = result.text.encode("utf-8")
+        try:
+            map_path = output_path.with_name(output_path.name + ".tfxmap")
+            map_text = serialize_source_map(
+                result,
+                source_path=input_path,
+                generated_path=output_path,
+                map_path=map_path,
+                source_bytes=source_bytes,
+                generated_bytes=output_bytes,
+            )
+        except ValueError as error:
+            print(f"texflux: {error}", file=sys.stderr)
+            return 1
+        output_path.write_bytes(output_bytes)
+        map_path.write_text(map_text, encoding="utf-8", newline="\n")
     except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
