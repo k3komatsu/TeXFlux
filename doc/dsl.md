@@ -2,91 +2,80 @@
 
 ## 1. ステータスと設計目標
 
-本書は TeXFlux v1 の利用者向け仕様である。言語の規範的な定義は
-texflux_tex_first_dsl_v1_spec.md にあり、実装、README、examples、テスト、
-そして本書もその定義に一致しなければならない。
+本書は、TeXFlux v1 の利用者向け言語仕様書である。言語の規範的な定義（Normative Specification）は
+`texflux_tex_first_dsl_v1_spec.md` に記載されており、実装、README、各種サンプル、テスト、
+そして本書の記述もすべてその定義に準拠しなければならない。
 
-TeXFlux は TeX-first の indentation-based preprocessor である。TeX 本文を
-解釈・escape・正規化せず、構造上の次の要素だけを短く記述する。
+TeXFlux は、「TeX-first」を掲げるインデントベースのプリプロセッサである。TeX 本文そのものを
+解析・エスケープ・正規化することはせず、主に文書構造に関する以下の要素のみを簡潔に記述できるようにする。
 
-- environment の begin/end
-- 構造化 command の required argument
-- literal TeX brace group
-- itemize の定型
-- value の入れ子を表す composition
+- TeX 環境（environment）の `\begin{...}` / `\end{...}`
+- 構造化コマンド（command）の必須引数（required argument）
+- リテラルな TeX の中括弧グループ（`{ ... }`）
+- `itemize` 環境などの定型的なリスト構造
+- 値の入れ子関係を表現する合成（composition）
 
-v1 の中心モデルは「suite が値を作り、container/command/special が値を
-消費する」である。suite の形は次の三つだけである。
-
-~~~text
-suffix なし  = RHS がすでに閉じた一つの value
-:           = '-' ごとに一つの block value を作る sequence
-: |         = suite 全体を一つの multiline block value
-~~~
-
-## 2. Prefix
-
-prefix の意味は字句的に決まり、TeX package、template、registry、既知の
-command 引数数には依存しない。
+v1 の中心的な設計モデルは、「**suite（インデントブロック）が値を生成し、container / command / special がその値を消費する**」というものである。suite の形式は以下の3種類のみである。
 
 ~~~text
-\   TeX command
-@   structural container
-!   TeXFlux special transformation
+suffix なし  = 右辺（RHS）ですでに完結している単一の値
+:           = '-' ごとに1つのブロック値を生成するシーケンス（sequence）
+: |         = suite 全体を1つの複数行ブロック値とするブロック（block）
 ~~~
 
-@ は named TeX environment 専用ではない。v1 の @ container は次の通り。
+## 2. プレフィックス（Prefix）
+
+行頭やセグメント先頭に付くプレフィックス（接頭辞）の意味は字句的に決定され、TeX パッケージやテンプレート、コマンド登録情報（レジストリ）、あるいは既知のコマンド引数の数などには一切依存しない。
 
 ~~~text
-@name             named TeX environment container
-@{}               anonymous literal TeX brace container
-@{RAW_TEX}        leading raw TeX を含む literal brace container
-@                 anonymous transparent container
-@:                transparent container の suite form
+\   TeX コマンド（command）
+@   構造コンテナ（structural container）
+!   TeXFlux の特殊変換（special transformation）
 ~~~
 
-通常の TeX command line は raw TeX のままである。ただし top-level の
-structural suffix または stack separator を含む command lineは構造候補に
-なる。unknown named environment はそのまま受理し、LaTeX 側で解決する。
-unknown special は error である。
+`@` は名前付き TeX 環境（`\begin{...}`〜`\end{...}`）専用ではない。v1 で利用可能な `@` コンテナは以下の通りである。
 
-## 3. 物理行と indentation
+~~~text
+@name             名前付き TeX 環境コンテナ（named TeX environment container）
+@{}               無名のリテラル中括弧コンテナ（anonymous literal TeX brace container）
+@{RAW_TEX}        先頭に生の TeX コードを含むリテラル中括弧コンテナ
+@                 無名の透過コンテナ（anonymous transparent container）
+@:                透過コンテナの suite 形式
+~~~
 
-入力の CRLF/CR は LF に正規化する。tab は禁止する。出力は必ず最後に
-newline を一つ持つ。
+通常の TeX コマンド行は、そのまま生の TeX（raw TeX）として扱われる。ただし、トップレベルに構造化 suffix（末尾の `:` や `: |`）またはスタック区切り文字（`>>`）を含むコマンド行は、構造化構文の候補として解釈される。
+未知の名前を持つ環境（unknown named environment）であっても構文としてそのまま受け付けられ、LaTeX 側での解決に委ねられる。一方、未知の special（unknown special）はエラーとなる。
 
-通常の構造 indentation は ASCII space 四個単位である。suite の direct
-child は suite base に置く。raw TeX の追加 indentation は保持するが、
-追加 indentation の位置にある構造候補は error である。blank line の扱いは
-suite mode によって異なる。
+## 3. 物理行とインデント
 
-構造位置で raw な @ から始まる行は @@ で escape できる。
+入力テキストの改行コード（CRLF / CR）はすべて LF に正規化される。タブ文字（tab）の使用は禁止されている。出力末尾には必ず改行が1つ付加される。
+
+構造を表すインデントは、半角スペース4個（ASCII space 4文字）単位である。suite の直下の子要素（direct child）は、その階層の基準インデント位置（suite base）に配置しなければならない。生の TeX コード（raw TeX）行における余分なインデントはそのまま保持されるが、不適切な追加インデント位置に構造化構文の候補が置かれている場合は構文エラーとなる。空行（blank line）の扱いは suite のモードによって異なる。
+
+構造化構文と認識される位置で、文字どおりの `@` から始まる生の行を出力したい場合は、`@@` と記述してエスケープできる。
 
 ~~~text
 @@literal-at
 ~~~
 
+展開後:
 ~~~tex
 @literal-at
 ~~~
 
-## 4. Header scanner
+## 4. ヘッダースキャナ（Header scanner）
 
-header scanner は group 内部を TeX として解釈しない。required group、
-optional group、overlay group を balanced に走査する。
+ヘッダースキャナは、グループ内部を TeX コードとして解釈・展開することはない。必須グループ、オプション引数グループ、Beamer のオーバーレイ指定グループについて、括弧の対応（バランス）を保ちながら機械的に走査する。
 
 ~~~text
-{...}   required group
-[...]   optional group
-<...>   overlay group
+{...}   必須グループ（required group）
+[...]   オプション引数グループ（optional group）
+<...>   オーバーレイグループ（overlay group）
 ~~~
 
-group 内部の colon、pipe、>> は常に opaque raw text である。top-level の
-末尾 colon と、前後を ASCII space で区切った >> だけが structural token
-になる。末尾でない colon を含む通常の command line は raw TeX のままである。
-header 末尾の TeX comment は v1 ではサポートしない。
+各グループ内部に含まれるコロン（`:`）、パイプ（`|`）、二重山括弧（`>>`）は、常に解釈されない不透明な生テキスト（opaque raw text）として扱われる。トップレベル行の末尾にあるコロンと、前後を空白で区切られた `>>` だけが構造化トークン（structural token）として認識される。行末以外にコロンを含む通常のコマンド行は、そのまま生の TeX として扱われる。なお、ヘッダー末尾に置く TeX 形式のコメント（`% ...`）は v1 ではサポートされない。
 
-suite suffix は次だけを受理する。
+suite を開始する suffix（接尾辞）としては、以下の形式のみを受け付ける。
 
 ~~~text
 :
@@ -94,40 +83,33 @@ suite suffix は次だけを受理する。
 : |
 ~~~
 
-colon の後ろに optional whitespace と pipe があると block mode、pipe が
-なければ sequence mode になる。それ以外の token は parse error である。
-pipe は suite suffix の直後だけ特別扱いし、raw TeX 内の pipe は保持する。
+コロンの後に空白（省略可）を挟んでパイプ `|` が続く場合は**ブロックモード（block mode）**となり、パイプがなければ**シーケンスモード（sequence mode）**となる。これら以外のトークンが末尾に現れた場合はパースエラーとなる。パイプ `|` が特別扱いされるのは suite suffix の直後だけであり、生の TeX 行に含まれるパイプ文字はそのまま保持される。
 
-@ の lexical classification は次の優先順位である。
+`@` から始まるコンテナの字句分類は、以下の優先順位で行われる。
 
 ~~~text
-@{...}  literal brace container
-@      transparent container
-@name  named environment container
+@{...}  リテラル中括弧コンテナ（literal brace container）
+@       透過コンテナ（transparent container）
+@name   名前付き環境コンテナ（named environment container）
 ~~~
 
-@{...} の group は header raw TeX であり、empty name の environment として
-扱ってはならない。balanced group の内容は TeXFlux が parse/validate しない。
+`@{...}` のグループはヘッダーに含まれる生の TeX であり、「名前が空の環境」として扱ってはならない。対応する括弧で囲まれた中身について、TeXFlux が内容をパースしたり妥当性を検証したりすることはない。
 
-stack の各 segment は必ず完全な prefix を持つ。省略記法はない。
+スタック（`>>`）を構成する各セグメントには、必ず完全なプレフィックス（`\`、`@`、`!`）を明示しなければならない。プレフィックスを省略する記法は存在しない。
 
 ~~~text
 @{} >> @center >> @{\small}
 ~~~
 
-次は invalid である。
+以下の例はプレフィックスが不足しているため無効（invalid）である。
 
 ~~~text
 @{} >> center >> {\small}
 ~~~
 
-## 5. Sequence suite
+## 5. シーケンススイート（Sequence suite）
 
-plain colon の suite は明示された '-' value entry の並びである。structured
-command の sequence suite には少なくとも一つの entry が必要である。各 '-'
-が一つの block value を開始し、次の同じ階層の '-' までがその value に属する。
-したがって value の境界は '-' だけで決まり、各 entry は常に block layout
-の value になる。
+末尾がコロンのみ（`:`）の行に続く suite は、`-` で明示された値エントリー（value entry）の並び（シーケンス）を表す。構造化コマンドのシーケンススイートには、少なくとも1つのエントリーが必要である。各 `-` が1つのブロック値の開始を示し、同じインデント階層にある次の `-` の直前までがその値に含まれる。したがって値の境界は `-` のみによって決定され、各エントリーは常にブロックレイアウトの値となる。
 
 ~~~text
 \foo:
@@ -136,6 +118,7 @@ command の sequence suite には少なくとも一つの entry が必要であ�
     - B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
@@ -145,7 +128,7 @@ B
 }
 ~~~
 
-blank line は sequence entry 間の separator として無視する。
+エントリー間に挟まれた空行（blank line）は単なる区切りとして無視される。
 
 ~~~text
 \foo:
@@ -154,8 +137,7 @@ blank line は sequence entry 間の separator として無視する。
     - B
 ~~~
 
-これは A と B の二つの block value であり、第三の空 valueではない。
-この blank line は value にならない。
+上記の例は「A」と「B」という2つのブロック値を表しており、間に第3の空の値が生成されるわけではない。この空行は値の一部にはならない。
 
 ~~~text
 \foo:
@@ -164,10 +146,7 @@ blank line は sequence entry 間の separator として無視する。
     - another arg
 ~~~
 
-同じ物理行の payload はその block value の最初の行になる。続く行は次の
-同じ階層の '-' まで、その entry より深い indentation にあれば同じ
-block value の continuation として通常の TeXFlux block parser で parse
-する。payload が空の '-' でも、後続の深い行が block value になる。
+`-` と同じ物理行に書かれたペイロード（文字列）は、そのブロック値の先頭行となる。後続の行がそのエントリーよりも深くインデントされていれば、同じ階層の次の `-` が現れるまで、同一ブロック値の継続行（continuation）として TeXFlux の通常のブロックパーサーにより処理される。`-` の行自体にペイロードが書かれていなくても、後続の深くインデントされた行群がブロック値となる。
 
 ~~~text
 \foo:
@@ -178,6 +157,7 @@ block value の continuation として通常の TeXFlux block parser で parse
     - another arg
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 short arg
@@ -189,11 +169,9 @@ another arg
 }
 ~~~
 
-「- |」は block marker ではない。「|」は payload の文字として扱われるため、
-multiline value には bare の「-」を使う。
+なお、「`- |`」というブロックマーカーは存在しない。「`|`」は単なるペイロードの文字として扱われるため、複数行の値を記述する場合でも記号は `-` のみ（bare の `-`）を使用する。
 
-sequence entry の block 内には raw line、または prefix-bearing structural
-expression を置ける。
+シーケンスエントリーのブロック内には、生の TeX 行だけでなく、プレフィックスを伴う構造化式（structural expression）を配置することもできる。
 
 ~~~text
 \foo:
@@ -204,12 +182,11 @@ expression を置ける。
     - @center >> \includegraphics{fig.pdf}
 ~~~
 
-sequence entry の structural expression が作る value は、一つの value と
-して command/container に渡る。
+シーケンスエントリー内の構造化式によって生成された値は、1つのまとまった値として親のコマンドやコンテナに渡される。
 
-## 6. Block suite
+## 6. ブロックスイート（Block suite）
 
-: | は suite 全体を exactly one block value にする。
+`: |` は、それに続く suite 全体をちょうど1つのブロック値（exactly one block value）として扱う。
 
 ~~~text
 \foo: |
@@ -219,6 +196,7 @@ sequence entry の structural expression が作る value は、一つの value �
         C
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
@@ -229,8 +207,7 @@ C
 }
 ~~~
 
-block 内部の raw line、nested container、special、stack は通常どおり parse
-する。block 内部の blank line は保持する。
+ブロック内部に含まれる生の行、ネストしたコンテナ、special、スタック構文などは通常どおり解析される。また、ブロック内部の空行は保持される。
 
 ~~~text
 \foo: |
@@ -239,6 +216,7 @@ block 内部の raw line、nested container、special、stack は通常どおり
     B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
@@ -247,22 +225,19 @@ B
 }
 ~~~
 
-: | の suite は空でもよい。たとえば空の transparent valueは次の通り。
+`: |` に続く suite は空であってもよい。例えば、空の透過値（transparent value）は以下のように記述できる。
 
 ~~~text
 @: |
 ~~~
 
-空 block は出力を生成しない。
+空のブロックは出力を生成しない。
 
-## 7. Command
+## 7. コマンド（Command）
 
-structured command は top-level colon または stack segment として現れる
-prefix-bearing commandである。header の compact groups は suite 由来の
-value より先に出力する。
+構造化コマンド（structured command）とは、トップレベル行の末尾にコロンを伴うか、またはスタックセグメント（`>>`）として記述される `\` プレフィックス付きのコマンドである。ヘッダー部分にインラインで記述されたコンパクトグループ（`{...}` や `[...]` など）は、suite から渡される値よりも先に出力される。
 
-sequence mode では受け取ったすべての values を required arguments として
-消費する。
+シーケンスモードでは、受け取ったすべての値を順に必須引数（`{...}`）として消費・出力する。
 
 ~~~text
 \foo{COMPACT}:
@@ -270,6 +245,7 @@ sequence mode では受け取ったすべての values を required arguments �
     - B
 ~~~
 
+展開後:
 ~~~tex
 \foo{COMPACT}{
 A
@@ -278,7 +254,7 @@ B
 }
 ~~~
 
-block mode では block 全体を一つの long required argument とする。
+ブロックモードでは、ブロック全体を1つの複数行必須引数（long required argument）として展開する。
 
 ~~~text
 \foo: |
@@ -286,6 +262,7 @@ block mode では block 全体を一つの long required argument とする。
     B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
@@ -293,8 +270,7 @@ B
 }
 ~~~
 
-sequence の structural value は一つの required argument に包む。したがって
-literal brace container は argument の outer braces に吸収されない。
+シーケンス内の構造化された値は、1つの必須引数グループ（`{...}`）の中に内包される。そのため、リテラル中括弧コンテナ（`@{}`）の中括弧が引数自体の外側の中括弧に吸収されて消えることはない。
 
 ~~~text
 \foo:
@@ -303,6 +279,7 @@ literal brace container は argument の outer braces に吸収されない。
         B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 {
@@ -312,22 +289,19 @@ B
 }
 ~~~
 
-suite/stack syntax を使わない通常の command line は raw TeX のままである。
+suite やスタック構文（`>>`）を伴わない通常のコマンド行は、そのまま生の TeX（raw TeX）として出力される。
 
 ~~~text
 \foo{A}{B}
 ~~~
 
-構造化された sequence entry や stack terminal に置かれた command は閉じた
-canonical valueとして扱う。
+構造化されたシーケンスエントリーの内部や、スタックの終端（terminal）に置かれたコマンドは、すでに完結した正準な値（canonical value）として扱われる。
 
-## 8. Named environment
+## 8. 名前付き環境（Named environment）
 
-named environment は begin/end を生成する。unknown name と star 付き name
-も構造が正しければ受理する。
+名前付き環境（named environment）は、LaTeX の `\begin{...}` と `\end{...}` のペアを生成する。未知の環境名やアスタリスク付きの環境名（例: `@tabular*`）であっても、構文として正しければそのまま受け付けられる。
 
-block mode では block value が body であり、compact groups は begin 側の
-arguments になる。
+ブロックモード（`: |`）では、ブロック値全体が環境の本文（body）となり、ヘッダーに記述されたインライングループは `\begin{...}` 側の引数となる。
 
 ~~~text
 @frame{Title}: |
@@ -336,6 +310,7 @@ arguments になる。
         World
 ~~~
 
+展開後:
 ~~~tex
 \begin{frame}{Title}
 Hello
@@ -345,9 +320,7 @@ World
 \end{frame}
 ~~~
 
-sequence mode では最後の value が body、最後以外の values が required
-block argumentsになる。これは registry や template knowledgeなしに構文だけ
-で決定する。
+シーケンスモード（`:`）では、**最後の値が環境の本文（body）**となり、**最後以外の値はすべて環境の必須引数（required block arguments）**となる。この割り当ては、レジストリやテンプレートの知識を必要とせず、構文規則のみに基づいて決定される。
 
 ~~~text
 @myenv:
@@ -358,6 +331,7 @@ block argumentsになる。これは registry や template knowledgeなしに構
         BODY2
 ~~~
 
+展開後:
 ~~~tex
 \begin{myenv}{
 ARG1
@@ -369,10 +343,9 @@ BODY2
 \end{myenv}
 ~~~
 
-最後の block valueの canonical nodesが bodyになる。
+シーケンスの最後のブロック値に含まれる正準ノード群が、そのまま環境の本文となる。
 
-値がない sequence environmentは validation errorである。空 bodyが必要な
-場合は empty blockを明示する。
+エントリー（値）が1つも存在しないシーケンス環境はバリデーションエラーとなる。空の本文が必要な場合は、末尾に空ブロック（`@: |`）を明示的に記述する。
 
 ~~~text
 @myenv:
@@ -381,11 +354,11 @@ BODY2
     - @: |
 ~~~
 
-## 9. Anonymous containers
+## 9. 無名コンテナ（Anonymous containers）
 
-### 9.1 Transparent container
+### 9.1 透過コンテナ（Transparent container）
 
-@: | は wrapper を出力せず、block valueの nodesをそのまま出力する。
+`@: |` は外側のラッパー（`\begin` や中括弧など）を一切出力せず、ブロック値に含まれるノードをそのまま出力する。
 
 ~~~text
 @: |
@@ -393,15 +366,13 @@ BODY2
     B
 ~~~
 
+展開後:
 ~~~tex
 A
 B
 ~~~
 
-@: の sequence form は複数 valuesを一つの transparent compositeにまとめる。
-空の sequenceも許可され、その場合は何も出力しない。literal brace
-containerの空 sequenceは空の TeX brace groupを出力する。multiline の空値を
-明示する場合は `@: |` または `@{}: |` を使う。
+`@:` のシーケンス形式は、複数の値を1つの透過的な合成値（transparent composite）にまとめる。空のシーケンスも許容されており、その場合は何も出力されない。なお、リテラル中括弧コンテナ（`@{}:`）で空シーケンスを指定した場合は、空の TeX 中括弧グループ（`{}`）が出力される。複数行の空の値を明示したい場合は、`@: |` または `@{}: |` を使用する。
 
 ~~~text
 @:
@@ -409,18 +380,18 @@ containerの空 sequenceは空の TeX brace groupを出力する。multiline の
     - B
 ~~~
 
-command argumentの中で使えば、AとBを一つの block valueとしてまとめる。
+これをコマンドの引数の中で使用すると、「A」と「B」がまとまって1つのブロック値としてコマンドに渡される。
 
-### 9.2 Literal brace container
+### 9.2 リテラル中括弧コンテナ（Literal brace container）
 
-@{RAW_TEX}: | は常に実際の TeX brace groupを出力する。RAW_TEX は
-leading raw TeXとして groupの先頭に置く。
+`@{RAW_TEX}: |` は、常に実際の TeX 中括弧グループ（`{ ... }`）を出力する。波括弧内の `RAW_TEX` は、先頭の生の TeX コード（leading raw TeX）としてグループ内の先頭に配置される。
 
 ~~~text
 @{\small\color{red}}: |
     BODY
 ~~~
 
+展開後:
 ~~~tex
 {
 \small\color{red}
@@ -428,55 +399,51 @@ BODY
 }
 ~~~
 
-literal groupの bracesは、command argument、environment body、stackの
-どの文脈でも削除・吸収しない。
+このリテラルグループの中括弧は、コマンドの引数内、環境の本文内、あるいはスタックの途中など、どのような文脈であっても削除されたり外側の中括弧に吸収されたりすることはない。
 
-## 10. Stack composition
+## 10. スタック合成（Stack composition）
 
->> は pure structural compositionである。scannerはsegment列を保持し、
-normalizationが右から左へnested value treeに変換する。rendererは>>を
-知らない。
+二重山括弧 `>>` は、純粋な構造的合成（pure structural composition）を表す。スキャナがセグメントの並びを保持し、正規化処理（normalization）によって右から左へと入れ子の値ツリー（nested value tree）に変換される。そのため、最終的なレンダラーは `>>` の存在を意識しない。
 
-### 10.1 Closed stack
+### 10.1 閉じたスタック（Closed stack）
 
-suffixなしの右端がすでに閉じた valueなら、stackはvalidである。
+suffix を持たないスタックにおいて、最右端のセグメントがすでに完結した値（closed value）であれば、そのスタックは有効である。
 
 ~~~text
 @center >> \includegraphics{fig.pdf}
 ~~~
 
+展開後:
 ~~~tex
 \begin{center}
 \includegraphics{fig.pdf}
 \end{center}
 ~~~
 
-多段 compositionも同じである。
+多段の合成も同様に記述できる。
 
 ~~~text
 @frame{Title} >> @center >> @{\small} >> \input{fig.tex}
 ~~~
 
-右端の @name、@、@{...} のような open containerに payloadがない stackは
-invalidである。
+最右端が `@name`、`@`、`@{...}` などのように値を受け取る余地を残したオープンなコンテナ（open container）であるにもかかわらず、その値（payload）が与えられていないスタックは無効（invalid）である。
 
 ~~~text
 @foo >> @center
 ~~~
 
-### 10.2 Open stack
+### 10.2 開いたスタック（Open stack）
 
-suffixは右端 segmentに与える。
+suite を後続させる場合、suffix（`:` または `: |`）は最右端のセグメントに付与する。
 
 ~~~text
 @frame{Title} >> @center >> @{\small}: |
     BODY
 ~~~
 
-これは右端の literal groupが block valueを受け取り、完成したvalueを center、
-frameへ順に渡す。
+この場合、最右端のリテラルグループ（`@{\small}`）が後続のブロック値（`BODY`）を受け取り、それによって完成した値が手前の `@center`、さらに `@frame{Title}` へと順に渡される。
 
-plain colonも右端へ sequence valuesを与える。
+末尾がコロンのみ（`:`）の場合も同様に、最右端のセグメントにシーケンス値群が渡される。
 
 ~~~text
 \outer >> \inner:
@@ -484,22 +451,17 @@ plain colonも右端へ sequence valuesを与える。
     - B
 ~~~
 
-まず innerが A/Bを argumentsとして消費し、その完成した command valueが
-outerの一つの block valueになる。
+まず `\inner` が「A」と「B」を引数として消費してコマンドの値を完成させ、その完成した値が `\outer` の1つのブロック引数値となる。
 
-stack segmentに固有の terminal ruleはない。suffixなし stackの最右端だけが
-closed valueである必要がある。
+スタックセグメントに固有の複雑な終端規則はない。suffix を持たないスタックの最右端だけが完結した値（closed value）である必要がある、というシンプルなルールである。
 
-## 11. Specials
+## 11. 特殊構文（Specials）
 
-specialは ! で始まり、registryから AST-to-AST handlerを解決する。
-unknown specialは DirectiveErrorである。handlerは TeX stringを返さず、
-canonical AST nodeのtupleを返す。
+Special は `!` で始まり、レジストリに登録された AST-to-AST ハンドラによって処理される。未知の special は `DirectiveError` となる。ハンドラは TeX 文字列を直接返すのではなく、正準 AST ノード（canonical AST node）のタプルを返す。
 
 ### 11.1 items
 
-!itemsは generic sequenceの itemize transformationである。canonical formは
-plain colonである。
+`!items` は、一般的なシーケンスを `itemize` 環境へと変換する構文である。正準な形式（canonical form）はコロンのみの suffix（`:`）である。
 
 ~~~text
 !items:
@@ -507,6 +469,7 @@ plain colonである。
     - B
 ~~~
 
+展開後:
 ~~~tex
 \begin{itemize}
 \item A
@@ -514,7 +477,7 @@ plain colonである。
 \end{itemize}
 ~~~
 
-item markerの直後には overlay、optional label、本文を置ける。
+各項目のマーカー（`-`）の直後には、Beamer のオーバーレイ指定（`<...>`）、オプションラベル（`[...]`）、および項目本文を記述できる。
 
 ~~~text
 !items:
@@ -523,11 +486,7 @@ item markerの直後には overlay、optional label、本文を置ける。
         - nested item
 ~~~
 
-continuation、nested list、overlay、labelのtextはraw TeXとして保持する。
-multiline itemも bare の '-' と深い indentationで書き、次の同じ階層の
-'-' までを一つの item value とする。value boundary は generic sequence
-と共通だが、continuation、overlay、label、nested list の indentation は
-item mini-grammar に従う。
+継続行、ネストしたリスト、オーバーレイ、ラベルのテキストは、すべて生の TeX として保持される。複数行にわたる項目も、単独の `-` と深いインデントによって記述し、同じ階層の次の `-` が現れるまでを1つの項目の値とする。値の境界決定は通常のシーケンスと共通であるが、継続行、オーバーレイ、ラベル、ネストしたリストのインデント規則は `!items` 独自のミニ文法に従う。
 
 ~~~text
 !items:
@@ -539,30 +498,25 @@ item mini-grammar に従う。
 
 ### 11.2 vpad
 
-!vpadは一つまたは二つの required inline groupと block suiteを受け取る。
-canonical suffixは : | である。
+`!vpad` は、1つまたは2つの必須インライングループ（`{...}`）とブロックスイートを受け取る。正準な suffix は `: |` である。
 
 ~~~text
 !vpad{-1em}{2em}: |
     contents
 ~~~
 
+展開後:
 ~~~tex
 \vspace{-1em}
 contents
 \vspace{2em}
 ~~~
 
-groupが一つなら leading spacingだけを生成する。sequence suffix、groupの
-種類違い、group数0/3以上、suiteなしは validation errorである。
-stack segmentとしても同じ contractを使う。
+グループが1つだけ指定された場合は、前方のスペース（`\vspace{...}`）のみを生成する。シーケンスの suffix（`:`）が使われた場合、グループの括弧の種類が異なる場合、グループ数が0個または3個以上の場合、あるいは後続の suite が存在しない場合は、すべてバリデーションエラーとなる。スタックセグメント（`>>`）として使用する場合もこれと同じ規則が適用される。
 
-## 12. Source macro
+## 12. ソースマクロ（Source macro）
 
-source macroは文字列macroではなく、**Value / container / `>>` composition の
-上に載る structural AST macro**である。templateは syntax ASTとして保存され、
-callのvalueをparameterにbindしてcloneする。source textの置換、rendered TeXの
-再parse、raw TeX group内部へのinterpolationはいずれも行わない。
+ソースマクロは、単なる文字列置換マクロではなく、**値・コンテナ・スタック合成（`>>`）の上に構築された構造的な AST マクロ（structural AST macro）**である。テンプレートは構文 AST として保存され、マクロ呼び出し側で渡された値をパラメータにバインドしてクローン（複製）される。ソーステキストの単純な置換や、レンダリング後の TeX の再パース、生の TeX グループ内部への文字列展開（interpolation）などは一切行われない。
 
 ### 12.1 !defmacro
 
@@ -571,14 +525,9 @@ callのvalueをparameterにbindしてcloneする。source textの置換、render
     TEMPLATE
 ~~~
 
-定義は `: |` block suiteだけを受け取る。plain `:` は validation errorである。
-最初の required groupがmacro名で、`!name` として呼べるよう special-name
-grammarに従う。以降の required groupがparameterである。定義自体はTeXを
-出力しない。定義の前後にある blank lineは通常のcontentとして残る。
+マクロの定義には `: |` ブロックスイートのみを受け付ける。末尾がコロンのみ（`:`）のシーケンス形式はバリデーションエラーとなる。最初の必須グループがマクロ名であり、後から `!name` として呼び出せるよう special 名の文法規則に従う必要がある。2つ目以降の必須グループがパラメータ名となる。マクロ定義自体は TeX コードを出力しない。定義行の前後に置かれた空行は、通常の文書コンテンツとして保持される。
 
-定義は**top-levelのみ**である。他のmacro templateの内部を含め、それ以外の
-場所の `!defmacro` は validation errorであり、dynamic definitionはできない。
-全定義をcollectしてからcallを展開するので、forward referenceが使える。
+マクロの定義は**トップレベルのみ**で許可される。他のマクロテンプレートの内部を含め、トップレベル以外の場所に置かれた `!defmacro` はバリデーションエラーとなり、動的な定義は行えない。すべての定義をあらかじめ収集した上でマクロ呼び出しを展開するため、定義より前の位置でマクロを呼び出す前方参照（forward reference）が可能である。
 
 ~~~text
 !foo >> \TextCA{A}
@@ -587,41 +536,28 @@ grammarに従う。以降の required groupがparameterである。定義自体�
     @{\small} >> !param{body}
 ~~~
 
-parameter名は `[A-Za-z_][A-Za-z0-9_-]*` である。parameterの重複、予約名
-(`defmacro`、`param`、`each`)、built-in specialと同名、macroの二重定義は
-すべて definition siteを指す validation errorである。
+パラメータ名には `[A-Za-z_][A-Za-z0-9_-]*` の文字パターンが使用できる。パラメータ名の重複、予約名（`defmacro`、`param`、`each`）の使用、組み込みの special と同名の使用、およびマクロ自体の多重定義は、いずれも定義位置（definition site）を指し示すバリデーションエラーとなる。
 
-### 12.2 value binding
+### 12.2 値のバインド（Value binding）
 
-macro callは既存の value syntaxをそのまま使う。macro専用の呼び出し構文は
-存在しない。bindは左から順で、required compact groupが先、suiteが作る
-valueが後である。
+マクロ呼び出しには、既存の値構文がそのまま適用される。マクロ専用の特別な呼び出し構文は存在しない。値のバインドは左から順に行われ、ヘッダーに記述されたインラインの必須グループが先、suite が生成する値が後になる。
 
 ~~~text
-!foo{A}{B}          inline value 2個
-!foo: |             block value 1個
-!foo:               '-' ごとに block value 1個
-!foo >> VALUE       closed stack payloadを value 1個として
+!foo{A}{B}          インライン値 2個
+!foo: |             ブロック値 1個
+!foo:               '-' ごとにブロック値 1個（シーケンス）
+!foo >> VALUE       閉じたスタックのペイロードを1個の値として
 ~~~
 
-したがって `!foo{A} >> \bar{B}` は `[A, \bar{B}]` をbindする。optional /
-overlay groupは valueではなく、macro callでは拒否する。
+したがって、例えば `!foo{A} >> \bar{B}` という記述は `[A, \bar{B}]` という2つの値をバインドする。オプション引数グループ（`[...]`）やオーバーレイグループ（`<...>`）は値ではないため、マクロ呼び出しに付与することはできない（エラーとなる）。
 
-通常のparameterは exactly one value、末尾の `{...rest}` parameterは残りの
-valueすべてを sequenceとして受け取り、0個でもよい。rest parameterは
-optional・unique・最後である。arity不一致は macro名・期待する形・実際の
-value数・call-site spanを含む macro errorである。
+通常のパラメータは**ちょうど1つの値（exactly one value）**を受け取る。末尾に `{...rest}` のように記述した可変長パラメータ（rest parameter）は、残りのすべての値をシーケンスとして受け取り、0個の値であっても許容される。rest parameter は省略可能かつ一意であり、必ずパラメータリストの最後に置かなければならない。引数の個数（arity）が一致しない場合は、マクロ名、期待される引数形式、実際の引数の数、および呼び出し位置のスパンを含むマクロエラーとなる。
 
 ### 12.3 !param
 
-`!param{name}` は template内でbindされたvalueのASTを差し込む。required group
-はちょうど1個、suiteは取らない。template外での使用、未bindのparameter、
-rest parameterの指定はいずれも macro errorである。rest parameterはvalueでは
-なくsequenceなので、`!each` だけが到達できる。
+`!param{name}` は、テンプレート内でバインドされた値の AST をその位置に挿入する。必須グループをちょうど1個だけ取り、suite は取らない。テンプレート外での使用、未バインドのパラメータ名の指定、および rest parameter の指定は、すべてマクロエラーとなる。rest parameter は単一の値ではなくシーケンスであるため、後述の `!each` を通じてのみアクセスできる。
 
-group内部はopaqueなraw TeXなので、parameterをgroupへinterpolateはできない。
-同じopacityが `!items` の raw suiteにも及ぶので、item本文に書いた `!param`
-はそのまま literal textになる。代わりに structural formを使う。
+TeX グループの内部は解釈されない不透明な生 TeX（opaque raw TeX）であるため、グループ内にパラメータを展開（interpolate）することはできない。この不透明性は `!items` の生テキスト suite にも適用されるため、リスト項目の本文中に書かれた `!param` はマクロ展開されず、文字どおりのテキストとして残る。パラメータを渡したい場合は、以下のような構造化された形式を使用する。
 
 ~~~text
 @infobox:
@@ -636,14 +572,9 @@ group内部はopaqueなraw TeXなので、parameterをgroupへinterpolateはで�
     TEMPLATE
 ~~~
 
-`!each` は rest parameterのvalueを source order で走査し、各回を `item` に
-bindしてtemplateを展開し、結果を外側のblockへ順に連結する。sequenceが空なら
-何も生成しない。`: |` suiteが必要で、template内だけで有効、第一groupは rest
-parameterでなければならない。bind済みparameterを隠す item名は macro errorで
-ある。`!each` はnestできる。
+`!each` は、rest parameter に格納された一連の値を出現順（source order）に走査し、各要素を一時変数 `item` にバインドしながらテンプレートを展開して、その結果を外側のブロックへ順に連結する。シーケンスが空の場合は何も生成されない。`: |` suite を伴う必要があり、マクロテンプレート内でのみ有効である。第1グループには必ず rest parameter を指定しなければならない。すでにバインドされているパラメータ名を覆い隠す（シャドウイングする）変数名を指定した場合はマクロエラーとなる。なお、`!each` はネストして使用できる。
 
-`!each` は、stackのsuffixが `: |` であれば最右segmentにできる。最右segmentは
-そのsuffixを受け取るので、`: |` を自分で書いていることになるからである。
+`!each` は、スタックの末尾 suffix が `: |` である場合に限り、スタックの最右端セグメントとして配置できる。これは、最右端セグメントがその suffix を受け取るため、自身で `: |` を持っているのと等価になるからである。
 
 ~~~text
 @{\bfseries} >> !each{items}{item}: |
@@ -651,127 +582,106 @@ parameterでなければならない。bind済みparameterを隠す item名は m
     !param{item}
 ~~~
 
-それ以外の位置ではsuiteがsyntheticになるため validation errorである。
-`!defmacro` は stack segmentにできない。合成すると左のsegmentの下にnestされ、
-definitionは top-level statementでなくなるからである。
+スタックの最右端以外の位置に置いた場合は、suite が合成（synthetic）扱いとなってしまうためバリデーションエラーとなる。また、`!defmacro` をスタックセグメントに含めることはできない（合成すると左側のセグメントの下にネストされ、マクロ定義がトップレベル文ではなくなってしまうため）。
 
-### 12.5 展開
+### 12.5 展開（Expansion）
 
-macro callは常に**一つのvalue**（展開されたtemplate block）である。よって
-`>>` chainの中に置ける。
+マクロ呼び出しは、常に**1つの値**（展開されたテンプレートブロック）として扱われる。したがって、`>>` の合成チェーンの途中にマクロ呼び出しを配置することも可能である。
 
 ~~~text
 @center >> !smallred >> \TextCA{Important}
 ~~~
 
-template内から別のmacroを呼べる。recursionは禁止で、直接・間接どちらの
-循環も明示的に検出し、chainを含む macro errorにする。
+マクロテンプレート内から別のマクロを呼び出すことも可能である。ただしマクロの再帰呼び出し（recursion）は禁止されており、直接的・間接的な循環参照はすべて明示的に検出され、循環経路を含むマクロエラーとなる。
 
 ~~~text
 recursive macro expansion detected: foo -> bar -> foo
 ~~~
 
-展開は `>>` desugaringの後、value consumptionの前に走る AST-to-AST passで
-ある。macro構文はnormalizationにもrendererにも漏れない。`!splice` は v1に
-含まない。
+マクロの展開は、`>>` の脱糖（desugaring）が行われた後、値の消費（value consumption）が行われる前に実行される AST-to-AST パスである。マクロ固有の構文が正規化処理やレンダラーに漏れ出ることはない。なお、スプライス構文（`!splice`）は v1 には含まれない。
 
-### 12.6 source mapping
+### 12.6 ソースマッピング（Source mapping）
 
-`!param` 由来の出力は call-siteで渡されたvalueのspanを保持する。template
-由来の scaffoldingは definition siteではなく **macro call site** へretarget
-される。inverse searchは、ユーザーが書いた本文へはその本文へ、macroが生成
-した枠へはmacro呼び出し行へ戻る。
+`!param` から出力されたコードは、マクロ呼び出し側（call site）で渡された元の値の位置情報（source span）を保持する。一方、テンプレート自体に由来する構造・枠組み（scaffolding）の位置情報は、定義位置ではなく**マクロ呼び出し位置（macro call site）**へとリターゲットされる。これにより、逆方向検索（SyncTeX inverse search）を行った際、ユーザーが書いた本文をクリックした場合はその本文の記述位置へ、マクロが生成した枠組みをクリックした場合はマクロ呼び出し行へと正確に戻ることができる。
 
-## 13. Blank line、raw TeX、コメント
+## 13. 空行、生の TeX、コメント
 
-sequence modeのentry間 blank lineはseparatorで、valueにしない。各 sequence
-value block と block mode の内部blank lineはcontentである。
+シーケンスモードにおいて、各エントリー（`-`）の間に置かれた空行は単なる区切り文字（separator）として扱われ、値の一部には含まれない。一方、各シーケンスエントリーのブロック内部や、ブロックモード（`: |`）の内部にある空行は、意味のある内容（content）としてそのまま保持される。
 
-TeX group内部の :、: |、>>、pipeはraw textである。item本文・continuation
-もraw textである。構造位置の @@ 以外のraw TeXは、TeXFluxの構文として
-再解釈しない。
+TeX グループ内部に書かれた `:`、`: |`、`>>`、パイプ `|` は、すべて生のテキストとして扱われる。また、リスト項目（`!items`）の本文や継続行も生のテキストである。構造化構文の先頭位置でエスケープに用いる `@@` を除き、生の TeX コード行が TeXFlux の構文として再解釈されることはない。
 
-structural header末尾の TeX commentは未定義ではなく明確に禁止する。通常の
-raw TeX lineにある percentはそのまま出力する。
+構造化ヘッダーの末尾に TeX 形式のコメント（`% ...`）を付加することは、未定義ではなく明確に禁止されている（パースエラーとなる）。通常の生の TeX 行に含まれるパーセント記号（`%`）は、そのまま出力される。
 
-## 14. Syntax AST と canonical AST
+## 14. 構文 AST と正準 AST（Syntax AST / Canonical AST）
 
-parserはsyntax shapeとsource spanを保持する。代表的なsyntax nodeは次の通り。
+パーサーは、元の構文の形状（syntax shape）とソースコード上の位置情報（source span）を保持する。代表的な構文ノード（syntax node）は以下の通りである。
 
-- RawTex
-- ParsedInvocation（command、named environment、brace、transparent）
-- SpecialInvocation
-- Stack
-- SequenceEntry
-- Block
+- `RawTex`
+- `ParsedInvocation`（command、named environment、brace、transparent）
+- `SpecialInvocation`
+- `Stack`
+- `SequenceEntry`
+- `Block`
 
-suite modeは Sequence または Block を保持する。suffixなし Stackの suiteは
-存在しない。SequenceEntryは - marker spanとvalue spanを保持する。
+suite のモード情報としては `Sequence` または `Block` を保持する。suffix を持たないスタックには suite は存在しない。`SequenceEntry` は、`-` マーカー自体のスパンと、値全体のスパンを保持する。
 
-normalizationのpipelineは次の通り。
+正規化パイプライン（normalization pipeline）の流れは以下の通りである。
 
 ~~~text
-physical lines
-  -> syntax AST
-  -> pure >> desugaring
-  -> value consumption / special expansion
-  -> canonical AST
-  -> renderer
+物理行（physical lines）
+  -> 構文 AST（syntax AST）
+  -> 純粋な >> の脱糖（pure >> desugaring）
+  -> 値の消費 / special の展開（value consumption / special expansion）
+  -> 正準 AST（canonical AST）
+  -> レンダラー（renderer）
 ~~~
 
-canonical ASTは次だけである。
+正準 AST（canonical AST）を構成するノードは以下のものだけに限定される。
 
-- RawTex
-- GenericInvocation
-- Argument
-- Block
-- BraceGroup
-- Item
+- `RawTex`
+- `GenericInvocation`
+- `Argument`
+- `Block`
+- `BraceGroup`
+- `Item`
 
-normalization後に ParsedInvocation、SpecialInvocation、Stack、SequenceEntryが
-rendererへ届いてはならない。
+正規化処理を経た後に、`ParsedInvocation`、`SpecialInvocation`、`Stack`、`SequenceEntry` などの構文固有ノードがレンダラーに届くことは決してない。
 
-GenericInvocationの body=Noneはcommand、body=Blockはnamed environmentで
-ある。BraceGroupは必ずliteral TeX bracesを生成する。Transparent containerは
-wrapper nodeを生成しない。
+`GenericInvocation` は、`body=None` の場合はコマンドを表し、`body=Block` の場合は名前付き環境を表す。`BraceGroup` は必ずリテラルな TeX 中括弧（`{ ... }`）を出力する。透過コンテナ（Transparent container）はラッパーノードを生成しない。
 
-## 15. SourceSpan、source map、SyncTeX
+## 15. 位置情報（SourceSpan）、ソースマップ、SyncTeX
 
-major syntax node、canonical node、diagnosticはfile、1-based line、1-based
-columnを持つ。spanはhalf-openである。少なくとも次の provenanceを保持する。
+主要な構文ノード、正準ノード、およびエラー診断情報（diagnostic）は、ファイル名、1から始まる行番号（1-based line）、1から始まる列番号（1-based column）の情報を保持する。スパンは半開区間（half-open）で表される。少なくとも以下の要素について、元のソースコードの位置（provenance）が保持される。
 
-- suite colonとblock pipe
-- sequenceの各 -
-- sequence value の block boundary
-- @{...} header
-- @: header
-- stack segment
-- closed stack terminal
-- sequence/block value boundary
-- item metadata
-- generated begin/end、argument braces、literal braces、special expansion
+- suite のコロン（`:`）およびブロックパイプ（`|`）
+- シーケンスの各 `-`
+- シーケンス値のブロック境界
+- `@{...}` ヘッダー
+- `@:` ヘッダー
+- スタックの各セグメント（`>>`）
+- 閉じたスタックの終端要素
+- シーケンスおよびブロック値の境界
+- リスト項目（item）のメタデータ
+- 生成された `\begin` / `\end`、引数の中括弧、リテラル中括弧、special 展開部分
 
-rendererはMappedEmitterを通じてgenerated rangeとsource spanを対応づける。
-source mapは生成TeXと元の.tfx sourceのhashを検証する。SyncTeX remapはこの
-source mapを使ってgenerated TeXのInput tagを元sourceへ戻す。
+レンダラーは `MappedEmitter` を介して、生成された TeX の出力範囲と元のソースコードの位置情報を対応づける。ソースマップ（source map）は、生成された TeX と元の `.tfx` ソースファイルのハッシュ値を検証する。SyncTeX のリマップ処理は、このソースマップを利用して生成された TeX の `Input` タグを元のソースファイルへとマッピングし直す。
 
-今回のsyntax変更でも、source map/SyncTeX bridgeを削除・簡略化してはならない。
+言語仕様や構文の拡張にあたっても、このソースマップおよび SyncTeX の連携機構を削除したり簡略化したりしてはならない。
 
-## 16. Diagnostics と migration
+## 16. エラー診断と旧構文からの移行（Diagnostics / Migration）
 
-次は新v1ではサポートしない。
+以下の記法は、現行の v1 ではサポートされない。
 
-- suffixなしの単独 named environment/container
-- plain colon suiteの unmarked child
-- closed stackの open terminal
-- unknown special
-- structural headerの trailing token/comment
-- suite後の |- やその他 block scalar variant
+- suffix を持たない単独の名前付き環境 / コンテナ
+- 末尾がコロンのみの suite（`:`）において、マーカー（`-`）の付いていない子要素
+- 閉じたスタック構文において、終端がオープンなコンテナで終わっているもの
+- 未知の special（`!`）
+- 構造化ヘッダー行末尾の不要なトークンやコメント
+- suite の末尾に `|-` などの他のブロックスカラー変種を付加する記法
 
-旧仕様の !block、!arg、!bodyはcompatibility aliasではない。現行v1では
-unknown/deprecated specialとしてfailする。
+旧仕様に存在した `!block`、`!arg`、`!body` は互換用エイリアスとしては提供されない。現行の v1 では未定義または廃止された special としてエラーとなる。
 
-旧仕様の次の形は使わない。
+旧仕様にあった以下の記述形式は使用できない。
 
 ~~~text
 \foo:
@@ -779,16 +689,13 @@ unknown/deprecated specialとしてfailする。
     B
 ~~~
 
-multiline一つなら \foo: | を使う。複数の block values は \foo: の下で
-各 '-' を一つずつ書く。各 '-' の後ろに続く深い行も同じ value に属する。
+単一の複数行引数を渡す場合は `\foo: |` を使用する。複数のブロック値を引数として渡す場合は、`\foo:` の下に各エントリーを `-` で1つずつ記述する。各 `-` の行に続く深くインデントされた行も同じ引数値に属する。
 
-旧environmentのbody-only表記も @frame{Title}: | に移行する。利用者は
-まずsuffixを選び、次に - で複数valueを明示する。
+以前の環境構文における本文のみの表記も、`@frame{Title}: |` のように `: |` を用いた形式へと移行する。ユーザーはまず適切な suffix（`:` または `: |`）を選択し、複数の値を渡す場合は `-` を使って明示する。
 
-## 17. Conceptual grammar
+## 17. 概念文法（Conceptual grammar）
 
-これはTeX本文のgrammarではなく、TeXFlux structural syntaxの意味を示す
-conceptual grammarである。
+以下の文法定義は、TeX 本文の文法ではなく、TeXFlux の構造化構文の意味関係を表すための概念文法（conceptual grammar）である。
 
 ~~~text
 document          ::= statement*
@@ -820,21 +727,20 @@ transparent-container-segment
 special-segment  ::= "!" special-name group*
 ~~~
 
-実装上のparserは、item metadata、balanced group、source span、raw lineの
-indentationを別途保持する。sequence-blockは次の同じ階層の '-' が現れる
-まで続く。grammarの要点は、plain colonが「- ごとに一つの block value」、
-colon-pipeがone block、suffixなしがclosed valueであることだ。
+実際の実装におけるパーサーは、リスト項目のメタデータ、括弧の対応関係、ソースコード上の位置情報（source span）、および生の TeX 行のインデントなどを別途管理している。`sequence-block` は、同じインデント階層に次の `-` が現れるまで継続する。この文法の要点は、**コロンのみ（`:`）が「`-` ごとに1つのブロック値」を意味し、コロンとパイプ（`: |`）が「全体で1つのブロック値」を意味し、suffix なしが「すでに完結した値」を意味する**という点にある。
 
-## 18. Acceptance examples
+## 18. 受け入れテスト例（Acceptance examples）
 
-次の出力はv1のgolden behaviorである。
+以下の変換結果は、v1 における標準的な期待動作（ゴールデンビヘイビア）を示している。
 
+### 例1: 複数引数を持つコマンド
 ~~~text
 \foo:
     - A
     - B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
@@ -843,6 +749,7 @@ B
 }
 ~~~
 
+### 例2: 引数と本文を持つ環境
 ~~~text
 @myenv:
     - ARG1
@@ -852,6 +759,7 @@ B
         BODY2
 ~~~
 
+展開後:
 ~~~tex
 \begin{myenv}{
 ARG1
@@ -863,16 +771,19 @@ BODY2
 \end{myenv}
 ~~~
 
+### 例3: スタック合成（>>）
 ~~~text
 @center >> \includegraphics{fig.pdf}
 ~~~
 
+展開後:
 ~~~tex
 \begin{center}
 \includegraphics{fig.pdf}
 \end{center}
 ~~~
 
+### 例4: 空行を含むブロック引数
 ~~~text
 \foo: |
     A
@@ -880,6 +791,7 @@ BODY2
     B
 ~~~
 
+展開後:
 ~~~tex
 \foo{
 A
