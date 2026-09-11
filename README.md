@@ -1,241 +1,286 @@
 # TeXFlux
 
-TeXFlux is a small TeX-first preprocessor for LaTeX and Beamer. It removes
-structural boilerplate without parsing or changing TeX semantics.
+**TeXFlux**（テックフラックス）は、LaTeX / Beamer 向けの軽量な「TeX-first」インデントベース・プリプロセッサです。
+TeX の文法や数式・表現力はそのままに、煩雑な `\begin{...}` / `\end{...}` や複雑な中括弧のネストを、Python のようなインデント構文で劇的にシンプルに記述できます。
 
-The v1 language has three prefixes:
+---
 
-~~~text
-\ = TeX command
-@ = structural container
-! = TeXFlux special transformation
-~~~
+## 💡 TeXFlux とは？ なぜ使うのか？
 
-Ordinary TeX is opaque. TeXFlux uses four ASCII spaces for structural
-indentation, keeps source spans, and has no runtime dependencies.
+LaTeX（特に Beamer スライド）を作成するとき、以下のような悩みを抱えたことはありませんか？
 
-## Installation and CLI
+- `\begin{frame}`、`\begin{columns}`、`\begin{column}`、`\begin{itemize}` など、**`\begin` と `\end` の boilerplate（定型句）が多すぎて見通しが悪い**
+- 中括弧 `{ ... }` の対応が崩れてコンパイルエラーになる
+- Markdown ベースのスライドツール（Marp や Pandoc など）では、**数式や Beamer の高度な機能（オーバーレイ `<1->`、独自マクロ、細かなレイアウト調整）が思い通りに使えない**
 
-TeXFlux requires Python 3.11 or newer:
+**TeXFlux は、この問題を「TeX を置き換えるのではなく、構造の記述だけを簡潔にする（TeX-first）」ことで解決します。**
 
-~~~bash
-python3 -m pip install .
-texflux compile slides.tfx -o slides.tex
-~~~
+### Before / After 比較
 
-The generated .tex.tfxmap file contains source provenance. To use SyncTeX,
-run the TeX engine with SyncTeX enabled and remap the result:
+TeXFlux を使うと、Beamer スライドの記述が以下のようにスッキリします。
 
-~~~bash
-latexmk -pdf -synctex=1 slides.tex
-texflux synctex remap slides.synctex.gz --map slides.tex.tfxmap
-~~~
-
-LaTeX is optional and is never a TeXFlux runtime dependency.
-
-## Syntax at a glance
-
-The suffix determines how the right-hand side produces values:
-
-~~~text
-suffix absent = an already-closed value
-:            = one block value per '-'; the next sibling '-' is its boundary
-: |          = one multiline block value
-~~~
-
-Commands consume every sequence value as a required argument:
-
-~~~text
-\foo{COMPACT}:
-    - A
-    - B
-~~~
-
-~~~tex
-\foo{COMPACT}{
-A
-}{
-B
-}
-~~~
-
-Use : | for one multiline argument or an environment body:
-
-~~~text
-\foo: |
-    A
-    @center: |
-        B
-
-@frame{Title}: |
-    Hello
-~~~
-
-~~~tex
-\foo{
-A
-\begin{center}
-B
-\end{center}
-}
-\begin{frame}{Title}
-Hello
+#### 従来の LaTeX / Beamer:
+```latex
+\begin{frame}{研究の概要}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \begin{itemize}
+        \item<1-> 背景と課題
+        \item<2-> 提案手法のアプローチ
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+        \includegraphics[width=\linewidth]{architecture.pdf}
+      \end{center}
+    \end{column}
+  \end{columns}
 \end{frame}
-~~~
+```
 
-An environment sequence consumes all but its last value as required arguments;
-the last value is its body:
+#### TeXFlux（`.tfx`）:
+```text
+@frame{研究の概要}: |
+    @columns:
+        - @column{0.5\textwidth}:
+            !items:
+                -<1-> 背景と課題
+                -<2-> 提案手法のアプローチ
+        - @column{0.5\textwidth}: |
+            @center >> \includegraphics[width=\linewidth]{architecture.pdf}
+```
 
-~~~text
+- `\begin` や `\end` の閉じ忘れがゼロに
+- 多重ネストもインデントで直感的に表現
+- `@center >> \includegraphics{...}` のように、環境とコマンドを1行でパイプライン合成可能
+- **数式やマクロ、パッケージなどの TeX コードは 100% そのまま動作**
+
+---
+
+## ✨ 主な特徴
+
+1. **TeX-first（TeX の表現力を完全保持）**
+   - TeXFlux は TeX の文章や数式を勝手にパース・エスケープ・改変しません。既存の LaTeX パッケージ、コマンド、数式資産がそのまま動作します。
+2. **直感的なインデント構文**
+   - 半角スペース4個のインデントでブロック構造や引数を表現。
+3. **`>>` によるスタック合成**
+   - `@center >> @{\small} >> \input{fig.tex}` のように、入れ子構造を1行でスッキリ記述。
+4. **SyncTeX 完全対応（PDF とソースの相互ジャンプ）**
+   - ソースマップ（`.tfxmap`）を出力し、SyncTeX をリマップすることで、PDF ビューアとエディタ間の相互ジャンプ（前方検索・後方検索）が `.tfx` ファイルに対してそのまま動作します。
+5. **外部依存ゼロ**
+   - Python 3.11 以上の標準ライブラリのみで動作します（追加パッケージのインストール不要）。
+
+---
+
+## 🚀 インストール
+
+TeXFlux は Python 3.11 以上が必要です。
+
+```bash
+# リポジトリをクローンしてインストール
+git clone https://github.com/komatsu/beamercraft.git
+cd beamercraft
+python3 -m pip install .
+```
+
+---
+
+## 📖 基本的な使い方（CLI）
+
+### 1. `.tfx` ファイルのコンパイル
+
+`.tfx`（TeXFlux ファイル）から標準の `.tex` ファイルを生成します。
+
+```bash
+texflux compile slides.tfx -o slides.tex
+```
+
+### 2. LaTeX コンパイルと SyncTeX の連携（推奨ワークフロー）
+
+TeXFlux はコンパイル時にソースマップファイル（`slides.tex.tfxmap`）を自動生成します。
+SyncTeX を有効にして TeX をコンパイルした後、`texflux synctex remap` を実行すると、PDF のクリックから `.tfx` の該当行へ直接ジャンプできるようになります。
+
+```bash
+# 1. TeXFlux で .tex と .tfxmap を生成
+texflux compile slides.tfx -o slides.tex
+
+# 2. latexmk 等で SyncTeX を有効にして PDF をビルド
+latexmk -pdf -synctex=1 slides.tex
+
+# 3. SyncTeX ファイルを .tfx 向けにリマップ
+texflux synctex remap slides.synctex.gz --map slides.tex.tfxmap
+```
+
+※ LaTeX のビルドツール自体は TeXFlux の依存関係ではありません。お好みの TeX ディストリビューション（TeX Live など）やビルドツール（latexmk, llmk 等）をご利用ください。
+
+---
+
+## 📝 構文クイックガイド
+
+TeXFlux の文法規則はとてもシンプルです。3つのプレフィックス（接頭辞）と2つの suite 形式（`:` と `: |`）を覚えるだけで、すぐに使い始められます。
+
+### 1. 3つのプレフィックス（接頭辞）
+
+- `\` : **TeX コマンド**（例: `\section{...}`, `\textbf{...}`）
+- `@` : **構造コンテナ / 環境**（例: `@frame`, `@center`, `@{...}`）
+- `!` : **TeXFlux の特殊変換**（例: `!items:`, `!defmacro`）
+
+プレフィックスを伴わない通常の行は、すべてそのまま「生の TeX（raw TeX）」として扱われます。
+
+### 2. 2種類のブロック形式（Suite Suffix）
+
+- `: |` （ブロックモード）：続くインデント全体を「**1つのブロック値**」として扱う（環境の本文や複数行の引数に利用）。
+- `:` （シーケンスモード）：各 `-` で区切られたエントリーを「**複数の引数の並び**」として扱う。
+
+---
+
+### 3. 主な構文パターン
+
+#### ① 環境（`@env: |`）
+`@環境名: |` と書くだけで、`\begin{環境名}` と `\end{環境名}` に展開されます。
+
+```text
+@frame{スライドのタイトル}: |
+    ここにスライドの本文を書きます。
+    $E = mc^2$ などの数式もそのまま記述可能です。
+```
+
+展開後:
+```latex
+\begin{frame}{スライドのタイトル}
+ここにスライドの本文を書きます。
+$E = mc^2$ などの数式もそのまま記述可能です。
+\end{frame}
+```
+
+#### ② リスト項目（`!items:`）
+`!items:` を使うと、定型的な `itemize` 環境を簡潔に書けます。Beamer のオーバーレイ指定（`<1->`）や項目ラベル（`[★]`）にも対応しています。
+
+```text
+!items:
+    -<1-> 最初の項目
+    -<2->[★] ラベル付きの2番目の項目
+        - ネストした箇条書き
+```
+
+展開後:
+```latex
+\begin{itemize}
+\item<1-> 最初の項目
+\item<2->[★] ラベル付きの2番目の項目
+\begin{itemize}
+\item ネストした箇条書き
+\end{itemize}
+\end{itemize}
+```
+
+#### ③ スタック合成（`>>`）
+`>>` でセグメントを繋ぐと、多重の環境やコマンドを1行で入れ子にできます。
+
+```text
+@center >> \includegraphics[width=0.8\linewidth]{chart.pdf}
+```
+
+展開後:
+```latex
+\begin{center}
+\includegraphics[width=0.8\linewidth]{chart.pdf}
+\end{center}
+```
+
+#### ④ 複数引数を持つコマンド・環境（`:` と `-`）
+末尾がコロンのみ（`:`）の場合、各 `-` がコマンドの必須引数 `{...}` になります。
+
+```text
+\twoargs:
+    - 第1引数
+    - 第2引数
+```
+
+環境の場合は、最後の `-` が環境の本文（body）になり、それ以前の `-` は環境の引数になります。
+
+```text
 @myenv:
-    - ARG1
-    - ARG2
+    - オプション/第1引数
     - @: |
-        BODY
-~~~
+        環境の本文
+```
 
-@: is a transparent container. @{RAW_TEX}: | is a literal TeX brace container
-and always emits its own braces:
+#### ⑤ リテラル中括弧コンテナ（`@{...}: |`）
+文字サイズ変更やフォント・色のスコープを中括弧 `{ ... }` で囲みたい場合は、`@{...}: |` を使用します。
 
-~~~text
-@{\small}: |
-    BODY
+```text
+@{\small\color{gray}}: |
+    ここだけ文字が小さく、グレーになります。
+```
 
-\foo:
-    - @{}: |
-        A
-~~~
-
-~~~tex
+展開後:
+```latex
 {
-\small
-BODY
+\small\color{gray}
+ここだけ文字が小さく、グレーになります。
 }
-\foo{
-{
-A
-}
-}
-~~~
+```
 
->> composes complete prefix-bearing segments. A suffix is optional when the
-rightmost segment is already closed:
+#### ⑥ ソースマクロ（`!defmacro`）
+よく使うレイアウトや構文パターンを、トップレベルでマクロとして定義して再利用できます（文字列置換ではなく AST レベルの安全な構造マクロです）。
 
-~~~text
-@center >> \includegraphics{fig.pdf}
-@frame{Title} >> @center >> @{\small}: |
-    BODY
-~~~
+```text
+!defmacro{alertbox}{title}{body}: |
+    @block{\textbf{!param{title}}}: |
+        !param{body}
 
-The built-in specials are:
+!alertbox{注意}: |
+    これは重要な注意事項です。
+```
 
-- !items: converts the generic sequence into itemize; overlays, labels,
-  continuation lines, nested lists, and bare '-' multiline item values are
-  supported.
-- !vpad{before} or !vpad{before}{after}: | inserts \vspace around a block
-  value.
+---
 
-The former !block, !arg, and !body constructs are removed. Use @{}, generic
-sequence entries, and the last-value environment rule instead.
+## 🐍 Python API からの利用
 
-## Source macros
+Python スクリプト内から TeXFlux のコンパイラを直接呼び出すことも可能です。
 
-A macro names a structure you repeat. It is an AST macro, not a textual one:
-a call binds its values to the template's parameters and clones the template,
-so raw TeX is never re-parsed and nothing is interpolated into a TeX group.
+```python
+from texflux import compile_text
 
-~~~text
-!defmacro{smallred}{body}: |
-    @{\small\color{red}} >> !param{body}
-
-!smallred: |
-    Important
-~~~
-
-~~~tex
-{
-\small\color{red}
-Important
-}
-~~~
-
-A call uses the ordinary value syntax, so compact groups, a block suite, a
-sequence suite, and a closed stack payload all bind as values, left to right:
-
-~~~text
-!foo{A}{B}          two inline values
-!foo: |             one block value
-!foo:               one block value per '-'
-!foo >> VALUE       the closed stack payload as one value
-~~~
-
-Because a call is one value, it composes with >> like any other segment:
-
-~~~text
-@center >> !smallred >> \TextCA{Important}
-~~~
-
-A trailing {...rest} parameter takes every remaining value, and !each walks it:
-
-~~~text
-!defmacro{bullets}{...items}: |
-    @itemize: |
-        !each{items}{item}: |
-            \item
-            !param{item}
-
-!bullets:
-    - First
-    - Second
-~~~
-
-Definitions live at the top level and emit no TeX. They may be written after
-the calls that use them. Macros may call other macros; recursion is rejected
-with the offending chain. Inverse search still works: text you passed maps
-back to where you wrote it, and the structure the macro generated maps back to
-the macro call.
-
-## Python API
-
-~~~python
-from texflux import compile_text, normalize, parse, render
-
-source = """@frame{API example}: |
-    Body in raw TeX
+source = """@frame{API サンプル}: |
+    TeXFlux は Python からも簡単に実行できます。
 """
 tex = compile_text(source, filename="slides.tfx")
-assert tex == render(normalize(parse(source, filename="slides.tfx")))
-~~~
+print(tex)
+```
 
-The renderer accepts canonical AST only; syntax-only stack, suite, and special
-nodes are normalized before rendering.
+---
 
-## Examples
+## 📁 サンプル集（`examples/`）
 
-The examples/ directory contains source/output pairs:
+リポジトリ内の `examples/` フォルダに、実際のサンプルコードと変換結果（ゴールデンファイル）が用意されています。
 
-- basic.tfx — raw TeX, a block environment, and items
-- structured.tfx — sequence values and literal groups
-- stacked-items.tfx — closed stacking and nested items
-- macros.tfx — wrapper, two-argument, and variadic source macros
-- content.tfx — a converted real-world Beamer content example
+- `basic.tfx` : 基本的な環境、生の TeX、`!items`、オーバーレイ
+- `structured.tfx` : 複数引数（シーケンス）とリテラル中括弧グループ
+- `stacked-items.tfx` : `>>` によるスタック合成とネストしたリスト
+- `macros.tfx` : 引数付きマクロ・可変長引数マクロ
+- `content.tfx` : 実際の Beamer スライドを TeXFlux に変換した実例
 
-~~~bash
-PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
-diff -u examples/basic.tex /tmp/basic.tex
-~~~
+実行例:
+```bash
+python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
+```
 
-The user-facing language reference is doc/dsl.md; the normative definition is
-texflux_tex_first_dsl_v1_spec.md.
+---
 
-## Non-goals
+## 📚 詳細仕様
 
-TeXFlux does not parse TeX, discover packages or command signatures, escape
-text, provide variables/expressions, or load user plugins implicitly. Specials
-are an in-process AST-to-AST extension point.
+言語仕様の完全な解説については、以下のドキュメントをご参照ください。
 
-## Development
+- [TeXFlux DSL v1 言語仕様書 (doc/dsl.md)](doc/dsl.md)
+- [規範的仕様書 (texflux_tex_first_dsl_v1_spec.md)](texflux_tex_first_dsl_v1_spec.md)（英語）
 
-~~~bash
-PYTHONPATH=src python3 -m unittest discover
-~~~
+---
+
+## 開発・テスト
+
+```bash
+python3 -m unittest discover
+```
+
