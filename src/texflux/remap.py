@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -10,10 +11,11 @@ from pathlib import Path
 import re
 import stat
 import tempfile
-from typing import Sequence
+from typing import Final, get_args
 
 from .ast import SourcePosition
 from .paths import PathLike, normalized_path, same_path
+from .render import RenderRole
 from .synctex import (
     SyncTeXDocument,
     SyncTeXInput,
@@ -64,9 +66,16 @@ class _Target:
     source_tags: dict[int, int]
 
 
-_HASH_RE = re.compile(r"[0-9a-f]{64}\Z")
-_ROLES = {"content", "open", "close", "synthetic"}
-_ROLE_RANK = {"content": 0, "open": 1, "close": 1, "synthetic": 2}
+_HASH_RE: Final = re.compile(r"[0-9a-f]{64}\Z")
+#: The role vocabulary is owned by the renderer that writes the map.
+_ROLES: Final = frozenset(get_args(RenderRole))
+#: Without a column, content outranks a delimiter, which outranks filler.
+_ROLE_RANK: Final[dict[str, int]] = {
+    "content": 0,
+    "open": 1,
+    "close": 1,
+    "synthetic": 2,
+}
 
 
 def _object(value: object, label: str) -> dict[str, object]:

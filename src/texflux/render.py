@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from .ast import (
     Argument,
@@ -13,7 +13,6 @@ from .ast import (
     CanonicalNode,
     Document,
     GenericInvocation,
-    GroupKind,
     Item,
     RawTex,
     SourcePosition,
@@ -21,7 +20,8 @@ from .ast import (
 )
 
 
-RenderRole = Literal["content", "open", "close", "synthetic"]
+#: The provenance role of one rendered fragment.
+RenderRole: TypeAlias = Literal["content", "open", "close", "synthetic"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,23 +122,22 @@ class MappedEmitter:
         )
 
 
-_GROUP_DELIMITERS = {
-    GroupKind.REQUIRED: ("{", "}"),
-    GroupKind.OPTIONAL: ("[", "]"),
-    GroupKind.OVERLAY: ("<", ">"),
-}
-
-
 def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
     if (
         argument.layout is not ArgumentLayout.INLINE
         or not isinstance(argument.value, str)
     ):
         raise TypeError("renderer received a non-inline argument in an inline position")
-    opener, closer = _GROUP_DELIMITERS[argument.kind]
+    opener, closer = argument.kind.delimiters
     emitter.emit(opener, source=argument.span, role="open")
     emitter.emit(argument.value, source=argument.span, role="content")
     emitter.emit(closer, source=argument.span, role="close")
+
+
+def _blank_line(node: CanonicalNode) -> bool:
+    """A rendered blank line, which carries no provenance worth annotating."""
+
+    return isinstance(node, RawTex) and not node.text
 
 
 def _source_comment(emitter: MappedEmitter, node: CanonicalNode) -> None:
@@ -156,32 +155,29 @@ def _render_block(
     source_comments: bool,
 ) -> None:
     for node in block.nodes:
-        if isinstance(node, RawTex):
-            if source_comments and node.text != "":
-                _source_comment(emitter, node)
-            if node.text == "":
-                emitter.emit("\n", source=node.span, role="content")
-            else:
-                emitter.line(node.text, source=node.span, role="content")
-            continue
-
-        if source_comments:
+        if source_comments and not _blank_line(node):
             _source_comment(emitter, node)
-        if isinstance(node, GenericInvocation):
-            _render_invocation(emitter, node, source_comments)
-        elif isinstance(node, Item):
-            _render_item(emitter, node, source_comments)
-        elif isinstance(node, BraceGroup):
-            emitter.line("{", source=node.span, role="open")
-            if node.header_raw:
-                emitter.line(node.header_raw, source=node.span, role="content")
-            _render_block(emitter, node.body, source_comments)
-            emitter.line("}", source=node.span, role="close")
-        else:
-            raise TypeError(
-                "renderer accepts canonical AST only; "
-                f"got {type(node).__name__}"
-            )
+
+        match node:
+            case RawTex(text=""):
+                emitter.emit("\n", source=node.span, role="content")
+            case RawTex(text=text):
+                emitter.line(text, source=node.span, role="content")
+            case GenericInvocation():
+                _render_invocation(emitter, node, source_comments)
+            case Item():
+                _render_item(emitter, node, source_comments)
+            case BraceGroup(body=body, header_raw=header_raw):
+                emitter.line("{", source=node.span, role="open")
+                if header_raw:
+                    emitter.line(header_raw, source=node.span, role="content")
+                _render_block(emitter, body, source_comments)
+                emitter.line("}", source=node.span, role="close")
+            case _:
+                raise TypeError(
+                    "renderer accepts canonical AST only; "
+                    f"got {type(node).__name__}"
+                )
 
 
 def _render_arguments(
@@ -275,6 +271,7 @@ def render(document: Document, *, source_comments: bool = False) -> str:
 
 __all__ = [
     "CompilationResult",
+    "RenderRole",
     "GeneratedSpan",
     "MappedEmitter",
     "RenderedDocument",

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import Callable
+from typing import Self, TypeAlias
 
 from .ast import (
     Argument,
@@ -35,7 +36,7 @@ class TransformContext:
     registry: "DirectiveRegistry"
 
 
-SpecialHandler = Callable[
+SpecialHandler: TypeAlias = Callable[
     [SpecialInvocation, TransformContext],
     tuple[CanonicalNode, ...],
 ]
@@ -44,13 +45,11 @@ SpecialHandler = Callable[
 class DirectiveRegistry:
     """The deliberately small in-process special registry."""
 
-    def __init__(self):
-        self._handlers: dict[str, SpecialHandler] = {}
+    def __init__(self, handlers: Mapping[str, SpecialHandler] | None = None):
+        self._handlers: dict[str, SpecialHandler] = dict(handlers or {})
 
-    def copy(self) -> "DirectiveRegistry":
-        registry = DirectiveRegistry()
-        registry._handlers.update(self._handlers)
-        return registry
+    def copy(self) -> Self:
+        return type(self)(self._handlers)
 
     def register(self, name: str, handler: SpecialHandler) -> None:
         self._handlers[name] = handler
@@ -129,43 +128,48 @@ def _normalize_node(
     node: Node,
     context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
-    if isinstance(node, RawTex):
-        return (node,)
-    if isinstance(node, SequenceEntry):
-        raise ValidationError(
-            "sequence entries are only valid inside a ':' suite",
-            node.span,
-        )
-    if isinstance(node, ParsedInvocation):
-        return _normalize_invocation(node, context)
-    if isinstance(node, SpecialInvocation):
-        return _normalize_special(node, context)
-    if isinstance(node, Stack):
-        return _normalize_node(_desugar_stack(node), context)
-    if isinstance(node, _CANONICAL_TYPES):
-        return (_normalize_canonical(node, context),)
-    raise TypeError(f"unsupported AST node: {type(node).__name__}")
+    match node:
+        case RawTex():
+            return (node,)
+        case ParsedInvocation():
+            return _normalize_invocation(node, context)
+        case SpecialInvocation():
+            return _normalize_special(node, context)
+        case Stack():
+            return _normalize_node(_desugar_stack(node), context)
+        case SequenceEntry():
+            raise ValidationError(
+                "sequence entries are only valid inside a ':' suite",
+                node.span,
+            )
+        case GenericInvocation() | BraceGroup() | Item():
+            return (_normalize_canonical(node, context),)
+        case _:
+            raise TypeError(f"unsupported AST node: {type(node).__name__}")
 
 
 def _normalize_canonical(
     node: CanonicalNode,
     context: TransformContext,
 ) -> CanonicalNode:
-    if isinstance(node, RawTex):
-        return node
-    if isinstance(node, GenericInvocation):
-        body = None if node.body is None else _normalize_block(node.body, context)
-        return replace(
-            node,
-            arguments=_header_arguments(node.arguments, context),
-            body=body,
-        )
-    if isinstance(node, BraceGroup):
-        return replace(node, body=_normalize_block(node.body, context))
-    return replace(
-        node,
-        continuation=_normalize_block(node.continuation, context),
-    )
+    match node:
+        case RawTex():
+            return node
+        case GenericInvocation(arguments=arguments, body=body):
+            return replace(
+                node,
+                arguments=_header_arguments(arguments, context),
+                body=None if body is None else _normalize_block(body, context),
+            )
+        case BraceGroup(body=body):
+            return replace(node, body=_normalize_block(body, context))
+        case Item(continuation=continuation):
+            return replace(
+                node,
+                continuation=_normalize_block(continuation, context),
+            )
+        case _:
+            raise TypeError(f"unsupported canonical node: {type(node).__name__}")
 
 
 def _normalize_argument(
@@ -295,42 +299,46 @@ def _normalize_invocation(
 
     suite = _desugar_block(node.suite)
 
-    if node.kind is InvocationKind.COMMAND:
-        return (
-            GenericInvocation(
-                node.name,
-                arguments + _suite_arguments(node, suite, context),
-                None,
-                node.span,
-            ),
-        )
-
-    if node.kind is InvocationKind.ENVIRONMENT:
-        return (_normalize_environment(node, arguments, suite, context),)
-
-    if node.kind is InvocationKind.BRACE:
-        if len(node.groups) != 1 or node.groups[0].kind is not GroupKind.REQUIRED:
-            raise ValidationError(
-                "literal brace containers require one raw header group",
-                node.span,
+    match node.kind:
+        case InvocationKind.COMMAND:
+            return (
+                GenericInvocation(
+                    node.name,
+                    arguments + _suite_arguments(node, suite, context),
+                    None,
+                    node.span,
+                ),
             )
-        return (
-            BraceGroup(
-                _container_body(node, suite, context),
-                node.span,
-                node.groups[0].value,
-            ),
-        )
 
-    if node.kind is InvocationKind.TRANSPARENT:
-        if node.groups:
-            raise ValidationError(
-                "transparent containers do not accept header groups",
-                node.span,
-            )
-        return _container_body(node, suite, context).nodes
+        case InvocationKind.ENVIRONMENT:
+            return (_normalize_environment(node, arguments, suite, context),)
 
-    raise TypeError(f"unsupported invocation kind: {node.kind}")
+        case InvocationKind.BRACE:
+            match node.groups:
+                case (Argument(kind=GroupKind.REQUIRED, value=str() as raw),):
+                    return (
+                        BraceGroup(
+                            _container_body(node, suite, context),
+                            node.span,
+                            raw,
+                        ),
+                    )
+                case _:
+                    raise ValidationError(
+                        "literal brace containers require one raw header group",
+                        node.span,
+                    )
+
+        case InvocationKind.TRANSPARENT:
+            if node.groups:
+                raise ValidationError(
+                    "transparent containers do not accept header groups",
+                    node.span,
+                )
+            return _container_body(node, suite, context).nodes
+
+        case _:
+            raise TypeError(f"unsupported invocation kind: {node.kind}")
 
 
 def _normalize_special(
@@ -451,6 +459,12 @@ def _leading_spaces(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
 
+def _char_at(text: str, index: int) -> str:
+    """The character at ``index``, or ``""`` past the end of ``text``."""
+
+    return text[index : index + 1]
+
+
 def _item_group(
     line: RawTex,
     cursor: int,
@@ -472,50 +486,52 @@ def _item_prefix(
     line: RawTex,
     depth: int,
 ) -> tuple[Argument | None, Argument | None, str]:
+    """Split one item line into its overlay, label, and first content line."""
+
     text = line.text
     marker_span = _source_span_at(line, depth)
-    if len(text) <= depth or text[depth] != "-":
+    if _char_at(text, depth) != "-":
         raise ValidationError("expected an item marker '-'", marker_span)
+
     cursor = depth + 1
-    if cursor < len(text) and text[cursor] not in " <[":
+    if _char_at(text, cursor) not in {"", " ", "<", "["}:
         raise ValidationError(
             "item marker must be followed by a space, group, or end",
             marker_span,
         )
 
-    overlay = None
-    label = None
-    if cursor < len(text) and text[cursor] == "<":
+    overlay: Argument | None = None
+    label: Argument | None = None
+    if _char_at(text, cursor) == "<":
         overlay, cursor = _item_group(line, cursor, GroupKind.OVERLAY)
-        if cursor < len(text) and text[cursor] == "<":
+        if _char_at(text, cursor) == "<":
             raise ValidationError("duplicate item overlay prefix", overlay.span)
 
-    if cursor < len(text) and text[cursor] == "[":
+    if _char_at(text, cursor) == "[":
         label, cursor = _item_group(line, cursor, GroupKind.OPTIONAL)
-    elif cursor < len(text) and text[cursor] == "]":
+    elif _char_at(text, cursor) == "]":
         raise ValidationError("invalid item label prefix", marker_span)
 
-    if (
-        overlay is None
-        and label is not None
-        and cursor < len(text)
-        and text[cursor] == "<"
-    ):
+    if overlay is None and label is not None and _char_at(text, cursor) == "<":
         raise ValidationError("item label must not precede its overlay", label.span)
-    if cursor < len(text) and text[cursor] in "<[":
+    if _char_at(text, cursor) in {"<", "["}:
         raise ValidationError("duplicate item prefix", _source_span_at(line, cursor))
-    if cursor < len(text) and text[cursor] != " ":
-        if overlay is not None or label is not None:
+
+    match _char_at(text, cursor):
+        case "":
+            pass
+        case " ":
+            cursor += 1
+        case _ if overlay is not None or label is not None:
             raise ValidationError(
                 "item prefix must be followed by a space or end",
                 marker_span,
             )
-        raise ValidationError(
-            "item marker must be followed by a space, group, or end",
-            marker_span,
-        )
-    if cursor < len(text) and text[cursor] == " ":
-        cursor += 1
+        case _:
+            raise ValidationError(
+                "item marker must be followed by a space, group, or end",
+                marker_span,
+            )
     return overlay, label, text[cursor:]
 
 
@@ -601,7 +617,7 @@ def _item_continuation(
                 break
             if (
                 next_indent == depth + 4
-                and next_line.text[depth + 4 : depth + 5] == "-"
+                and _char_at(next_line.text, depth + 4) == "-"
             ):
                 continuation.extend(lines[index:next_index])
                 nested, index = _nested_itemize(lines, next_index, depth + 4)
@@ -619,11 +635,11 @@ def _item_continuation(
         indent = _leading_spaces(current.text)
         if indent <= depth:
             break
-        if indent == depth + 4 and current.text[depth + 4 : depth + 5] == "-":
+        if indent == depth + 4 and _char_at(current.text, depth + 4) == "-":
             nested, index = _nested_itemize(lines, index, depth + 4)
             continuation.append(nested)
             continue
-        if indent >= depth + 4 and current.text[indent : indent + 1] == "-":
+        if indent >= depth + 4 and _char_at(current.text, indent) == "-":
             raise ValidationError(
                 "nested item indentation skips a list level",
                 current.span,
@@ -732,25 +748,24 @@ BUILTIN_DIRECTIVES.register("vpad", _vpad_handler)
 
 def _assert_canonical_block(block: Block) -> None:
     for node in block.nodes:
-        if isinstance(node, RawTex):
-            continue
-        if isinstance(node, BraceGroup):
-            _assert_canonical_block(node.body)
-            continue
-        if isinstance(node, GenericInvocation):
-            for argument in node.arguments:
-                if isinstance(argument.value, Block):
-                    _assert_canonical_block(argument.value)
-            if node.body is not None:
-                _assert_canonical_block(node.body)
-            continue
-        if isinstance(node, Item):
-            _assert_canonical_block(node.continuation)
-            continue
-        raise TypeError(
-            "normalization produced a non-canonical AST node: "
-            f"{type(node).__name__}"
-        )
+        match node:
+            case RawTex():
+                pass
+            case BraceGroup(body=body):
+                _assert_canonical_block(body)
+            case GenericInvocation(arguments=arguments, body=body):
+                for argument in arguments:
+                    if isinstance(argument.value, Block):
+                        _assert_canonical_block(argument.value)
+                if body is not None:
+                    _assert_canonical_block(body)
+            case Item(continuation=continuation):
+                _assert_canonical_block(continuation)
+            case _:
+                raise TypeError(
+                    "normalization produced a non-canonical AST node: "
+                    f"{type(node).__name__}"
+                )
 
 
 def normalize(

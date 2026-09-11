@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final, Self
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -22,9 +23,32 @@ class SourceSpan:
 
 
 class GroupKind(StrEnum):
+    """A TeX group, identified by the delimiter pair that encloses it."""
+
     REQUIRED = "required"
     OPTIONAL = "optional"
     OVERLAY = "overlay"
+
+    @property
+    def delimiters(self) -> tuple[str, str]:
+        return _GROUP_DELIMITERS[self]
+
+    @classmethod
+    def from_opener(cls, opener: str) -> Self:
+        return _GROUP_OPENERS[opener]
+
+
+_GROUP_DELIMITERS: Final = {
+    GroupKind.REQUIRED: ("{", "}"),
+    GroupKind.OPTIONAL: ("[", "]"),
+    GroupKind.OVERLAY: ("<", ">"),
+}
+_GROUP_OPENERS: Final = {
+    opener: kind for kind, (opener, _) in _GROUP_DELIMITERS.items()
+}
+
+#: Every character that can open an inline group, in declaration order.
+GROUP_OPENERS: Final = "".join(_GROUP_OPENERS)
 
 
 class ArgumentLayout(StrEnum):
@@ -141,6 +165,7 @@ Node = SyntaxNode | CanonicalNode
 __all__ = [
     "Argument",
     "ArgumentLayout",
+    "GROUP_OPENERS",
     "BraceGroup",
     "Block",
     "CanonicalNode",

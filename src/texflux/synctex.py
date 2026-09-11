@@ -8,7 +8,7 @@ import gzip
 import os
 from pathlib import Path
 import re
-from typing import Literal, TypeAlias
+from typing import Final, Literal, TypeAlias
 import zlib
 
 
@@ -136,30 +136,30 @@ class SyncTeXDocument:
         )
 
 
-_VERSION_PREFIX = b"SyncTeX Version:"
-_INPUT_PREFIX = b"Input:"
-_COUNT_PREFIX = b"Count:"
-_SECTION_NAMES = {
+_VERSION_PREFIX: Final = b"SyncTeX Version:"
+_INPUT_PREFIX: Final = b"Input:"
+_COUNT_PREFIX: Final = b"Count:"
+_SECTION_NAMES: Final = {
     b"Content:": "content",
     b"Postamble:": "postamble",
     b"Post scriptum:": "postscript",
     b"Post Scriptum:": "postscript",
 }
-_SETTING_NAMES = {
+_SETTING_NAMES: Final = {
     b"Output",
     b"Magnification",
     b"Unit",
     b"X Offset",
     b"Y Offset",
 }
-_LINK_KINDS = frozenset(bytes((value,)) for value in b"[]()vhkgr$x")
+_LINK_KINDS: Final = frozenset(bytes((value,)) for value in b"[]()vhkgr$x")
 # ``x`` is emitted by synctexcurrent, whose TeX Live writer updates the byte
 # length but deliberately does not increment Count.
-_COUNTED_KINDS = frozenset(bytes((value,)) for value in b"!{}<>[]()vhkgr$cf?")
-_LINK_RE = re.compile(rb"(-?\d+),(-?\d+)(?:,(-?\d+))?:")
-_POINT_RE = re.compile(rb"(-?\d+),(=|-?\d+)")
-_FORM_RE = re.compile(rb"(-?\d+):")
-_TAG_RE = re.compile(rb"-?\d+")
+_COUNTED_KINDS: Final = frozenset(bytes((value,)) for value in b"!{}<>[]()vhkgr$cf?")
+_LINK_RE: Final = re.compile(rb"(-?\d+),(-?\d+)(?:,(-?\d+))?:")
+_POINT_RE: Final = re.compile(rb"(-?\d+),(=|-?\d+)")
+_FORM_RE: Final = re.compile(rb"(-?\d+):")
+_TAG_RE: Final = re.compile(rb"-?\d+")
 
 
 def _split_lines(data: bytes) -> list[tuple[bytes, bytes]]:
@@ -249,78 +249,75 @@ def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | Non
         return None
 
     kind = body[:1]
-    if kind == b"%":
-        return _opaque(body, kind)
-
-    if kind == b"!":
-        anchor = _single_tag(body, "anchor offset")
-        if anchor is None:
+    match kind:
+        case b"%":
             return _opaque(body, kind)
-        return SyncTeXRecord(body, kind, counted=True, anchor_offset=anchor)
 
-    if kind in b"{}":
-        tag = _single_tag(body, "sheet tag")
-        if tag is None:
-            return _opaque(body, kind)
-        return SyncTeXRecord(body, kind, counted=True, tag=tag)
+        case b"!":
+            if (anchor := _single_tag(body, "anchor offset")) is None:
+                return _opaque(body, kind)
+            return SyncTeXRecord(body, kind, counted=True, anchor_offset=anchor)
 
-    if kind == b"<":
-        form_tag = _single_tag(body, "form tag")
-        if form_tag is None:
-            return _opaque(body, kind)
-        return SyncTeXRecord(body, kind, counted=True, form_tag=form_tag)
+        case b"{" | b"}":
+            if (tag := _single_tag(body, "sheet tag")) is None:
+                return _opaque(body, kind)
+            return SyncTeXRecord(body, kind, counted=True, tag=tag)
 
-    if kind in b">])":
-        return SyncTeXRecord(body, kind, counted=True)
+        case b"<":
+            if (form_tag := _single_tag(body, "form tag")) is None:
+                return _opaque(body, kind)
+            return SyncTeXRecord(body, kind, counted=True, form_tag=form_tag)
 
-    if kind == b"f":
-        form_match = _FORM_RE.match(body, 1)
-        if form_match is None:
-            return _opaque(body, kind)
-        point, point_span = _parse_point(body, form_match.end(), last_vertical)
-        return SyncTeXRecord(
-            body,
-            kind,
-            counted=True,
-            point=point,
-            form_tag=_integer(form_match.group(1), "form tag"),
-            point_span=point_span,
-        )
+        case b">" | b"]" | b")":
+            return SyncTeXRecord(body, kind, counted=True)
 
-    if kind in _LINK_KINDS:
-        link_match = _LINK_RE.match(body, 1)
-        if link_match is not None:
-            link = SyncTeXLink(
-                _integer(link_match.group(1), "link tag"),
-                _integer(link_match.group(2), "link line"),
-                (
-                    None
-                    if link_match.group(3) is None
-                    else _integer(link_match.group(3), "link column")
-                ),
+        case b"f":
+            if (form := _FORM_RE.match(body, 1)) is None:
+                return _opaque(body, kind)
+            point, point_span = _parse_point(body, form.end(), last_vertical)
+            return SyncTeXRecord(
+                body,
+                kind,
+                counted=True,
+                point=point,
+                form_tag=_integer(form.group(1), "form tag"),
+                point_span=point_span,
             )
-            point, point_span = _parse_point(body, link_match.end(), last_vertical)
+
+        case _ if kind in _LINK_KINDS:
+            if (link := _LINK_RE.match(body, 1)) is None:
+                return _opaque(body, kind)
+            point, point_span = _parse_point(body, link.end(), last_vertical)
             return SyncTeXRecord(
                 body,
                 kind,
                 counted=kind in _COUNTED_KINDS,
-                link=link,
+                link=SyncTeXLink(
+                    _integer(link.group(1), "link tag"),
+                    _integer(link.group(2), "link line"),
+                    (
+                        None
+                        if link.group(3) is None
+                        else _integer(link.group(3), "link column")
+                    ),
+                ),
                 point=point,
-                link_span=(1, link_match.end() - 1),
+                link_span=(1, link.end() - 1),
                 point_span=point_span,
             )
 
-    if kind in b"c?":
-        point, point_span = _parse_point(body, 1, last_vertical)
-        return SyncTeXRecord(
-            body,
-            kind,
-            counted=kind in _COUNTED_KINDS,
-            point=point,
-            point_span=point_span,
-        )
+        case b"c" | b"?":
+            point, point_span = _parse_point(body, 1, last_vertical)
+            return SyncTeXRecord(
+                body,
+                kind,
+                counted=kind in _COUNTED_KINDS,
+                point=point,
+                point_span=point_span,
+            )
 
-    return _opaque(body, kind)
+        case _:
+            return _opaque(body, kind)
 
 
 def _decode_payload(data: bytes) -> tuple[bytes, Container]:

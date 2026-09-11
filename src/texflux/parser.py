@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import string
+from typing import Final
 
 from .ast import (
+    GROUP_OPENERS,
     Argument,
     ArgumentLayout,
     Block,
@@ -62,12 +65,9 @@ def _block_span(boundary: SourceSpan, nodes: list) -> SourceSpan:
     return SourceSpan(boundary.file, boundary.start, end)
 
 
-def _is_ascii_letter(char: str) -> bool:
-    return "A" <= char <= "Z" or "a" <= char <= "z"
-
-
-def _is_ascii_name_char(char: str) -> bool:
-    return _is_ascii_letter(char) or "0" <= char <= "9" or char == "_"
+#: TeXFlux names are ASCII-only, independent of the host locale.
+_NAME_START: Final = frozenset(string.ascii_letters)
+_NAME_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_")
 
 
 def _is_escaped(text: str, index: int) -> bool:
@@ -87,53 +87,56 @@ def scan_group(
 ) -> tuple[int, str]:
     """Scan one inline group, returning the end offset and raw content."""
 
-    opener = text[start]
-    if opener == "<":
-        index = start + 1
-        while index < len(text):
-            if text[index] == ">" and not _is_escaped(text, index):
-                return index + 1, text[start + 1 : index]
-            index += 1
-        raise ParseError("unclosed overlay group", span)
+    match text[start]:
+        case "<":
+            # An overlay group does not nest.
+            index = start + 1
+            while index < len(text):
+                if text[index] == ">" and not _is_escaped(text, index):
+                    return index + 1, text[start + 1 : index]
+                index += 1
+            raise ParseError("unclosed overlay group", span)
 
-    if opener == "{":
-        depth = 1
-        index = start + 1
-        while index < len(text):
-            char = text[index]
-            if not _is_escaped(text, index):
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        return index + 1, text[start + 1 : index]
-            index += 1
-        raise ParseError("unclosed required group", span)
+        case "{":
+            depth = 1
+            index = start + 1
+            while index < len(text):
+                char = text[index]
+                if not _is_escaped(text, index):
+                    if char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth == 0:
+                            return index + 1, text[start + 1 : index]
+                index += 1
+            raise ParseError("unclosed required group", span)
 
-    if opener == "[":
-        bracket_depth = 1
-        brace_depth = 0
-        index = start + 1
-        while index < len(text):
-            char = text[index]
-            if not _is_escaped(text, index):
-                if char == "{":
-                    brace_depth += 1
-                elif char == "}":
-                    if brace_depth == 0:
-                        raise ParseError("mismatched group delimiter", span)
-                    brace_depth -= 1
-                elif brace_depth == 0 and char == "[":
-                    bracket_depth += 1
-                elif brace_depth == 0 and char == "]":
-                    bracket_depth -= 1
-                    if bracket_depth == 0:
-                        return index + 1, text[start + 1 : index]
-            index += 1
-        raise ParseError("unclosed optional group", span)
+        case "[":
+            # Brackets nest, but only outside a balanced brace group.
+            bracket_depth = 1
+            brace_depth = 0
+            index = start + 1
+            while index < len(text):
+                char = text[index]
+                if not _is_escaped(text, index):
+                    if char == "{":
+                        brace_depth += 1
+                    elif char == "}":
+                        if brace_depth == 0:
+                            raise ParseError("mismatched group delimiter", span)
+                        brace_depth -= 1
+                    elif brace_depth == 0 and char == "[":
+                        bracket_depth += 1
+                    elif brace_depth == 0 and char == "]":
+                        bracket_depth -= 1
+                        if bracket_depth == 0:
+                            return index + 1, text[start + 1 : index]
+                index += 1
+            raise ParseError("unclosed optional group", span)
 
-    raise ParseError("invalid group opener", span)
+        case _:
+            raise ParseError("invalid group opener", span)
 
 
 def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
@@ -142,7 +145,7 @@ def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
     end = len(text.rstrip(" "))
     index = 0
     while index < end:
-        if text[index] in "{[<":
+        if text[index] in GROUP_OPENERS:
             try:
                 index, _ = scan_group(text, index, span=span)
             except ParseError:
@@ -154,13 +157,6 @@ def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
 
 class HeaderScanner:
     """Scan one structural header while keeping group contents opaque."""
-
-    _PREFIXES = {"\\": InvocationKind.COMMAND, "@": InvocationKind.ENVIRONMENT}
-    _GROUP_KINDS = {
-        "{": GroupKind.REQUIRED,
-        "[": GroupKind.OPTIONAL,
-        "<": GroupKind.OVERLAY,
-    }
 
     def __init__(self, text: str, *, span: SourceSpan):
         self.text = text
@@ -270,7 +266,7 @@ class HeaderScanner:
         """Scan one inline group into an argument, keeping its contents opaque."""
 
         start = position
-        kind = self._GROUP_KINDS[self.text[position]]
+        kind = GroupKind.from_opener(self.text[position])
         end, value = scan_group(
             self.text,
             start,
@@ -291,22 +287,21 @@ class HeaderScanner:
             raise self._error("missing structural segment", position)
 
         prefix = self.text[position]
-        if prefix == "!":
-            position += 1
-            kind = None
-        elif prefix in self._PREFIXES:
-            position += 1
-            kind = self._PREFIXES[prefix]
-        else:
-            if first:
+        match prefix:
+            case "!":
+                kind = None
+            case "\\":
+                kind = InvocationKind.COMMAND
+            case "@":
+                kind = InvocationKind.ENVIRONMENT
+            case _:
                 raise self._error(
-                    "structural header must start with '\\', '@', or '!'",
+                    "structural header must start with '\\', '@', or '!'"
+                    if first
+                    else "each stack segment must start with '\\', '@', or '!'",
                     position,
                 )
-            raise self._error(
-                "each stack segment must start with '\\', '@', or '!'",
-                position,
-            )
+        position += 1
 
         if prefix == "@" and position < self.end and self.text[position] == "{":
             group, position = self._inline_group(position)
@@ -336,7 +331,7 @@ class HeaderScanner:
             )
 
         name_start = position
-        if position >= self.end or not _is_ascii_letter(self.text[position]):
+        if position >= self.end or self.text[position] not in _NAME_START:
             raise self._error("invalid structural name", position)
         position += 1
 
@@ -350,7 +345,7 @@ class HeaderScanner:
                     break
                 position += 1
         else:
-            while position < self.end and _is_ascii_name_char(self.text[position]):
+            while position < self.end and self.text[position] in _NAME_CHARS:
                 position += 1
 
         name = self.text[name_start:position]
@@ -358,7 +353,7 @@ class HeaderScanner:
             raise self._error("invalid structural name", name_start)
 
         groups: list[Argument] = []
-        while position < self.end and self.text[position] in "{[<":
+        while position < self.end and self.text[position] in GROUP_OPENERS:
             group, position = self._inline_group(position)
             groups.append(group)
 
