@@ -36,6 +36,20 @@ from .render import (
     render_with_provenance,
 )
 from .source_map import serialize_source_map
+from .synctex import (
+    SyncTeXDocument,
+    SyncTeXError,
+    SyncTeXInput,
+    SyncTeXLine,
+    SyncTeXLink,
+    SyncTeXPoint,
+    SyncTeXRecord,
+    SyncTeXSetting,
+    parse_synctex,
+    read_synctex_file,
+    serialize_synctex,
+    write_synctex_file,
+)
 
 
 def compile_text(
@@ -90,6 +104,14 @@ __all__ = [
     "SourceSpan",
     "SpecialInvocation",
     "Stack",
+    "SyncTeXDocument",
+    "SyncTeXError",
+    "SyncTeXInput",
+    "SyncTeXLine",
+    "SyncTeXLink",
+    "SyncTeXPoint",
+    "SyncTeXRecord",
+    "SyncTeXSetting",
     "TeXFluxError",
     "TransformContext",
     "ValidationError",
@@ -100,5 +122,9 @@ __all__ = [
     "parse",
     "render",
     "render_with_provenance",
+    "parse_synctex",
+    "read_synctex_file",
     "serialize_source_map",
+    "serialize_synctex",
+    "write_synctex_file",
 ]
