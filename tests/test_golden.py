@@ -13,6 +13,9 @@ class GoldenTests(unittest.TestCase):
             {
                 "generic-groups",
                 "items-nested",
+                "macro-each",
+                "macro-variadic",
+                "macro-wrapper",
                 "nested-environments",
                 "real-slide",
                 "representative-command",
@@ -38,7 +41,7 @@ class GoldenTests(unittest.TestCase):
 
     def test_small_examples_match_documented_goldens(self):
         root = Path(__file__).parents[1] / "examples"
-        for stem in ("basic", "structured", "stacked-items"):
+        for stem in ("basic", "structured", "stacked-items", "macros"):
             with self.subTest(example=stem):
                 actual = compile_text(
                     (root / f"{stem}.tfx").read_text(encoding="utf-8"),

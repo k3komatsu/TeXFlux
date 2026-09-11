@@ -345,7 +345,136 @@ missing suite is a validation error.
 
 The old !block, !arg, and !body constructs are removed and are not aliases.
 
-## 10. Normalization and renderer boundary
+## 10. Source macros
+
+A source macro is a structural AST macro, not a textual one. `!defmacro`
+stores one template block of syntax AST; a call binds its values to the
+template's parameters and instantiates a clone of it. TeXFlux never
+substitutes source text, never re-parses rendered TeX, and never interpolates
+a parameter into a raw TeX group.
+
+### 10.1 Definition
+
+~~~text
+!defmacro{name}{param}{...rest}: |
+    TEMPLATE
+~~~
+
+A definition takes a `: |` block suite; a sequence suite is a validation
+error. The first required group is the macro name, which uses the special-name
+grammar so the macro is callable as `!name`. Every later required group is a
+parameter. Definitions emit no TeX. Lines around a definition, including blank
+lines, remain ordinary content.
+
+Definitions are collected from the top level only. A `!defmacro` anywhere else,
+including inside another macro's template, is a validation error, so macros
+cannot be defined dynamically. Every definition is collected before any call is
+expanded, which makes forward references valid:
+
+~~~text
+!foo >> \TextCA{A}
+
+!defmacro{foo}{body}: |
+    @{\small} >> !param{body}
+~~~
+
+Parameter names match `[A-Za-z_][A-Za-z0-9_-]*`. A duplicate parameter, a
+macro name that is reserved (`defmacro`, `param`, `each`), a name already
+taken by a built-in special, and a duplicate macro definition are all
+validation errors reported at the definition site.
+
+### 10.2 Value binding
+
+A macro call uses the existing value syntax; there is no macro-specific call
+form. Values bind left to right: every required compact group first, then the
+values its suite produces.
+
+~~~text
+!foo{A}{B}          two inline values
+!foo: |             one block value
+!foo:               one block value per '-'
+!foo >> VALUE       the closed stack payload as one value
+~~~
+
+`!foo{A} >> \bar{B}` therefore binds `[A, \bar{B}]`. Optional and overlay
+groups are not values and are rejected on a macro call.
+
+A non-rest parameter consumes exactly one value. A trailing `{...rest}`
+parameter consumes every remaining value as a sequence and may consume none.
+A rest parameter is optional, unique, and last; anything else is a validation
+error. An arity mismatch is a macro error naming the macro, its expected
+shape, the actual value count, and the call site.
+
+### 10.3 !param
+
+`!param{name}` substitutes the bound value's AST inside a template. It takes
+exactly one required group and no suite. Using it outside a template, naming
+an unbound parameter, or naming a rest parameter is a macro error. A rest
+parameter is a sequence rather than a value, so it is reached only with
+`!each`.
+
+Because a group's contents stay opaque raw TeX, a parameter cannot be
+interpolated into one. The same opacity applies to an `!items` suite, whose
+item text is raw, so a `!param` written there stays literal. Structural form
+is used instead:
+
+~~~text
+@infobox:
+    - !param{title}
+    - !param{body}
+~~~
+
+### 10.4 !each
+
+~~~text
+!each{rest-param}{item}: |
+    TEMPLATE
+~~~
+
+`!each` walks a rest parameter's values in source order, binds each one to
+`item`, instantiates the template per iteration, and concatenates the
+iterations into the enclosing block. An empty sequence produces nothing. It
+requires a `: |` suite, is valid only inside a template, and its first group
+must name a rest parameter. An item name that shadows a bound parameter is a
+macro error. `!each` may nest; each iteration binds its own item.
+
+`!each` may be the rightmost segment of a stack when the stack's suffix is
+`: |`, because that segment keeps the suffix and so still writes its own
+template:
+
+~~~text
+@{\bfseries} >> !each{items}{item}: |
+    \item
+    !param{item}
+~~~
+
+Anywhere else in a stack its suite would be synthetic, which is a validation
+error. `!defmacro` can never be a stack segment: composing it would nest the
+definition under the segments to its left, and a definition is a top-level
+statement.
+
+### 10.5 Expansion
+
+A macro call is one value: the instantiated template block. A call therefore
+composes with `>>` like any other segment.
+
+~~~text
+@center >> !smallred >> \TextCA{Important}
+~~~
+
+A template may call another macro, and forward references apply there too.
+Recursion is forbidden. Direct and indirect cycles are detected explicitly and
+reported as a macro error naming the chain, never by exhausting a depth limit:
+
+~~~text
+recursive macro expansion detected: foo -> bar -> foo
+~~~
+
+Expansion is an AST-to-AST pass that runs after `>>` desugaring and before
+value consumption, so no macro construct reaches normalization or the
+renderer. `!splice` is not part of v1.
+
+## 11. Normalization and renderer boundary
 
 The compiler pipeline is:
 
@@ -353,6 +482,7 @@ The compiler pipeline is:
 physical lines
  -> syntax AST
  -> pure >> desugaring
+ -> source macro collection and expansion
  -> value consumption and special expansion
  -> canonical AST validation
  -> renderer
@@ -364,8 +494,10 @@ environment. BraceGroup always renders literal braces.
 
 No ParsedInvocation, SpecialInvocation, Stack, SequenceEntry, suite mode, or
 special name may reach the renderer. The renderer knows only canonical AST.
+No macro definition, call, parameter reference, or `!each` survives expansion,
+so the renderer knows nothing about macros either.
 
-## 11. Source spans and SyncTeX
+## 12. Source spans and SyncTeX
 
 Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
@@ -381,15 +513,25 @@ provenance for:
 - item metadata
 - generated begin/end, argument braces, literal braces, and special expansion
 
+Macro expansion retains provenance. Output substituted for a `!param`
+reference keeps the span of the value passed at the call site, so inverse
+search reaches the text the author wrote. Output cloned from a template is
+retargeted onto the macro call site rather than the definition site. A macro
+definition's own syntax or validation error points at the definition site, and
+an expansion error names the offending template line, the expansion chain, and
+the call site.
+
 Rendering records generated spans and source spans. Source-map serialization and
 SyncTeX remapping remain part of v1 and must not be removed or bypassed.
 
-## 12. Errors and non-goals
+## 13. Errors and non-goals
 
 ParseError covers malformed physical structure, headers, groups, suffixes,
 indentation, and sequence markers. ValidationError covers invalid value
-consumption and special/container contracts. DirectiveError covers unknown
-specials. All diagnostics point to the originating span.
+consumption, special/container contracts, and macro definition contracts.
+DirectiveError covers unknown specials. MacroExpansionError covers macro
+expansion: arity, unbound or misused parameters, shadowing, and recursion. All
+diagnostics point to the originating span.
 
 v1 does not include:
 
@@ -397,7 +539,9 @@ v1 does not include:
 - package, command, or environment discovery
 - TeX argument-count or semantic validation
 - automatic escaping
-- variables, expressions, loops, conditions, or source macros
+- variables, expressions, arithmetic, conditions, or pattern matching
+- textual macros, parameter interpolation into raw TeX, and !splice
+- optional, default, or keyword macro parameters, and macro recursion
 - YAML/Python embedded authoring
 - implicit extension loading
 - renderer backend frameworks
@@ -405,7 +549,7 @@ v1 does not include:
 - structural trailing comments
 - block-scalar suffixes other than : |
 
-## 13. Conceptual grammar
+## 14. Conceptual grammar
 
 ~~~text
 document          ::= statement*
@@ -435,6 +579,15 @@ brace-container-segment
 transparent-container-segment
                   ::= "@"
 special-segment  ::= "!" special-name group*
+
+block-suffix      ::= ":" SP* "|"
+
+macro-definition  ::= "!defmacro" "{" macro-name "}" parameter* block-suffix
+parameter         ::= "{" ("..." )? parameter-name "}"
+macro-call        ::= special-segment
+param-reference   ::= "!param" "{" parameter-name "}"
+each-construct    ::= "!each" "{" parameter-name "}" "{" parameter-name "}"
+                      block-suffix
 ~~~
 
 This grammar is conceptual; item metadata and balanced raw groups are scanned by
@@ -442,7 +595,7 @@ the handwritten parser. A sequence-block continues until the next sibling '-'.
 Its normative distinctions are the explicit '-' block sequence, the single
 : | block, and suffix-less closed values.
 
-## 14. Representative goldens
+## 15. Representative goldens
 
 ~~~text
 \foo:

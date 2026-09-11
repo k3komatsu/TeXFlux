@@ -28,7 +28,9 @@ from .ast import (
     SuiteMode,
 )
 from .errors import DirectiveError, ValidationError
+from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
+from .syntax import required_text, sequence_entries
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,26 +61,6 @@ class DirectiveRegistry:
 
 
 _CANONICAL_TYPES = (RawTex, GenericInvocation, BraceGroup, Item)
-
-
-def _blank(node: Node) -> bool:
-    return isinstance(node, RawTex) and node.text == ""
-
-
-def _desugar_block(block: Block) -> Block:
-    """Desugar stacks wherever a syntax block contains them."""
-
-    nodes: list[Node] = []
-    changed = False
-    for node in block.nodes:
-        if isinstance(node, Stack):
-            nodes.append(_desugar_stack(node))
-            changed = True
-        else:
-            nodes.append(node)
-    if not changed:
-        return block
-    return Block(tuple(nodes), block.span)
 
 
 def _desugar_stack(
@@ -116,8 +98,45 @@ def _desugar_stack(
     return tail
 
 
+def desugar(document: Document) -> Document:
+    """Resolve every ``>>`` stack in one document, depth first.
+
+    Macro expansion runs on the result, so a closed stack payload has already
+    become an ordinary single block value by the time a call is bound.
+    """
+
+    return replace(document, body=_desugar_tree(document.body))
+
+
+def _desugar_tree(block: Block) -> Block:
+    nodes = tuple(
+        _desugar_child(_desugar_stack(node) if isinstance(node, Stack) else node)
+        for node in block.nodes
+    )
+    return replace(block, nodes=nodes)
+
+
+def _desugar_child(node: Node) -> Node:
+    match node:
+        case ParsedInvocation() | SpecialInvocation():
+            return replace(
+                node,
+                groups=tuple(_desugar_argument(group) for group in node.groups),
+                suite=None if node.suite is None else _desugar_tree(node.suite),
+            )
+        case SequenceEntry():
+            return replace(node, value=_desugar_tree(node.value))
+        case _:
+            return node
+
+
+def _desugar_argument(argument: Argument) -> Argument:
+    if isinstance(argument.value, Block):
+        return replace(argument, value=_desugar_tree(argument.value))
+    return argument
+
+
 def _normalize_block(block: Block, context: TransformContext) -> Block:
-    block = _desugar_block(block)
     nodes: list[CanonicalNode] = []
     for node in block.nodes:
         nodes.extend(_normalize_node(node, context))
@@ -135,8 +154,6 @@ def _normalize_node(
             return _normalize_invocation(node, context)
         case SpecialInvocation():
             return _normalize_special(node, context)
-        case Stack():
-            return _normalize_node(_desugar_stack(node), context)
         case SequenceEntry():
             raise ValidationError(
                 "sequence entries are only valid inside a ':' suite",
@@ -198,17 +215,6 @@ def _suite_mode(
     return node.suite_mode or default
 
 
-def _sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
-    entries = tuple(child for child in suite.nodes if not _blank(child))
-    for child in entries:
-        if not isinstance(child, SequenceEntry):
-            raise ValidationError(
-                "sequence suites require '-' value entries",
-                child.span,
-            )
-    return entries
-
-
 def _argument_from_entry(
     entry: SequenceEntry,
     context: TransformContext,
@@ -221,7 +227,7 @@ def _sequence_body(suite: Block, context: TransformContext) -> Block:
     """Concatenate every ``-`` value of a sequence suite into one block."""
 
     nodes: list[CanonicalNode] = []
-    for entry in _sequence_entries(suite):
+    for entry in sequence_entries(suite):
         nodes.extend(_normalize_block(entry.value, context).nodes)
     return Block(tuple(nodes), suite.span)
 
@@ -248,7 +254,7 @@ def _suite_arguments(
     if _suite_mode(node) is SuiteMode.SEQUENCE:
         return tuple(
             _argument_from_entry(entry, context)
-            for entry in _sequence_entries(suite)
+            for entry in sequence_entries(suite)
         )
     return (
         Argument(
@@ -271,7 +277,7 @@ def _normalize_environment(
     if _suite_mode(node) is SuiteMode.BLOCK:
         body = _normalize_block(suite, context)
     else:
-        entries = _sequence_entries(suite)
+        entries = sequence_entries(suite)
         if not entries:
             raise ValidationError(
                 "environment sequence suites require a body value",
@@ -297,7 +303,7 @@ def _normalize_invocation(
             node.span,
         )
 
-    suite = _desugar_block(node.suite)
+    suite = node.suite
 
     match node.kind:
         case InvocationKind.COMMAND:
@@ -377,13 +383,7 @@ def _vpad_handler(
             node.span,
         )
     invalid_group = next(
-        (
-            group
-            for group in node.groups
-            if group.kind is not GroupKind.REQUIRED
-            or group.layout is not ArgumentLayout.INLINE
-            or not isinstance(group.value, str)
-        ),
+        (group for group in node.groups if required_text(group) is None),
         None,
     )
     if invalid_group is not None:
@@ -443,16 +443,33 @@ def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
     return None if index == len(lines) else index
 
 
+def _span_from(span: SourceSpan, offset: int) -> SourceSpan:
+    """The tail of ``span`` starting ``offset`` columns in.
+
+    A macro template's nodes are retargeted onto their call site, whose span is
+    shorter than the raw item text it covers, so an offset derived from that
+    text can run past the end. The whole call site is then the best origin
+    available, and a span must never come out reversed.
+    """
+
+    start = SourcePosition(span.start.line, span.start.column + offset)
+    if start > span.end:
+        return span
+    return SourceSpan(span.file, start, span.end)
+
+
+def _span_at(span: SourceSpan, offset: int) -> SourceSpan:
+    """One column of ``span``, ``offset`` columns in, clamped to its end."""
+
+    start = SourcePosition(span.start.line, span.start.column + offset)
+    end = SourcePosition(start.line, start.column + 1)
+    if end > span.end:
+        return span
+    return SourceSpan(span.file, start, end)
+
+
 def _source_span_at(line: RawTex, text_index: int) -> SourceSpan:
-    start = SourcePosition(
-        line.span.start.line,
-        line.span.start.column + text_index,
-    )
-    return SourceSpan(
-        line.span.file,
-        start,
-        SourcePosition(start.line, start.column + 1),
-    )
+    return _span_at(line.span, text_index)
 
 
 def _leading_spaces(text: str) -> int:
@@ -570,15 +587,7 @@ def _block_item_lines(
                     current.span,
                 )
             stripped = current.text[depth + 4 :]
-            span = SourceSpan(
-                current.span.file,
-                SourcePosition(
-                    current.span.start.line,
-                    current.span.start.column + depth + 4,
-                ),
-                current.span.end,
-            )
-            content.append(RawTex(stripped, span))
+            content.append(RawTex(stripped, _span_from(current.span, depth + 4)))
         else:
             next_index = _next_item_line(lines, index)
             if (
@@ -649,15 +658,12 @@ def _item_continuation(
                 "item continuation requires at least two spaces",
                 current.span,
             )
-        continuation_span = SourceSpan(
-            current.span.file,
-            SourcePosition(
-                current.span.start.line,
-                current.span.start.column + depth + 2,
-            ),
-            current.span.end,
+        continuation.append(
+            RawTex(
+                current.text[depth + 2 :],
+                _span_from(current.span, depth + 2),
+            )
         )
-        continuation.append(RawTex(current.text[depth + 2 :], continuation_span))
         index += 1
     return continuation, index
 
@@ -697,12 +703,7 @@ def _parse_item_level(
             )
 
         overlay, label, first_line = _item_prefix(line, depth)
-        item_marker_span = _source_span_at(line, depth)
-        item_span = SourceSpan(
-            item_marker_span.file,
-            item_marker_span.start,
-            line.span.end,
-        )
+        item_span = _span_from(line.span, depth)
         index += 1
 
         if first_line == "" and overlay is None and label is None:
@@ -772,7 +773,15 @@ def normalize(
     document: Document,
     registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
 ) -> Document:
-    """Turn syntax AST into canonical AST and expand built-in specials."""
+    """Turn syntax AST into canonical AST, expanding macros and specials."""
+
+    validate_macro_forms(document)
+    document = desugar(document)
+    document, macros = collect_macros(
+        document,
+        lambda name: registry.lookup(name) is not None,
+    )
+    document = expand_macros(document, macros)
 
     context = TransformContext(registry)
     normalized = Document(_normalize_block(document.body, context), document.span)
@@ -785,5 +794,6 @@ __all__ = [
     "DirectiveRegistry",
     "SpecialHandler",
     "TransformContext",
+    "desugar",
     "normalize",
 ]

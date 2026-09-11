@@ -138,6 +138,63 @@ The built-in specials are:
 The former !block, !arg, and !body constructs are removed. Use @{}, generic
 sequence entries, and the last-value environment rule instead.
 
+## Source macros
+
+A macro names a structure you repeat. It is an AST macro, not a textual one:
+a call binds its values to the template's parameters and clones the template,
+so raw TeX is never re-parsed and nothing is interpolated into a TeX group.
+
+~~~text
+!defmacro{smallred}{body}: |
+    @{\small\color{red}} >> !param{body}
+
+!smallred: |
+    Important
+~~~
+
+~~~tex
+{
+\small\color{red}
+Important
+}
+~~~
+
+A call uses the ordinary value syntax, so compact groups, a block suite, a
+sequence suite, and a closed stack payload all bind as values, left to right:
+
+~~~text
+!foo{A}{B}          two inline values
+!foo: |             one block value
+!foo:               one block value per '-'
+!foo >> VALUE       the closed stack payload as one value
+~~~
+
+Because a call is one value, it composes with >> like any other segment:
+
+~~~text
+@center >> !smallred >> \TextCA{Important}
+~~~
+
+A trailing {...rest} parameter takes every remaining value, and !each walks it:
+
+~~~text
+!defmacro{bullets}{...items}: |
+    @itemize: |
+        !each{items}{item}: |
+            \item
+            !param{item}
+
+!bullets:
+    - First
+    - Second
+~~~
+
+Definitions live at the top level and emit no TeX. They may be written after
+the calls that use them. Macros may call other macros; recursion is rejected
+with the offending chain. Inverse search still works: text you passed maps
+back to where you wrote it, and the structure the macro generated maps back to
+the macro call.
+
 ## Python API
 
 ~~~python
@@ -160,6 +217,7 @@ The examples/ directory contains source/output pairs:
 - basic.tfx — raw TeX, a block environment, and items
 - structured.tfx — sequence values and literal groups
 - stacked-items.tfx — closed stacking and nested items
+- macros.tfx — wrapper, two-argument, and variadic source macros
 - content.tfx — a converted real-world Beamer content example
 
 ~~~bash

@@ -82,6 +82,10 @@ def _compile(args: argparse.Namespace) -> int:
         return _fail(str(error))
     except (OSError, UnicodeError) as error:
         return _fail(str(error))
+    except RecursionError:
+        # Deeply nested composition or macro expansion exhausts the
+        # interpreter stack before any TeXFlux limit is reached.
+        return _fail(f"{input_path}: input nests too deeply to compile")
     return 0
 
 

@@ -76,7 +76,9 @@ Do not add in v1:
 - a TeX or template parser;
 - command/environment discovery or mandatory registries;
 - automatic escaping, normalization, or TeX argument-count validation;
-- variables, expressions, loops, conditions, or a source macro language;
+- variables, expressions, arithmetic, conditions, or pattern matching;
+- textual macros, interpolation into raw TeX, !splice, optional/default/keyword
+  macro parameters, or macro recursion;
 - YAML or Python-embedded authoring DSLs;
 - implicit extension loading or a general plugin framework;
 - renderer backend frameworks;
@@ -84,6 +86,13 @@ Do not add in v1:
 
 The in-process special registry is allowed. User extension loading is deferred;
 its future contract remains AST-to-AST.
+
+Source macros are part of v1. !defmacro is top-level only and stores a syntax
+AST template; a call binds values by the existing value syntax; !param and
+!each are template-only constructs. Expansion is an AST-to-AST pass between >>
+desugaring and value consumption, so no macro construct reaches the renderer.
+Template output is retargeted onto the call site, while !param output keeps its
+call-site span.
 
 ## Agent and review budget
 

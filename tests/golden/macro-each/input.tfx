@@ -1,0 +1,10 @@
+!defmacro{items_simple}{...items}: |
+    @itemize: |
+        !each{items}{item}: |
+            \item
+            !param{item}
+!items_simple:
+    - First item
+    - Second item line 1
+      Second item line 2
+    - Third item

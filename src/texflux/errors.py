@@ -33,8 +33,13 @@ class DirectiveError(TeXFluxError):
     error_kind = "directive error"
 
 
+class MacroExpansionError(TeXFluxError):
+    error_kind = "macro error"
+
+
 __all__ = [
     "DirectiveError",
+    "MacroExpansionError",
     "ParseError",
     "TeXFluxError",
     "ValidationError",

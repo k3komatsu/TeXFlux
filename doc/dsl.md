@@ -557,7 +557,132 @@ groupが一つなら leading spacingだけを生成する。sequence suffix、gr
 種類違い、group数0/3以上、suiteなしは validation errorである。
 stack segmentとしても同じ contractを使う。
 
-## 12. Blank line、raw TeX、コメント
+## 12. Source macro
+
+source macroは文字列macroではなく、**Value / container / `>>` composition の
+上に載る structural AST macro**である。templateは syntax ASTとして保存され、
+callのvalueをparameterにbindしてcloneする。source textの置換、rendered TeXの
+再parse、raw TeX group内部へのinterpolationはいずれも行わない。
+
+### 12.1 !defmacro
+
+~~~text
+!defmacro{name}{param}{...rest}: |
+    TEMPLATE
+~~~
+
+定義は `: |` block suiteだけを受け取る。plain `:` は validation errorである。
+最初の required groupがmacro名で、`!name` として呼べるよう special-name
+grammarに従う。以降の required groupがparameterである。定義自体はTeXを
+出力しない。定義の前後にある blank lineは通常のcontentとして残る。
+
+定義は**top-levelのみ**である。他のmacro templateの内部を含め、それ以外の
+場所の `!defmacro` は validation errorであり、dynamic definitionはできない。
+全定義をcollectしてからcallを展開するので、forward referenceが使える。
+
+~~~text
+!foo >> \TextCA{A}
+
+!defmacro{foo}{body}: |
+    @{\small} >> !param{body}
+~~~
+
+parameter名は `[A-Za-z_][A-Za-z0-9_-]*` である。parameterの重複、予約名
+(`defmacro`、`param`、`each`)、built-in specialと同名、macroの二重定義は
+すべて definition siteを指す validation errorである。
+
+### 12.2 value binding
+
+macro callは既存の value syntaxをそのまま使う。macro専用の呼び出し構文は
+存在しない。bindは左から順で、required compact groupが先、suiteが作る
+valueが後である。
+
+~~~text
+!foo{A}{B}          inline value 2個
+!foo: |             block value 1個
+!foo:               '-' ごとに block value 1個
+!foo >> VALUE       closed stack payloadを value 1個として
+~~~
+
+したがって `!foo{A} >> \bar{B}` は `[A, \bar{B}]` をbindする。optional /
+overlay groupは valueではなく、macro callでは拒否する。
+
+通常のparameterは exactly one value、末尾の `{...rest}` parameterは残りの
+valueすべてを sequenceとして受け取り、0個でもよい。rest parameterは
+optional・unique・最後である。arity不一致は macro名・期待する形・実際の
+value数・call-site spanを含む macro errorである。
+
+### 12.3 !param
+
+`!param{name}` は template内でbindされたvalueのASTを差し込む。required group
+はちょうど1個、suiteは取らない。template外での使用、未bindのparameter、
+rest parameterの指定はいずれも macro errorである。rest parameterはvalueでは
+なくsequenceなので、`!each` だけが到達できる。
+
+group内部はopaqueなraw TeXなので、parameterをgroupへinterpolateはできない。
+同じopacityが `!items` の raw suiteにも及ぶので、item本文に書いた `!param`
+はそのまま literal textになる。代わりに structural formを使う。
+
+~~~text
+@infobox:
+    - !param{title}
+    - !param{body}
+~~~
+
+### 12.4 !each
+
+~~~text
+!each{rest-param}{item}: |
+    TEMPLATE
+~~~
+
+`!each` は rest parameterのvalueを source order で走査し、各回を `item` に
+bindしてtemplateを展開し、結果を外側のblockへ順に連結する。sequenceが空なら
+何も生成しない。`: |` suiteが必要で、template内だけで有効、第一groupは rest
+parameterでなければならない。bind済みparameterを隠す item名は macro errorで
+ある。`!each` はnestできる。
+
+`!each` は、stackのsuffixが `: |` であれば最右segmentにできる。最右segmentは
+そのsuffixを受け取るので、`: |` を自分で書いていることになるからである。
+
+~~~text
+@{\bfseries} >> !each{items}{item}: |
+    \item
+    !param{item}
+~~~
+
+それ以外の位置ではsuiteがsyntheticになるため validation errorである。
+`!defmacro` は stack segmentにできない。合成すると左のsegmentの下にnestされ、
+definitionは top-level statementでなくなるからである。
+
+### 12.5 展開
+
+macro callは常に**一つのvalue**（展開されたtemplate block）である。よって
+`>>` chainの中に置ける。
+
+~~~text
+@center >> !smallred >> \TextCA{Important}
+~~~
+
+template内から別のmacroを呼べる。recursionは禁止で、直接・間接どちらの
+循環も明示的に検出し、chainを含む macro errorにする。
+
+~~~text
+recursive macro expansion detected: foo -> bar -> foo
+~~~
+
+展開は `>>` desugaringの後、value consumptionの前に走る AST-to-AST passで
+ある。macro構文はnormalizationにもrendererにも漏れない。`!splice` は v1に
+含まない。
+
+### 12.6 source mapping
+
+`!param` 由来の出力は call-siteで渡されたvalueのspanを保持する。template
+由来の scaffoldingは definition siteではなく **macro call site** へretarget
+される。inverse searchは、ユーザーが書いた本文へはその本文へ、macroが生成
+した枠へはmacro呼び出し行へ戻る。
+
+## 13. Blank line、raw TeX、コメント
 
 sequence modeのentry間 blank lineはseparatorで、valueにしない。各 sequence
 value block と block mode の内部blank lineはcontentである。
@@ -569,7 +694,7 @@ TeX group内部の :、: |、>>、pipeはraw textである。item本文・contin
 structural header末尾の TeX commentは未定義ではなく明確に禁止する。通常の
 raw TeX lineにある percentはそのまま出力する。
 
-## 13. Syntax AST と canonical AST
+## 14. Syntax AST と canonical AST
 
 parserはsyntax shapeとsource spanを保持する。代表的なsyntax nodeは次の通り。
 
@@ -610,7 +735,7 @@ GenericInvocationの body=Noneはcommand、body=Blockはnamed environmentで
 ある。BraceGroupは必ずliteral TeX bracesを生成する。Transparent containerは
 wrapper nodeを生成しない。
 
-## 14. SourceSpan、source map、SyncTeX
+## 15. SourceSpan、source map、SyncTeX
 
 major syntax node、canonical node、diagnosticはfile、1-based line、1-based
 columnを持つ。spanはhalf-openである。少なくとも次の provenanceを保持する。
@@ -632,7 +757,7 @@ source mapを使ってgenerated TeXのInput tagを元sourceへ戻す。
 
 今回のsyntax変更でも、source map/SyncTeX bridgeを削除・簡略化してはならない。
 
-## 15. Diagnostics と migration
+## 16. Diagnostics と migration
 
 次は新v1ではサポートしない。
 
@@ -660,7 +785,7 @@ multiline一つなら \foo: | を使う。複数の block values は \foo: の�
 旧environmentのbody-only表記も @frame{Title}: | に移行する。利用者は
 まずsuffixを選び、次に - で複数valueを明示する。
 
-## 16. Conceptual grammar
+## 17. Conceptual grammar
 
 これはTeX本文のgrammarではなく、TeXFlux structural syntaxの意味を示す
 conceptual grammarである。
@@ -700,7 +825,7 @@ indentationを別途保持する。sequence-blockは次の同じ階層の '-' �
 まで続く。grammarの要点は、plain colonが「- ごとに一つの block value」、
 colon-pipeがone block、suffixなしがclosed valueであることだ。
 
-## 17. Acceptance examples
+## 18. Acceptance examples
 
 次の出力はv1のgolden behaviorである。
 

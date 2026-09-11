@@ -7,6 +7,7 @@ The small examples are complete .tfx inputs with byte-for-byte .tex outputs.
 | [basic.tfx](basic.tfx) | Raw TeX, a block environment, !items, and an overlay |
 | [structured.tfx](structured.tfx) | Sequence values, block values, and literal groups |
 | [stacked-items.tfx](stacked-items.tfx) | Closed >> stacking and nested items |
+| [macros.tfx](macros.tfx) | Wrapper, two-argument, and variadic source macros |
 | [content.tfx](content.tfx) | A converted real-world Beamer content file |
 | [content.tex](content.tex) | The generated TeX output golden |
 

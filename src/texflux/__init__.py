@@ -21,11 +21,24 @@ from .ast import (
     Stack,
     SuiteMode,
 )
-from .errors import DirectiveError, ParseError, TeXFluxError, ValidationError
+from .errors import (
+    DirectiveError,
+    MacroExpansionError,
+    ParseError,
+    TeXFluxError,
+    ValidationError,
+)
+from .macros import (
+    MacroDefinition,
+    MacroParameter,
+    collect_macros,
+    expand_macros,
+)
 from .normalize import (
     BUILTIN_DIRECTIVES,
     DirectiveRegistry,
     TransformContext,
+    desugar,
     normalize,
 )
 from .parser import HeaderScanner, parse
@@ -107,6 +120,9 @@ __all__ = [
     "HeaderScanner",
     "InvocationKind",
     "Item",
+    "MacroDefinition",
+    "MacroExpansionError",
+    "MacroParameter",
     "ParseError",
     "ParsedInvocation",
     "RawTex",
@@ -134,8 +150,11 @@ __all__ = [
     "TransformContext",
     "ValidationError",
     "__version__",
+    "collect_macros",
     "compile_text",
     "compile_with_map",
+    "desugar",
+    "expand_macros",
     "normalize",
     "parse",
     "load_source_map",
