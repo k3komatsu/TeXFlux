@@ -41,18 +41,18 @@ TeXFlux を使うと、Beamer スライドの記述が以下のようにスッ�
 #### TeXFlux（`.tfx`）:
 ```text
 @frame{研究の概要}: |
-    @columns:
-        - @column{0.5\textwidth}:
+    @columns: |
+        @column{0.5\textwidth}: |
             !items:
                 -<1-> 背景と課題
                 -<2-> 提案手法のアプローチ
-        - @column{0.5\textwidth}: |
+        @column{0.5\textwidth}: |
             @center >> \includegraphics[width=\linewidth]{architecture.pdf}
 ```
 
 - `\begin` や `\end` の閉じ忘れがゼロに
 - 多重ネストもインデントで直感的に表現
-- `@center >> \includegraphics{...}` のように、環境とコマンドを1行でパイプライン合成可能
+- `@frame{研究の概要} >> @columns` や `@center >> \includegraphics{...}` のように、環境とコマンドを1行でパイプライン合成可能
 - **数式やマクロ、パッケージなどの TeX コードは 100% そのまま動作**
 
 ---
@@ -227,12 +227,17 @@ $E = mc^2$ などの数式もそのまま記述可能です。
 
 ```text
 !defmacro{alertbox}{title}{body}: |
-    @block{\textbf{!param{title}}}: |
-        !param{body}
+    @block:
+        - \textbf >> !param{title}
+        - !param{body}
 
 !alertbox{注意}: |
     これは重要な注意事項です。
 ```
+
+注:
+`@block{\textbf{!param{title}}}` のように `group {...}` の中へ `!param` を書くことはできません（group の中身は raw TeX として不可侵なため）。
+引数へ渡すときは上のように `-` で構造的に渡します。
 
 ---
 
