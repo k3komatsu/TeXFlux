@@ -206,10 +206,12 @@ def _parse_point(
     body: bytes,
     start: int,
     last_vertical: int | None,
-) -> tuple[SyncTeXPoint | None, tuple[int, int] | None, int | None]:
+) -> tuple[SyncTeXPoint | None, tuple[int, int] | None]:
+    """Parse one point, resolving a ``=`` vertical against the previous one."""
+
     match = _POINT_RE.match(body, start)
     if match is None:
-        return None, None, last_vertical
+        return None, None
     horizontal = _integer(match.group(1), "point horizontal coordinate")
     vertical_token = match.group(2)
     compressed = vertical_token == b"="
@@ -219,85 +221,70 @@ def _parse_point(
         vertical = last_vertical
     else:
         vertical = _integer(vertical_token, "point vertical coordinate")
-        last_vertical = vertical
     return (
         SyncTeXPoint(horizontal, vertical, compressed),
         (match.start(), match.end()),
-        last_vertical,
     )
 
 
-def _parse_record(
-    body: bytes,
-    last_vertical: int | None,
-) -> tuple[SyncTeXRecord | None, int | None]:
-    if not body or body.startswith(b"Input:"):
-        return None, last_vertical
+def _opaque(body: bytes, kind: bytes) -> SyncTeXRecord:
+    """Model a record whose payload TeXFlux deliberately does not interpret."""
+
+    return SyncTeXRecord(body, kind)
+
+
+def _single_tag(body: bytes, description: str) -> int | None:
+    """Read the single integer tag after the kind byte, if it is well formed."""
+
+    match = _TAG_RE.fullmatch(body[1:])
+    if match is None:
+        return None
+    return _integer(match.group(), description)
+
+
+def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | None:
+    """Model one record line. A returned point carries the new vertical state."""
+
+    if not body or body.startswith(_INPUT_PREFIX):
+        return None
 
     kind = body[:1]
     if kind == b"%":
-        return SyncTeXRecord(body, kind), last_vertical
+        return _opaque(body, kind)
 
     if kind == b"!":
-        value = body[1:]
-        if not _TAG_RE.fullmatch(value):
-            return SyncTeXRecord(body, kind), last_vertical
-        anchor = _integer(value, "anchor offset")
-        return SyncTeXRecord(
-            body,
-            kind,
-            counted=True,
-            anchor_offset=anchor,
-        ), last_vertical
+        anchor = _single_tag(body, "anchor offset")
+        if anchor is None:
+            return _opaque(body, kind)
+        return SyncTeXRecord(body, kind, counted=True, anchor_offset=anchor)
 
     if kind in b"{}":
-        match = _TAG_RE.fullmatch(body[1:])
-        if match is None:
-            return SyncTeXRecord(body, kind), last_vertical
-        return SyncTeXRecord(
-            body,
-            kind,
-            counted=True,
-            tag=_integer(match.group(), "sheet tag"),
-        ), last_vertical
+        tag = _single_tag(body, "sheet tag")
+        if tag is None:
+            return _opaque(body, kind)
+        return SyncTeXRecord(body, kind, counted=True, tag=tag)
 
     if kind == b"<":
-        match = _TAG_RE.fullmatch(body[1:])
-        if match is None:
-            return SyncTeXRecord(body, kind), last_vertical
-        form_tag = _integer(match.group(), "form tag")
-        return SyncTeXRecord(
-            body,
-            kind,
-            counted=True,
-            form_tag=form_tag,
-        ), last_vertical
+        form_tag = _single_tag(body, "form tag")
+        if form_tag is None:
+            return _opaque(body, kind)
+        return SyncTeXRecord(body, kind, counted=True, form_tag=form_tag)
 
-    if kind == b">":
-        return SyncTeXRecord(body, kind, counted=True), last_vertical
-
-    if kind in b"])":
-        return SyncTeXRecord(body, kind, counted=True), last_vertical
+    if kind in b">])":
+        return SyncTeXRecord(body, kind, counted=True)
 
     if kind == b"f":
         form_match = _FORM_RE.match(body, 1)
         if form_match is None:
-            return SyncTeXRecord(body, kind), last_vertical
-        point, point_span, last_vertical = _parse_point(
+            return _opaque(body, kind)
+        point, point_span = _parse_point(body, form_match.end(), last_vertical)
+        return SyncTeXRecord(
             body,
-            form_match.end(),
-            last_vertical,
-        )
-        return (
-            SyncTeXRecord(
-                body,
-                kind,
-                counted=True,
-                point=point,
-                form_tag=_integer(form_match.group(1), "form tag"),
-                point_span=point_span,
-            ),
-            last_vertical,
+            kind,
+            counted=True,
+            point=point,
+            form_tag=_integer(form_match.group(1), "form tag"),
+            point_span=point_span,
         )
 
     if kind in _LINK_KINDS:
@@ -312,39 +299,28 @@ def _parse_record(
                     else _integer(link_match.group(3), "link column")
                 ),
             )
-            point, point_span, last_vertical = _parse_point(
-                body,
-                link_match.end(),
-                last_vertical,
-            )
-            counted = kind in _COUNTED_KINDS
-            return (
-                SyncTeXRecord(
-                    body,
-                    kind,
-                    counted=counted,
-                    link=link,
-                    point=point,
-                    link_span=(1, link_match.end() - 1),
-                    point_span=point_span,
-                ),
-                last_vertical,
-            )
-
-    if kind in b"c?":
-        point, point_span, last_vertical = _parse_point(body, 1, last_vertical)
-        return (
-            SyncTeXRecord(
+            point, point_span = _parse_point(body, link_match.end(), last_vertical)
+            return SyncTeXRecord(
                 body,
                 kind,
                 counted=kind in _COUNTED_KINDS,
+                link=link,
                 point=point,
+                link_span=(1, link_match.end() - 1),
                 point_span=point_span,
-            ),
-            last_vertical,
+            )
+
+    if kind in b"c?":
+        point, point_span = _parse_point(body, 1, last_vertical)
+        return SyncTeXRecord(
+            body,
+            kind,
+            counted=kind in _COUNTED_KINDS,
+            point=point,
+            point_span=point_span,
         )
 
-    return SyncTeXRecord(body, kind), last_vertical
+    return _opaque(body, kind)
 
 
 def _decode_payload(data: bytes) -> tuple[bytes, Container]:
@@ -404,7 +380,9 @@ def parse_synctex(data: bytes | bytearray | memoryview) -> SyncTeXDocument:
             name, value = body.split(b":", 1)
             settings.append(SyncTeXSetting(name, value, line_section))
         elif body:
-            record, last_vertical = _parse_record(body, last_vertical)
+            record = _parse_record(body, last_vertical)
+            if record is not None and record.point is not None:
+                last_vertical = record.point.vertical
 
         lines.append(
             SyncTeXLine(

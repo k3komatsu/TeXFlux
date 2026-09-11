@@ -59,6 +59,9 @@ class DirectiveRegistry:
         return self._handlers.get(name)
 
 
+_CANONICAL_TYPES = (RawTex, GenericInvocation, BraceGroup, Item)
+
+
 def _blank(node: Node) -> bool:
     return isinstance(node, RawTex) and node.text == ""
 
@@ -139,7 +142,7 @@ def _normalize_node(
         return _normalize_special(node, context)
     if isinstance(node, Stack):
         return _normalize_node(_desugar_stack(node), context)
-    if isinstance(node, (GenericInvocation, BraceGroup, Item)):
+    if isinstance(node, _CANONICAL_TYPES):
         return (_normalize_canonical(node, context),)
     raise TypeError(f"unsupported AST node: {type(node).__name__}")
 
@@ -182,8 +185,13 @@ def _header_arguments(
     return tuple(_normalize_argument(argument, context) for argument in arguments)
 
 
-def _suite_mode(node: ParsedInvocation | SpecialInvocation) -> SuiteMode:
-    return node.suite_mode or SuiteMode.BLOCK
+def _suite_mode(
+    node: ParsedInvocation | SpecialInvocation,
+    default: SuiteMode = SuiteMode.BLOCK,
+) -> SuiteMode:
+    """Read a suite mode, applying ``default`` to hand-built AST nodes."""
+
+    return node.suite_mode or default
 
 
 def _sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
@@ -205,22 +213,71 @@ def _argument_from_entry(
     return Argument(GroupKind.REQUIRED, value, ArgumentLayout.BLOCK, entry.span)
 
 
-def _body_from_entry(
-    entry: SequenceEntry,
-    context: TransformContext,
-) -> Block:
-    return _normalize_block(entry.value, context)
+def _sequence_body(suite: Block, context: TransformContext) -> Block:
+    """Concatenate every ``-`` value of a sequence suite into one block."""
 
-
-def _sequence_body(
-    entries: tuple[SequenceEntry, ...],
-    context: TransformContext,
-    span: SourceSpan,
-) -> Block:
     nodes: list[CanonicalNode] = []
-    for entry in entries:
+    for entry in _sequence_entries(suite):
         nodes.extend(_normalize_block(entry.value, context).nodes)
-    return Block(tuple(nodes), span)
+    return Block(tuple(nodes), suite.span)
+
+
+def _container_body(
+    node: ParsedInvocation,
+    suite: Block,
+    context: TransformContext,
+) -> Block:
+    """Flatten a container suite; either mode contributes one block value."""
+
+    if _suite_mode(node) is SuiteMode.BLOCK:
+        return _normalize_block(suite, context)
+    return _sequence_body(suite, context)
+
+
+def _suite_arguments(
+    node: ParsedInvocation,
+    suite: Block,
+    context: TransformContext,
+) -> tuple[Argument, ...]:
+    """Convert a command suite into its required block arguments."""
+
+    if _suite_mode(node) is SuiteMode.SEQUENCE:
+        return tuple(
+            _argument_from_entry(entry, context)
+            for entry in _sequence_entries(suite)
+        )
+    return (
+        Argument(
+            GroupKind.REQUIRED,
+            _normalize_block(suite, context),
+            ArgumentLayout.BLOCK,
+            node.suite_span or node.span,
+        ),
+    )
+
+
+def _normalize_environment(
+    node: ParsedInvocation,
+    arguments: tuple[Argument, ...],
+    suite: Block,
+    context: TransformContext,
+) -> GenericInvocation:
+    """A block suite is the body; a sequence suite ends with it."""
+
+    if _suite_mode(node) is SuiteMode.BLOCK:
+        body = _normalize_block(suite, context)
+    else:
+        entries = _sequence_entries(suite)
+        if not entries:
+            raise ValidationError(
+                "environment sequence suites require a body value",
+                node.span,
+            )
+        arguments += tuple(
+            _argument_from_entry(entry, context) for entry in entries[:-1]
+        )
+        body = _normalize_block(entries[-1].value, context)
+    return GenericInvocation(node.name, arguments, body, node.span)
 
 
 def _normalize_invocation(
@@ -237,64 +294,19 @@ def _normalize_invocation(
         )
 
     suite = _desugar_block(node.suite)
-    mode = _suite_mode(node)
+
     if node.kind is InvocationKind.COMMAND:
-        if mode is SuiteMode.SEQUENCE:
-            entries = _sequence_entries(suite)
-            return (
-                GenericInvocation(
-                    node.name,
-                    arguments + tuple(
-                        _argument_from_entry(entry, context)
-                        for entry in entries
-                    ),
-                    None,
-                    node.span,
-                ),
-            )
         return (
             GenericInvocation(
                 node.name,
-                arguments + (
-                    Argument(
-                        GroupKind.REQUIRED,
-                        _normalize_block(suite, context),
-                        ArgumentLayout.BLOCK,
-                        node.suite_span or node.span,
-                    ),
-                ),
+                arguments + _suite_arguments(node, suite, context),
                 None,
                 node.span,
             ),
         )
 
     if node.kind is InvocationKind.ENVIRONMENT:
-        if mode is SuiteMode.BLOCK:
-            return (
-                GenericInvocation(
-                    node.name,
-                    arguments,
-                    _normalize_block(suite, context),
-                    node.span,
-                ),
-            )
-        entries = _sequence_entries(suite)
-        if not entries:
-            raise ValidationError(
-                "environment sequence suites require a body value",
-                node.span,
-            )
-        return (
-            GenericInvocation(
-                node.name,
-                arguments + tuple(
-                    _argument_from_entry(entry, context)
-                    for entry in entries[:-1]
-                ),
-                _body_from_entry(entries[-1], context),
-                node.span,
-            ),
-        )
+        return (_normalize_environment(node, arguments, suite, context),)
 
     if node.kind is InvocationKind.BRACE:
         if len(node.groups) != 1 or node.groups[0].kind is not GroupKind.REQUIRED:
@@ -302,12 +314,13 @@ def _normalize_invocation(
                 "literal brace containers require one raw header group",
                 node.span,
             )
-        body = (
-            _normalize_block(suite, context)
-            if mode is SuiteMode.BLOCK
-            else _sequence_body(_sequence_entries(suite), context, suite.span)
+        return (
+            BraceGroup(
+                _container_body(node, suite, context),
+                node.span,
+                node.groups[0].value,
+            ),
         )
-        return (BraceGroup(body, node.span, node.groups[0].value),)
 
     if node.kind is InvocationKind.TRANSPARENT:
         if node.groups:
@@ -315,9 +328,7 @@ def _normalize_invocation(
                 "transparent containers do not accept header groups",
                 node.span,
             )
-        if mode is SuiteMode.BLOCK:
-            return _normalize_block(suite, context).nodes
-        return _sequence_body(_sequence_entries(suite), context, suite.span).nodes
+        return _container_body(node, suite, context).nodes
 
     raise TypeError(f"unsupported invocation kind: {node.kind}")
 
@@ -334,8 +345,7 @@ def _normalize_special(
         )
     result = handler(node, context)
     if not isinstance(result, tuple) or any(
-        not isinstance(item, (RawTex, GenericInvocation, BraceGroup, Item))
-        for item in result
+        not isinstance(item, _CANONICAL_TYPES) for item in result
     ):
         raise TypeError(
             "special directive handlers must return canonical AST tuples"
@@ -351,7 +361,7 @@ def _vpad_handler(
     node: SpecialInvocation,
     context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
-    if node.suite is None or (node.suite_mode or SuiteMode.BLOCK) is not SuiteMode.BLOCK:
+    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
         raise ValidationError("!vpad requires a ': |' block suite", node.span)
     if not 1 <= len(node.groups) <= 2:
         raise ValidationError(
@@ -389,7 +399,7 @@ def _items_handler(
     if (
         node.groups
         or node.suite is None
-        or (node.suite_mode or SuiteMode.SEQUENCE) is not SuiteMode.SEQUENCE
+        or _suite_mode(node, SuiteMode.SEQUENCE) is not SuiteMode.SEQUENCE
     ):
         raise ValidationError(
             "!items requires a ':' sequence suite and no groups",
@@ -441,6 +451,23 @@ def _leading_spaces(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
 
+def _item_group(
+    line: RawTex,
+    cursor: int,
+    kind: GroupKind,
+) -> tuple[Argument, int]:
+    """Scan one item prefix group and return it with the following cursor."""
+
+    span = _source_span_at(line, cursor)
+    end, value = scan_group(line.text, cursor, span=span)
+    span = SourceSpan(
+        span.file,
+        span.start,
+        SourcePosition(span.start.line, span.start.column + end - cursor),
+    )
+    return Argument(kind, value, ArgumentLayout.INLINE, span), end
+
+
 def _item_prefix(
     line: RawTex,
     depth: int,
@@ -459,34 +486,12 @@ def _item_prefix(
     overlay = None
     label = None
     if cursor < len(text) and text[cursor] == "<":
-        group_span = _source_span_at(line, cursor)
-        end, value = scan_group(text, cursor, span=group_span)
-        group_span = SourceSpan(
-            group_span.file,
-            group_span.start,
-            SourcePosition(
-                group_span.start.line,
-                group_span.start.column + end - cursor,
-            ),
-        )
-        overlay = Argument(GroupKind.OVERLAY, value, ArgumentLayout.INLINE, group_span)
-        cursor = end
+        overlay, cursor = _item_group(line, cursor, GroupKind.OVERLAY)
         if cursor < len(text) and text[cursor] == "<":
-            raise ValidationError("duplicate item overlay prefix", group_span)
+            raise ValidationError("duplicate item overlay prefix", overlay.span)
 
     if cursor < len(text) and text[cursor] == "[":
-        group_span = _source_span_at(line, cursor)
-        end, value = scan_group(text, cursor, span=group_span)
-        group_span = SourceSpan(
-            group_span.file,
-            group_span.start,
-            SourcePosition(
-                group_span.start.line,
-                group_span.start.column + end - cursor,
-            ),
-        )
-        label = Argument(GroupKind.OPTIONAL, value, ArgumentLayout.INLINE, group_span)
-        cursor = end
+        label, cursor = _item_group(line, cursor, GroupKind.OPTIONAL)
     elif cursor < len(text) and text[cursor] == "]":
         raise ValidationError("invalid item label prefix", marker_span)
 
@@ -571,6 +576,76 @@ def _block_item_lines(
     return first, content[1:], index
 
 
+def _item_continuation(
+    lines: tuple[RawTex, ...],
+    index: int,
+    depth: int,
+) -> tuple[list[CanonicalNode], int]:
+    """Consume one item's continuation lines and nested lists."""
+
+    continuation: list[CanonicalNode] = []
+    while index < len(lines):
+        current = lines[index]
+        if current.text == "":
+            next_index = _next_item_line(lines, index)
+            if next_index is None:
+                continuation.extend(lines[index:])
+                index = len(lines)
+                break
+            next_line = lines[next_index]
+            next_indent = _leading_spaces(next_line.text)
+            if next_indent == depth:
+                index = next_index
+                break
+            if next_indent < depth:
+                break
+            if (
+                next_indent == depth + 4
+                and next_line.text[depth + 4 : depth + 5] == "-"
+            ):
+                continuation.extend(lines[index:next_index])
+                nested, index = _nested_itemize(lines, next_index, depth + 4)
+                continuation.append(nested)
+                continue
+            if next_indent < depth + 2:
+                raise ValidationError(
+                    "item continuation requires at least two spaces",
+                    next_line.span,
+                )
+            continuation.extend(lines[index:next_index])
+            index = next_index
+            continue
+
+        indent = _leading_spaces(current.text)
+        if indent <= depth:
+            break
+        if indent == depth + 4 and current.text[depth + 4 : depth + 5] == "-":
+            nested, index = _nested_itemize(lines, index, depth + 4)
+            continuation.append(nested)
+            continue
+        if indent >= depth + 4 and current.text[indent : indent + 1] == "-":
+            raise ValidationError(
+                "nested item indentation skips a list level",
+                current.span,
+            )
+        if indent < depth + 2:
+            raise ValidationError(
+                "item continuation requires at least two spaces",
+                current.span,
+            )
+        continuation_span = SourceSpan(
+            current.span.file,
+            SourcePosition(
+                current.span.start.line,
+                current.span.start.column + depth + 2,
+            ),
+            current.span.end,
+        )
+        continuation.append(RawTex(current.text[depth + 2 :], continuation_span))
+        index += 1
+    return continuation, index
+
+
 def _parse_item_level(
     lines: tuple[RawTex, ...],
     index: int,
@@ -637,66 +712,7 @@ def _parse_item_level(
                 )
                 continue
 
-        continuation: list[CanonicalNode] = []
-        while index < len(lines):
-            current = lines[index]
-            if current.text == "":
-                next_index = _next_item_line(lines, index)
-                if next_index is None:
-                    continuation.extend(lines[index:])
-                    index = len(lines)
-                    break
-                next_line = lines[next_index]
-                next_indent = _leading_spaces(next_line.text)
-                if next_indent == depth:
-                    index = next_index
-                    break
-                if next_indent < depth:
-                    break
-                if (
-                    next_indent == depth + 4
-                    and next_line.text[depth + 4 : depth + 5] == "-"
-                ):
-                    continuation.extend(lines[index:next_index])
-                    nested, index = _nested_itemize(lines, next_index, depth + 4)
-                    continuation.append(nested)
-                    continue
-                if next_indent < depth + 2:
-                    raise ValidationError(
-                        "item continuation requires at least two spaces",
-                        next_line.span,
-                    )
-                continuation.extend(lines[index:next_index])
-                index = next_index
-                continue
-
-            indent = _leading_spaces(current.text)
-            if indent <= depth:
-                break
-            if indent == depth + 4 and current.text[depth + 4 : depth + 5] == "-":
-                nested, index = _nested_itemize(lines, index, depth + 4)
-                continuation.append(nested)
-                continue
-            if indent >= depth + 4 and current.text[indent : indent + 1] == "-":
-                raise ValidationError(
-                    "nested item indentation skips a list level",
-                    current.span,
-                )
-            if indent < depth + 2:
-                raise ValidationError(
-                    "item continuation requires at least two spaces",
-                    current.span,
-                )
-            continuation_span = SourceSpan(
-                current.span.file,
-                SourcePosition(
-                    current.span.start.line,
-                    current.span.start.column + depth + 2,
-                ),
-                current.span.end,
-            )
-            continuation.append(RawTex(current.text[depth + 2 :], continuation_span))
-            index += 1
+        continuation, index = _item_continuation(lines, index, depth)
 
         items.append(
             Item(

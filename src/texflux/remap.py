@@ -10,9 +10,10 @@ from pathlib import Path
 import re
 import stat
 import tempfile
-from typing import Sequence, TypeAlias
+from typing import Sequence
 
 from .ast import SourcePosition
+from .paths import PathLike, normalized_path, same_path
 from .synctex import (
     SyncTeXDocument,
     SyncTeXInput,
@@ -20,9 +21,6 @@ from .synctex import (
     parse_synctex,
     serialize_synctex,
 )
-
-
-PathLike: TypeAlias = str | os.PathLike[str]
 
 
 class RemapError(ValueError):
@@ -167,11 +165,17 @@ def load_source_map(path: PathLike) -> SourceMap:
         raise RemapError("source map has an unsupported version")
 
     generated = _object(root.get("generated"), "generated")
-    generated_path = _resolved_path(map_path.parent, generated.get("path"), "generated.path")
+    generated_path = _resolved_path(
+        map_path.parent,
+        generated.get("path"),
+        "generated.path",
+    )
     generated_sha256 = _hash(generated.get("sha256"), "generated.sha256")
     actual_generated_sha256 = _file_hash(generated_path, "generated file")
     if actual_generated_sha256 != generated_sha256:
-        raise RemapError(f"generated file hash does not match source map: {generated_path}")
+        raise RemapError(
+            f"generated file hash does not match source map: {generated_path}"
+        )
 
     source_values = root.get("sources")
     if not isinstance(source_values, list):
@@ -184,10 +188,16 @@ def load_source_map(path: PathLike) -> SourceMap:
         if source_id in source_ids:
             raise RemapError(f"duplicate source id {source_id}")
         source_ids.add(source_id)
-        source_path = _resolved_path(map_path.parent, source.get("path"), f"sources[{index}].path")
+        source_path = _resolved_path(
+            map_path.parent,
+            source.get("path"),
+            f"sources[{index}].path",
+        )
         source_sha256 = _hash(source.get("sha256"), f"sources[{index}].sha256")
         if _file_hash(source_path, "source file") != source_sha256:
-            raise RemapError(f"source file hash does not match source map: {source_path}")
+            raise RemapError(
+                f"source file hash does not match source map: {source_path}"
+            )
         sources.append(SourceMapSource(source_id, source_path, source_sha256))
 
     mapping_values = root.get("mappings")
@@ -212,17 +222,6 @@ def load_source_map(path: PathLike) -> SourceMap:
     )
 
 
-def _same_path(first: Path, second: Path) -> bool:
-    try:
-        if first.exists() and second.exists() and os.path.samefile(first, second):
-            return True
-    except OSError:
-        pass
-    first_normalized = os.path.normcase(os.path.realpath(os.path.abspath(first)))
-    second_normalized = os.path.normcase(os.path.realpath(os.path.abspath(second)))
-    return first_normalized == second_normalized
-
-
 def _input_path(input_record: SyncTeXInput, base: Path) -> Path:
     path = Path(os.fsdecode(input_record.path))
     if not path.is_absolute():
@@ -238,7 +237,7 @@ def _matching_inputs(
     return [
         input_record
         for input_record in document.inputs
-        if _same_path(_input_path(input_record, base), target)
+        if same_path(_input_path(input_record, base), target)
     ]
 
 
@@ -254,11 +253,34 @@ def _mapping_on_line(mapping: SourceMapping, line: int) -> bool:
     return True
 
 
-def _select_mapping(source_map: SourceMap, line: int, column: int | None) -> SourceMapping:
+def _mapping_targets(
+    source_map: SourceMap,
+    mappings: Sequence[SourceMapping],
+) -> set[tuple[str, int]]:
+    """Reduce mappings to the distinct source lines they resolve to."""
+
+    sources_by_id = source_map.sources_by_id
+    return {
+        (
+            normalized_path(sources_by_id[mapping.source_id].path),
+            mapping.source_start.line,
+        )
+        for mapping in mappings
+    }
+
+
+def _select_mapping(
+    source_map: SourceMap,
+    line: int,
+    column: int | None,
+) -> SourceMapping:
+    """Resolve one generated position to the source position it came from."""
+
     if line <= 0:
         raise RemapError(f"invalid generated line {line}")
     if column is not None and column <= 0:
         column = None
+
     if column is not None:
         point = SourcePosition(line, column)
         candidates = [
@@ -266,38 +288,30 @@ def _select_mapping(source_map: SourceMap, line: int, column: int | None) -> Sou
             for mapping in source_map.mappings
             if mapping.generated_start <= point < mapping.generated_end
         ]
-    else:
-        candidates = [
-            mapping
-            for mapping in source_map.mappings
-            if _mapping_on_line(mapping, line)
-        ]
-    if not candidates:
-        raise RemapError(
-            f"no source mapping for generated line {line}"
-            + (f", column {column}" if column is not None else "")
-        )
-    if column is None:
-        best_rank = min(_ROLE_RANK[mapping.role] for mapping in candidates)
-        candidates = [
-            mapping
-            for mapping in candidates
-            if _ROLE_RANK[mapping.role] == best_rank
-        ]
-        sources_by_id = source_map.sources_by_id
-        targets = {
-            (
-                os.path.normcase(
-                    os.path.realpath(os.path.abspath(sources_by_id[mapping.source_id].path))
-                ),
-                mapping.source_start.line,
-            )
-            for mapping in candidates
-        }
-        if len(targets) > 1:
+        if not candidates:
             raise RemapError(
-                f"ambiguous source mappings for generated line {line}"
+                f"no source mapping for generated line {line}, column {column}"
             )
+        return candidates[0]
+
+    candidates = [
+        mapping
+        for mapping in source_map.mappings
+        if _mapping_on_line(mapping, line)
+    ]
+    if not candidates:
+        raise RemapError(f"no source mapping for generated line {line}")
+
+    # Without a column, content outranks a delimiter, which outranks
+    # synthetic text. Remaining candidates must agree on one source line.
+    best_rank = min(_ROLE_RANK[mapping.role] for mapping in candidates)
+    candidates = [
+        mapping
+        for mapping in candidates
+        if _ROLE_RANK[mapping.role] == best_rank
+    ]
+    if len(_mapping_targets(source_map, candidates)) > 1:
+        raise RemapError(f"ambiguous source mappings for generated line {line}")
     return candidates[0]
 
 
@@ -324,7 +338,8 @@ def _allocate_targets(
         matches = _matching_inputs(document, source_map.generated_path, synctex_base)
         if not matches:
             raise RemapError(
-                f"generated file is not present in SyncTeX inputs: {source_map.generated_path}"
+                "generated file is not present in SyncTeX inputs: "
+                f"{source_map.generated_path}"
             )
         generated_tags = tuple(sorted(input_record.tag for input_record in matches))
         if target_tags.intersection(generated_tags):
@@ -342,7 +357,7 @@ def _allocate_targets(
             if existing:
                 tag = min(input_record.tag for input_record in existing)
             else:
-                key = os.path.normcase(os.path.realpath(os.path.abspath(source.path)))
+                key = normalized_path(source.path)
                 if key in allocated_by_path:
                     tag = allocated_by_path[key]
                 else:
@@ -351,7 +366,10 @@ def _allocate_targets(
                     allocated_by_path[key] = tag
                     path_bytes = os.fsencode(os.fspath(source.path))
                     if b"\n" in path_bytes or b"\r" in path_bytes:
-                        raise RemapError(f"source path cannot be an Input record: {source.path}")
+                        raise RemapError(
+                            "source path cannot be an Input record: "
+                            f"{source.path}"
+                        )
                     new_inputs[tag] = path_bytes
             source_tags[source.id] = tag
         targets.append(_Target(source_map, generated_tags, source_tags))
@@ -501,7 +519,9 @@ def _atomic_write(
             try:
                 current_stat = check_path.stat()
             except OSError as error:
-                raise RemapError(f"cannot stat SyncTeX file {check_path}: {error}") from error
+                raise RemapError(
+                    f"cannot stat SyncTeX file {check_path}: {error}"
+                ) from error
             if not _same_stat(expected_stat, current_stat):
                 raise RemapError("SyncTeX file changed during remapping")
         os.chmod(temporary_path, stat.S_IMODE(mode))
@@ -538,7 +558,7 @@ def remap_synctex_file(
         map_paths=map_paths,
         synctex_path=source_path,
     )
-    if _same_path(destination, source_path):
+    if same_path(destination, source_path):
         _atomic_write(
             destination,
             rewritten,

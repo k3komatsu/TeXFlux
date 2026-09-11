@@ -10,6 +10,7 @@ from .ast import (
     ArgumentLayout,
     Block,
     BraceGroup,
+    CanonicalNode,
     Document,
     GenericInvocation,
     GroupKind,
@@ -121,12 +122,11 @@ class MappedEmitter:
         )
 
 
-def _group_delimiters(kind: GroupKind) -> tuple[str, str]:
-    return {
-        GroupKind.REQUIRED: ("{", "}"),
-        GroupKind.OPTIONAL: ("[", "]"),
-        GroupKind.OVERLAY: ("<", ">"),
-    }[kind]
+_GROUP_DELIMITERS = {
+    GroupKind.REQUIRED: ("{", "}"),
+    GroupKind.OPTIONAL: ("[", "]"),
+    GroupKind.OVERLAY: ("<", ">"),
+}
 
 
 def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
@@ -135,13 +135,13 @@ def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
         or not isinstance(argument.value, str)
     ):
         raise TypeError("renderer received a non-inline argument in an inline position")
-    opener, closer = _group_delimiters(argument.kind)
+    opener, closer = _GROUP_DELIMITERS[argument.kind]
     emitter.emit(opener, source=argument.span, role="open")
     emitter.emit(argument.value, source=argument.span, role="content")
     emitter.emit(closer, source=argument.span, role="close")
 
 
-def _source_comment(emitter: MappedEmitter, node: object) -> None:
+def _source_comment(emitter: MappedEmitter, node: CanonicalNode) -> None:
     span = node.span
     emitter.line(
         f"% texflux: {span.file}:{span.start.line}",

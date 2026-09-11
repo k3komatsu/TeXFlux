@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 import sys
 from typing import Sequence
 
 from . import compile_with_map
 from .errors import TeXFluxError
+from .paths import same_path
 from .remap import RemapError, remap_synctex_file
 from .source_map import serialize_source_map
 from .synctex import SyncTeXError
@@ -38,17 +38,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     remap_parser.add_argument("--output", metavar="OUTPUT")
     return parser
-
-
-def _same_path(first: Path, second: Path) -> bool:
-    try:
-        if first.exists() and second.exists() and os.path.samefile(first, second):
-            return True
-    except OSError:
-        pass
-    first_resolved = os.path.normcase(str(first.resolve()))
-    second_resolved = os.path.normcase(str(second.resolve()))
-    return first_resolved == second_resolved
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -80,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if input_path.suffix != ".tfx":
         print("texflux: input must have a .tfx extension", file=sys.stderr)
         return 1
-    if _same_path(input_path, output_path):
+    if same_path(input_path, output_path):
         print("texflux: input and output must be different paths", file=sys.stderr)
         return 1
 

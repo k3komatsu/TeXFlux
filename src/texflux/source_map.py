@@ -5,14 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from typing import TypeAlias
 
 from . import __version__
 from .ast import SourcePosition
+from .paths import PathLike, normalized_path
 from .render import CompilationResult, RenderedFragment
-
-
-PathLike: TypeAlias = str | os.PathLike[str]
 
 
 def _position(position: SourcePosition) -> dict[str, int]:
@@ -27,10 +24,6 @@ def _stored_path(path: PathLike, map_path: PathLike) -> str:
     except ValueError:
         stored = os.path.normpath(target)
     return stored.replace(os.sep, "/")
-
-
-def _normalized_path(path: PathLike) -> str:
-    return os.path.normcase(os.path.realpath(os.path.abspath(os.fspath(path))))
 
 
 def _validate_generated_fragments(fragments: tuple[RenderedFragment, ...]) -> None:
@@ -73,7 +66,7 @@ def serialize_source_map(
         if fragment.source is not None
     }
     if any(
-        _normalized_path(source_file) != _normalized_path(source_path)
+        normalized_path(source_file) != normalized_path(source_path)
         for source_file in source_files
     ):
         raise ValueError("source span file does not match source_path")
