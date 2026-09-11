@@ -1,6 +1,5 @@
 \mycommand:
-    !arg:
-        ARG1
-    !arg{INLINE}
-    !arg:
+    - ARG1
+    - INLINE
+    -
         ARG2

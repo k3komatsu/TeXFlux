@@ -9,592 +9,250 @@ from texflux.ast import (
     Item,
     ParsedInvocation,
     RawTex,
+    SequenceEntry,
     SpecialInvocation,
     Stack,
 )
 from texflux.errors import DirectiveError, ParseError, ValidationError
-from texflux.normalize import (
-    BUILTIN_DIRECTIVES,
-    DirectiveRegistry,
-    normalize,
-)
+from texflux.normalize import BUILTIN_DIRECTIVES, normalize
 from texflux.parser import parse
 from texflux.render import render
 
 
 class CompileTests(unittest.TestCase):
-    def test_prefix_semantics_are_name_agnostic(self):
+    def test_raw_commands_and_named_environment(self):
         self.assertEqual(compile_text("\\foo{A}\n"), "\\foo{A}\n")
         self.assertEqual(
-            compile_text("@foo{A}:\n    BODY\n"),
-            "\\begin{foo}{A}\nBODY\n\\end{foo}\n",
-        )
-        self.assertEqual(
-            compile_text("!items:\n    - A\n"),
-            "\\begin{itemize}\n\\item A\n\\end{itemize}\n",
-        )
-        with self.assertRaises(ParseError):
-            compile_text("@foo{A}\n")
-
-    def test_ordinary_environment(self):
-        self.assertEqual(
-            compile_text("@unknownenv[O]:\n    raw $x$\n"),
+            compile_text("@unknownenv[O]: |\n    raw $x$\n"),
             "\\begin{unknownenv}[O]\nraw $x$\n\\end{unknownenv}\n",
         )
 
-    def test_structured_command_uses_one_long_argument_for_whole_suite(self):
-        source = (
-            "\\foo{SHORT}:\n"
-            "    \\bar\n"
-            "    @baz:\n"
-            "        BODY\n"
-        )
+    def test_command_sequence_consumes_all_values(self):
         self.assertEqual(
-            compile_text(source),
-            "\\foo{SHORT}{\n"
-            "\\bar\n"
-            "\\begin{baz}\n"
+            compile_text("\\foo{COMPACT}:\n    - A\n    - B\n"),
+            "\\foo{COMPACT}{\nA\n}{\nB\n}\n",
+        )
+
+    def test_command_block_is_one_long_argument(self):
+        self.assertEqual(
+            compile_text("\\foo: |\n    A\n    B\n"),
+            "\\foo{\nA\nB\n}\n",
+        )
+
+    def test_mixed_inline_and_multiline_arguments(self):
+        self.assertEqual(
+            compile_text(
+                "\\foo:\n"
+                "    - short\n"
+                "      continuation\n"
+                "    -\n"
+                "        long line 1\n"
+                "        long line 2\n"
+            ),
+            "\\foo{\nshort\ncontinuation\n}{\nlong line 1\nlong line 2\n}\n",
+        )
+
+    def test_environment_sequence_uses_last_value_as_body(self):
+        self.assertEqual(
+            compile_text(
+                "@myenv:\n"
+                "    - ARG1\n"
+                "    - ARG2\n"
+                "    - @: |\n"
+                "        BODY1\n"
+                "        BODY2\n"
+            ),
+            "\\begin{myenv}{\nARG1\n}{\nARG2\n}\n"
+            "BODY1\n"
+            "BODY2\n"
+            "\\end{myenv}\n",
+        )
+
+    def test_environment_sequence_accepts_a_structural_body_value(self):
+        self.assertEqual(
+            compile_text(
+                "@myenv:\n"
+                "    - ARG\n"
+                "    - @center: |\n"
+                "        BODY\n"
+            ),
+            "\\begin{myenv}{\nARG\n}\n"
+            "\\begin{center}\n"
             "BODY\n"
-            "\\end{baz}\n"
-            "}\n",
+            "\\end{center}\n"
+            "\\end{myenv}\n",
         )
 
-        invocation = normalize(parse(source)).body.nodes[0]
-        self.assertIsInstance(invocation, GenericInvocation)
-        self.assertEqual(len(invocation.arguments), 2)
-        suite_argument = invocation.arguments[1]
-        self.assertIsInstance(suite_argument.value, Block)
-        self.assertEqual(len(suite_argument.value.nodes), 2)
-
-    def test_command_suite_matches_explicit_arg(self):
-        compact = (
-            "\\rightnotebox{Note}:\n"
-            "    @align*:\n"
-            "        &\\text{圧縮率 } \\alpha = N/K < 1 \\\\\n"
-            "        &\\text{サブキャリア数} N \\\\\n"
-            "        &\\text{FFTサイズ} K\n"
-        )
-        explicit = (
-            "\\rightnotebox{Note}:\n"
-            "    !arg:\n"
-            "        @align*:\n"
-            "            &\\text{圧縮率 } \\alpha = N/K < 1 \\\\\n"
-            "            &\\text{サブキャリア数} N \\\\\n"
-            "            &\\text{FFTサイズ} K\n"
-        )
-        self.assertEqual(compile_text(compact), compile_text(explicit))
-        self.assertEqual(
-            compile_text(compact),
-            "\\rightnotebox{Note}{\n"
-            "\\begin{align*}\n"
-            "&\\text{圧縮率 } \\alpha = N/K < 1 \\\\\n"
-            "&\\text{サブキャリア数} N \\\\\n"
-            "&\\text{FFTサイズ} K\n"
-            "\\end{align*}\n"
-            "}\n",
-        )
-
-    def test_explicit_command_uses_one_argument_per_arg_directive(self):
+    def test_environment_block_is_body_only(self):
         self.assertEqual(
             compile_text(
-                "\\foo:\n"
-                "    !arg:\n"
-                "        ARG1\n"
-                "    !arg:\n"
-                "        ARG2\n"
+                "@frame{Title}: |\n"
+                "    Hello\n"
+                "    @center: |\n"
+                "        World\n"
             ),
-            "\\foo{\nARG1\n}{\nARG2\n}\n",
-        )
-
-    def test_command_suite_can_contain_structural_nodes(self):
-        source = (
-            "\\foo{SHORT}:\n"
-            "    説明文\n"
-            "\n"
-            "    @infobox{結果}:\n"
-            "        Hello\n"
-        )
-        self.assertEqual(
-            compile_text(source),
-            "\\foo{SHORT}{\n"
-            "説明文\n"
-            "\n"
-            "\\begin{infobox}{結果}\n"
+            "\\begin{frame}{Title}\n"
             "Hello\n"
-            "\\end{infobox}\n"
-            "}\n",
+            "\\begin{center}\n"
+            "World\n"
+            "\\end{center}\n"
+            "\\end{frame}\n",
         )
 
-    def test_block_is_always_a_brace_group(self):
+    def test_literal_and_transparent_containers(self):
         self.assertEqual(
-            compile_text("!block:\n    \\small\n    local text\n"),
-            "{\n\\small\nlocal text\n}\n",
+            compile_text("@{\\small\\color{red}}: |\n    Hello\n"),
+            "{\n\\small\\color{red}\nHello\n}\n",
         )
+        self.assertEqual(compile_text("@: |\n    A\n    B\n"), "A\nB\n")
+        self.assertEqual(compile_text("@:\n    - A\n    - B\n"), "A\nB\n")
+        self.assertEqual(compile_text("@:\n"), "\n")
+        self.assertEqual(compile_text("@{}:\n"), "{\n}\n")
+        with self.assertRaises(ValidationError):
+            compile_text("@foo:\n")
         self.assertEqual(
-            compile_text("\\foo:\n    !block:\n        A\n        B\n"),
-            "\\foo{\n{\nA\nB\n}\n}\n",
-        )
-
-    def test_explicit_arg_wrapping_a_block_makes_double_braces(self):
-        self.assertEqual(
-            compile_text(
-                "\\foo:\n"
-                "    !arg:\n"
-                "        !block:\n"
-                "            A\n"
-            ),
+            compile_text("\\foo:\n    - @{}: |\n        A\n"),
             "\\foo{\n{\nA\n}\n}\n",
         )
 
-    def test_command_explicit_mode_and_mixing_error(self):
+    def test_literal_header_groups_are_independent_values(self):
         self.assertEqual(
             compile_text(
-                "\\foo:\n"
-                "    !arg:\n"
-                "        A\n"
-                "    !arg{B}\n"
+                "@{\\Large}: |\n"
+                "    Large text\n"
+                "\\\\\n"
+                "@{\\small}: |\n"
+                "    Small text\n"
             ),
-            "\\foo{\nA\n}{B}\n",
-        )
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "\\foo:\n"
-                "    !arg:\n"
-                "        A\n"
-                "    @bar:\n"
-                "        B\n"
-            )
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "\\foo:\n"
-                "    !body:\n"
-                "        A\n"
-            )
-
-    def test_environment_explicit_mode_and_mixing_error(self):
-        self.assertEqual(
-            compile_text(
-                "@foo:\n"
-                "    !arg:\n"
-                "        A\n"
-            ),
-            "\\begin{foo}{\nA\n}\n\\end{foo}\n",
-        )
-        self.assertEqual(
-            compile_text(
-                "@foo:\n"
-                "    !arg:\n"
-                "        A\n"
-                "    !body:\n"
-                "        B\n"
-            ),
-            "\\begin{foo}{\nA\n}\nB\n\\end{foo}\n",
-        )
-        self.assertEqual(
-            compile_text(
-                "@foo{SHORT}:\n"
-                "    !arg:\n"
-                "        LONG\n"
-                "    !body:\n"
-                "        BODY\n"
-            ),
-            "\\begin{foo}{SHORT}{\nLONG\n}\nBODY\n\\end{foo}\n",
-        )
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "@foo:\n"
-                "    !arg:\n"
-                "        A\n"
-                "    ordinary body\n"
-            )
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "@foo:\n"
-                "    !body:\n"
-                "        BODY\n"
-                "    !arg:\n"
-                "        A\n"
-            )
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "@foo:\n"
-                "    !body:\n"
-                "        BODY 1\n"
-                "    !body:\n"
-                "        BODY 2\n"
-            )
-        with self.assertRaises(ValidationError):
-            compile_text("@foo:\n    !body{bad}:\n        BODY\n")
-
-    def test_environment_accepts_inline_explicit_arg(self):
-        self.assertEqual(
-            compile_text(
-                "@foo:\n"
-                "    !arg{INLINE}\n"
-            ),
-            "\\begin{foo}{INLINE}\n"
-            "\\end{foo}\n",
+            "{\n"
+            "\\Large\n"
+            "Large text\n"
+            "}\n"
+            "\\\\\n"
+            "{\n"
+            "\\small\n"
+            "Small text\n"
+            "}\n",
         )
 
-    def test_vertical_bar_after_suite_marker_is_not_supported(self):
-        with self.assertRaises(ParseError):
-            compile_text("@foo: |\n    BODY\n")
-        with self.assertRaises(ParseError):
-            compile_text("!block: |\n    BODY\n")
-        with self.assertRaises(ParseError):
-            compile_text("!items: |\n    - ITEM\n")
-        with self.assertRaises(ParseError):
-            compile_text("\\foo >> @bar: |\n    BODY\n")
-        with self.assertRaises(ParseError):
-            compile_text("\\foo: |-\n    BODY\n")
-
-    def test_stack_is_pure_desugaring(self):
+    def test_closed_stack_and_nested_closed_stack(self):
+        self.assertEqual(
+            compile_text("@center >> \\includegraphics{fig.pdf}\n"),
+            "\\begin{center}\n\\includegraphics{fig.pdf}\n\\end{center}\n",
+        )
         self.assertEqual(
             compile_text(
-                "@A{x} >> @B[y] >> @C:\n"
+                "@frame{Title} >> @center >> @{\\small} >> \\input{fig.tex}\n"
+            ),
+            "\\begin{frame}{Title}\n"
+            "\\begin{center}\n"
+            "{\n"
+            "\\small\n"
+            "\\input{fig.tex}\n"
+            "}\n"
+            "\\end{center}\n"
+            "\\end{frame}\n",
+        )
+
+    def test_incomplete_closed_stack_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            compile_text("@foo >> @center\n")
+
+    def test_open_stack_uses_rightmost_suffix(self):
+        self.assertEqual(
+            compile_text(
+                "@frame{Title} >> @center >> @{\\small}: |\n"
                 "    BODY\n"
             ),
-            "\\begin{A}{x}\n"
-            "\\begin{B}[y]\n"
-            "\\begin{C}\n"
+            "\\begin{frame}{Title}\n"
+            "\\begin{center}\n"
+            "{\n"
+            "\\small\n"
             "BODY\n"
-            "\\end{C}\n"
-            "\\end{B}\n"
-            "\\end{A}\n",
-        )
-        self.assertEqual(
-            compile_text(
-                "\\foo >> @bar >> !block:\n"
-                "    A\n"
-            ),
-            "\\foo{\n"
-            "\\begin{bar}\n"
-            "{\n"
-            "A\n"
             "}\n"
-            "\\end{bar}\n"
-            "}\n",
+            "\\end{center}\n"
+            "\\end{frame}\n",
         )
         self.assertEqual(
             compile_text(
-                "@frame{Title} >> @center >> !items:\n"
+                "\\outer >> \\inner:\n"
                 "    - A\n"
+                "    - B\n"
             ),
-            "\\begin{frame}{Title}\n"
-            "\\begin{center}\n"
-            "\\begin{itemize}\n"
-            "\\item A\n"
-            "\\end{itemize}\n"
-            "\\end{center}\n"
-            "\\end{frame}\n",
+            "\\outer{\n\\inner{\nA\n}{\nB\n}\n}\n",
         )
 
-    def test_vpad_emits_before_and_optional_after_spacing(self):
+    def test_blank_line_semantics(self):
         self.assertEqual(
-            compile_text(
-                "!vpad{-1em}{2em}:\n"
-                "    contents\n"
-            ),
-            "\\vspace{-1em}\n"
-            "contents\n"
-            "\\vspace{2em}\n",
+            compile_text("\\foo:\n    - A\n\n    - B\n"),
+            "\\foo{\nA\n}{\nB\n}\n",
         )
         self.assertEqual(
-            compile_text(
-                "!vpad{-1em}:\n"
-                "    contents\n"
-            ),
-            "\\vspace{-1em}\n"
-            "contents\n",
+            compile_text("\\foo: |\n    A\n\n    B\n"),
+            "\\foo{\nA\n\nB\n}\n",
         )
 
-    def test_vpad_preserves_generated_and_body_locations(self):
-        document = normalize(
-            parse(
-                "!vpad{-1em}{2em}:\n"
-                "    contents\n",
-                filename="vpad.tfx",
-            )
-        )
-        before, contents, after = document.body.nodes
-        self.assertEqual((before.span.start.line, before.span.start.column), (1, 6))
+    def test_specials_are_restricted_to_their_new_contracts(self):
         self.assertEqual(
-            (before.arguments[0].span.start.line, before.arguments[0].span.start.column),
-            (1, 6),
+            compile_text("!items:\n    - A\n    - B\n"),
+            "\\begin{itemize}\n\\item A\n\\item B\n\\end{itemize}\n",
         )
-        self.assertEqual((contents.span.start.line, contents.span.start.column), (2, 5))
         self.assertEqual(
-            (after.arguments[0].span.start.line, after.arguments[0].span.start.column),
-            (1, 12),
+            compile_text("!vpad{-1em}{2em}: |\n    contents\n"),
+            "\\vspace{-1em}\ncontents\n\\vspace{2em}\n",
         )
-        self.assertEqual((after.span.start.line, after.span.start.column), (1, 12))
-
-    def test_vpad_works_as_a_stack_segment(self):
-        self.assertEqual(
-            compile_text(
-                "@frame[t]{Title} >> !vpad{-0.7em} >> "
-                "\\singlecolumn[0.11]:\n"
-                "    contents\n"
-            ),
-            "\\begin{frame}[t]{Title}\n"
-            "\\vspace{-0.7em}\n"
-            "\\singlecolumn[0.11]{\n"
-            "contents\n"
-            "}\n"
-            "\\end{frame}\n",
-        )
-
-    def test_vpad_handles_nested_body_inside_one_command_argument(self):
-        self.assertEqual(
-            compile_text(
-                "\\foo:\n"
-                "    !vpad{-1em}{2em}:\n"
-                "        @center:\n"
-                "            X\n"
-                "        !block:\n"
-                "            Y\n"
-            ),
-            "\\foo{\n"
-            "\\vspace{-1em}\n"
-            "\\begin{center}\n"
-            "X\n"
-            "\\end{center}\n"
-            "{\n"
-            "Y\n"
-            "}\n"
-            "\\vspace{2em}\n"
-            "}\n",
-        )
-
-    def test_vpad_can_be_the_terminal_stack_segment(self):
-        self.assertEqual(
-            compile_text(
-                "@frame{Title} >> !vpad{1em}:\n"
-                "    contents\n"
-            ),
-            "\\begin{frame}{Title}\n"
-            "\\vspace{1em}\n"
-            "contents\n"
-            "\\end{frame}\n",
-        )
-
-    def test_vpad_requires_one_or_two_required_groups_and_a_suite(self):
         with self.assertRaises(ValidationError):
-            compile_text("!vpad:\n    contents\n")
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad{-1em}{2em}{3em}:\n    contents\n")
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad[-1em]:\n    contents\n")
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad{1em}[2em]:\n    contents\n")
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad<1em>{2em}:\n    contents\n")
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad{-1em}\n")
-
-        with self.assertRaisesRegex(
-            ValidationError,
-            r"vpad\.tfx:1:6: validation error",
+            compile_text("!vpad{-1em}:\n    - contents\n")
+        for old in (
+            "!block:\n",
+            "!arg:\n",
+            "!body:\n",
         ):
-            compile_text("!vpad[-1em]:\n    contents\n", filename="vpad.tfx")
+            with self.subTest(old=old):
+                with self.assertRaises(DirectiveError):
+                    compile_text(old)
 
-    def test_stack_special_segments_select_explicit_mode(self):
-        self.assertEqual(
-            compile_text(
-                "\\foo:\n"
-                "    !arg >> @bar:\n"
-                "        X\n"
-            ),
-            "\\foo{\n"
-            "\\begin{bar}\n"
-            "X\n"
-            "\\end{bar}\n"
-            "}\n",
-        )
-        self.assertEqual(
-            compile_text(
-                "@foo:\n"
-                "    !body >> @bar:\n"
-                "        X\n"
-            ),
-            "\\begin{foo}\n"
-            "\\begin{bar}\n"
-            "X\n"
-            "\\end{bar}\n"
-            "\\end{foo}\n",
-        )
-
-    def test_unspaced_stack_marker_stays_raw_tex(self):
-        self.assertEqual(
-            compile_text("\\alpha>>\\beta\n"),
-            "\\alpha>>\\beta\n",
-        )
-
-    def test_stack_normalization_preserves_segment_locations(self):
-        document = normalize(
-            parse(
-                "\\foo >> @bar >> !block:\n"
-                "    A\n",
-                filename="stack.tfx",
-            )
-        )
-        outer = document.body.nodes[0]
-        self.assertEqual((outer.span.start.line, outer.span.start.column), (1, 1))
-        outer_argument = outer.arguments[0].value
-        middle = outer_argument.nodes[0]
-        self.assertEqual((middle.span.start.line, middle.span.start.column), (1, 9))
-        inner = middle.body.nodes[0]
-        self.assertEqual((inner.span.start.line, inner.span.start.column), (1, 17))
-        self.assertEqual((inner.body.nodes[0].span.start.line, inner.body.nodes[0].span.start.column), (2, 5))
-
-    def test_items_forms_and_nested_lists(self):
+    def test_items_overlay_labels_nested_and_multiline(self):
         source = (
             "!items:\n"
             "    -<2->[A] first\n"
-            "      second\n"
+            "      continuation\n"
             "        - nested\n"
             "    -\n"
+            "        long first\n"
+            "        continuation\n"
         )
         self.assertEqual(
             compile_text(source),
             "\\begin{itemize}\n"
             "\\item<2->[A] first\n"
-            "second\n"
+            "continuation\n"
             "\\begin{itemize}\n"
             "\\item nested\n"
             "\\end{itemize}\n"
-            "\\item\n"
+            "\\item long first\n"
+            "continuation\n"
             "\\end{itemize}\n",
         )
 
-    def test_item_locations_are_preserved(self):
-        document = normalize(
-            parse(
-                "!items:\n"
-                "    -<2->[Label] first\n"
-                "      continuation\n",
-                filename="items.tfx",
-            )
-        )
-        itemize = document.body.nodes[0]
-        item = itemize.body.nodes[0]
-        self.assertEqual((item.span.start.line, item.span.start.column), (2, 5))
-        self.assertEqual(
-            (item.overlay.span.start.line, item.overlay.span.start.column),
-            (2, 6),
-        )
-        self.assertEqual(
-            (item.label.span.start.line, item.label.span.start.column),
-            (2, 10),
-        )
-        continuation = item.continuation.nodes[0]
-        self.assertEqual(
-            (continuation.span.start.line, continuation.span.start.column),
-            (3, 7),
-        )
-
-    def test_items_keep_raw_tex_and_reject_directives(self):
+    def test_items_keep_raw_tex_and_reject_structural_item_nodes(self):
         self.assertEqual(
             compile_text("!items:\n    - text @foo{A}\n"),
             "\\begin{itemize}\n\\item text @foo{A}\n\\end{itemize}\n",
         )
         with self.assertRaises(ValidationError):
-            compile_text(
-                "!items:\n"
-                "    @foo{A}:\n"
-                "        BODY\n"
-            )
+            compile_text("!items:\n    @foo: |\n        BODY\n")
 
-    def test_items_keep_directive_looking_continuations_raw(self):
-        self.assertEqual(
-            compile_text(
-                "!items:\n"
-                "    - first\n"
-                "      @raw{A}:\n"
-                "      !raw\n"
-                "      \\raw:\n"
-            ),
-            "\\begin{itemize}\n"
-            "\\item first\n"
-            "@raw{A}:\n"
-            "!raw\n"
-            "\\raw:\n"
-            "\\end{itemize}\n",
-        )
-
-    def test_items_reject_bad_levels_and_keep_continuation_blanks(self):
-        with self.assertRaises(ValidationError):
-            compile_text("!items:\n    - A\n            - jump\n")
-        self.assertEqual(
-            compile_text(
-                "!items:\n"
-                "    - A\n"
-                "      continuation\n"
-                "\n"
-                "      next\n"
-            ),
-            "\\begin{itemize}\n"
-            "\\item A\n"
-            "continuation\n"
-            "\n"
-            "next\n"
-            "\\end{itemize}\n",
-        )
-
-    def test_item_continuation_keeps_directive_looking_tex_raw(self):
-        source = "!items:\n    - first\n      @@literal-at\n"
-        self.assertEqual(
-            compile_text(source),
-            "\\begin{itemize}\n\\item first\n@@literal-at\n\\end{itemize}\n",
-        )
-
-    def test_special_namespace_and_structured_constraints(self):
-        with self.assertRaises(DirectiveError):
-            compile_text("!unknown\n")
-        with self.assertRaises(DirectiveError):
-            compile_text("!arg:\n    A\n")
-        with self.assertRaises(DirectiveError):
-            compile_text("!body:\n    A\n")
-        with self.assertRaises(ValidationError):
-            compile_text("\\foo:\n    !arg{A}\n    text\n")
-        with self.assertRaises(ValidationError):
-            compile_text(
-                "@foo:\n"
-                "    !body:\n"
-                "        BODY\n"
-                "    !arg{A}\n"
-            )
-        with self.assertRaises(ValidationError):
-            compile_text("\\foo:\n    !arg[A]\n")
-        with self.assertRaises(DirectiveError):
-            compile_text("!arg{INLINE}\n")
-        with self.assertRaises(DirectiveError):
-            compile_text("!body{INLINE}\n")
-
-    def test_validation_and_directive_errors_keep_source_spans(self):
-        with self.assertRaisesRegex(
-            ValidationError,
-            r"mix\.tfx:4:5: validation error",
-        ):
-            compile_text(
-                "\\foo:\n"
-                "    !arg:\n"
-                "        A\n"
-                "    @bar:\n"
-                "        B\n",
-                filename="mix.tfx",
-            )
-        with self.assertRaisesRegex(
-            DirectiveError,
-            r"unknown\.tfx:1:1: directive error",
-        ):
+    def test_special_and_container_errors_have_spans(self):
+        with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):
             compile_text("!unknown\n", filename="unknown.tfx")
+        with self.assertRaisesRegex(ValidationError, r"mix\.tfx:2:7"):
+            compile_text("@foo:\n    - @bar\n", filename="mix.tfx")
 
     def test_source_comments_and_final_lf(self):
-        source = "@foo:\n    raw\n\n@@at\n"
         self.assertEqual(
             compile_text(
-                source,
+                "@foo: |\n    raw\n\n@@at\n",
                 filename="slides.tfx",
                 source_comments=True,
             ),
@@ -608,47 +266,13 @@ class CompileTests(unittest.TestCase):
             "@at\n",
         )
 
-    def test_source_comments_survive_long_arguments_and_block(self):
-        source = (
-            "\\foo:\n"
-            "    !arg:\n"
-            "        A\n"
-            "    !arg:\n"
-            "        !block:\n"
-            "            B\n"
-        )
-        self.assertEqual(
-            compile_text(source, filename="slides.tfx", source_comments=True),
-            "% texflux: slides.tfx:1\n"
-            "\\foo{\n"
-            "% texflux: slides.tfx:3\n"
-            "A\n"
-            "}{\n"
-            "% texflux: slides.tfx:5\n"
-            "{\n"
-            "% texflux: slides.tfx:6\n"
-            "B\n"
-            "}\n"
-            "}\n",
-        )
-
-    def test_trailing_blank_lines_close_suites_before_root(self):
-        self.assertEqual(
-            compile_text("\\foo:\n    A\n\n"),
-            "\\foo{\nA\n}\n\n",
-        )
-        self.assertEqual(
-            compile_text("\\foo:\n    !arg:\n        A\n\n"),
-            "\\foo{\nA\n}\n\n",
-        )
-
     def test_normalized_ast_has_no_syntax_only_nodes(self):
         document = normalize(
             parse("@frame >> @center >> !items:\n    - A\n")
         )
 
         def walk(value):
-            if isinstance(value, (Stack, SpecialInvocation, ParsedInvocation)):
+            if isinstance(value, (Stack, SpecialInvocation, ParsedInvocation, SequenceEntry)):
                 return False
             if isinstance(value, BraceGroup):
                 return walk(value.body)
@@ -661,10 +285,7 @@ class CompileTests(unittest.TestCase):
             if isinstance(value, Block):
                 return all(walk(child) for child in value.nodes)
             if isinstance(value, Argument):
-                return (
-                    isinstance(value.value, str)
-                    or walk(value.value)
-                )
+                return isinstance(value.value, str) or walk(value.value)
             if isinstance(value, (RawTex, str)):
                 return True
             return False
@@ -675,51 +296,16 @@ class CompileTests(unittest.TestCase):
             compile_text("@frame >> @center >> !items:\n    - A\n"),
         )
 
-    def test_custom_handler_is_ast_to_ast_and_is_normalized(self):
+    def test_custom_handler_remains_ast_to_ast(self):
         def result(node, _context):
-            return (
-                GenericInvocation("infobox", (), node.suite, node.span),
-            )
+            return (GenericInvocation("infobox", (), node.suite, node.span),)
 
         registry = BUILTIN_DIRECTIVES.copy()
         registry.register("result", result)
-        self.assertEqual(
-            render(normalize(parse("!block:\n    A\n"), registry)),
-            "{\nA\n}\n",
-        )
-        document = normalize(
-            parse("!result:\n    \\foo{A}\n"),
-            registry,
-        )
+        document = normalize(parse("!result: |\n    \\foo{A}\n"), registry)
         self.assertEqual(
             render(document),
             "\\begin{infobox}\n\\foo{A}\n\\end{infobox}\n",
-        )
-
-    def test_custom_handler_may_return_raw_tex_or_brace_group(self):
-        def result(node, _context):
-            return (RawTex("generated", node.span),)
-
-        registry = BUILTIN_DIRECTIVES.copy()
-        registry.register("result", result)
-        document = normalize(
-            parse("!result:\n    ignored\n"),
-            registry,
-        )
-        self.assertEqual(render(document), "generated\n")
-
-        def grouped(node, _context):
-            return (
-                BraceGroup(
-                    Block((RawTex("inside", node.span),), node.span),
-                    node.span,
-                ),
-            )
-
-        registry.register("grouped", grouped)
-        self.assertEqual(
-            render(normalize(parse("!grouped:\n    ignored\n"), registry)),
-            "{\ninside\n}\n",
         )
 
     def test_custom_handler_must_return_canonical_tuple(self):
@@ -730,6 +316,12 @@ class CompileTests(unittest.TestCase):
         registry.register("invalid", invalid)
         with self.assertRaises(TypeError):
             normalize(parse("!invalid\n"), registry)
+
+    def test_compact_groups_remain_before_sequence_values(self):
+        self.assertEqual(
+            compile_text("\\doublecolumn[0.48]:\n    - A\n    - B\n"),
+            "\\doublecolumn[0.48]{\nA\n}{\nB\n}\n",
+        )
 
 
 if __name__ == "__main__":

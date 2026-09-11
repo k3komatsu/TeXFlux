@@ -21,9 +21,9 @@ class EndToEndTests(unittest.TestCase):
             source_text = (
                 "\\documentclass{article}\n"
                 "\\begin{document}\n"
-                "@center:\n"
+                "@center: |\n"
                 "    First block\n"
-                "@center:\n"
+                "@center: |\n"
                 "    End-to-end marker\n"
                 "\\end{document}\n"
             )

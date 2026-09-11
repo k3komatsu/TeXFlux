@@ -15,7 +15,7 @@ class CliTests(unittest.TestCase):
             root = Path(directory)
             input_path = root / "slides.tfx"
             output_path = root / "out.tex"
-            input_path.write_text("@frame{日本語}:\n    本文\n", encoding="utf-8")
+            input_path.write_text("@frame{日本語}: |\n    本文\n", encoding="utf-8")
 
             self.assertEqual(
                 main(["compile", str(input_path), "-o", str(output_path)]),

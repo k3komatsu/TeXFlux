@@ -19,7 +19,7 @@ from texflux.source_map import serialize_source_map
 
 class SourceMapTests(unittest.TestCase):
     def test_serialization_is_deterministic_and_omits_unmapped_fragments(self):
-        source = "raw 日本語\n@center:\n    BODY\n"
+        source = "raw 日本語\n@center: |\n    BODY\n"
         source_bytes = source.encode("utf-8")
 
         with tempfile.TemporaryDirectory() as directory:
@@ -238,10 +238,10 @@ class SourceMapTests(unittest.TestCase):
     def test_representative_constructs_produce_source_mappings(self):
         sources = (
             "raw\n",
-            "\\foo:\n    !block:\n        body\n",
-            "@frame >> @center:\n    body\n",
+            "\\foo: |\n    @{}: |\n        body\n",
+            "@frame >> @center: |\n    body\n",
             "!items:\n    - item\n",
-            "!vpad{1em}{2em}:\n    body\n",
+            "!vpad{1em}{2em}: |\n    body\n",
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -263,17 +263,31 @@ class SourceMapTests(unittest.TestCase):
     def test_representative_constructs_preserve_exact_source_spans(self):
         cases = (
             (
-                "\\foo:\n    !block:\n        body\n",
+                "\\foo: |\n    @{}: |\n        body\n",
                 [
-                    ("open", (1, 1, 1, 6)),
-                    ("open", (2, 5, 2, 12)),
+                    ("open", (1, 1, 1, 8)),
+                    ("open", (1, 5, 1, 8)),
+                    ("open", (2, 5, 2, 11)),
                     ("content", (3, 9, 3, 13)),
-                    ("close", (2, 5, 2, 12)),
-                    ("close", (1, 1, 1, 6)),
+                    ("close", (2, 5, 2, 11)),
+                    ("close", (1, 5, 1, 8)),
                 ],
             ),
             (
-                "@frame >> @center:\n    body\n",
+                "\\foo:\n    - A\n      continuation\n    - B\n",
+                [
+                    ("open", (1, 1, 1, 6)),
+                    ("open", (2, 5, 3, 19)),
+                    ("content", (2, 7, 2, 8)),
+                    ("content", (3, 7, 3, 19)),
+                    ("close", (2, 5, 3, 19)),
+                    ("open", (4, 5, 4, 8)),
+                    ("content", (4, 7, 4, 8)),
+                    ("close", (4, 5, 4, 8)),
+                ],
+            ),
+            (
+                "@frame >> @center: |\n    body\n",
                 [
                     ("open", (1, 1, 1, 7)),
                     ("open", (1, 11, 1, 18)),
@@ -292,7 +306,7 @@ class SourceMapTests(unittest.TestCase):
                 ],
             ),
             (
-                "!vpad{1em}{2em}:\n    body\n",
+                "!vpad{1em}{2em}: |\n    body\n",
                 [
                     ("open", (1, 6, 1, 11)),
                     ("content", (1, 6, 1, 11)),

@@ -35,6 +35,13 @@ class ArgumentLayout(StrEnum):
 class InvocationKind(StrEnum):
     COMMAND = "command"
     ENVIRONMENT = "environment"
+    BRACE = "brace"
+    TRANSPARENT = "transparent"
+
+
+class SuiteMode(StrEnum):
+    SEQUENCE = "sequence"
+    BLOCK = "block"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +71,8 @@ class ParsedInvocation:
     groups: tuple[Argument, ...]
     suite: Block | None
     span: SourceSpan
+    suite_mode: SuiteMode | None = None
+    suite_span: SourceSpan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,13 +81,26 @@ class SpecialInvocation:
     groups: tuple[Argument, ...]
     suite: Block | None
     span: SourceSpan
+    suite_mode: SuiteMode | None = None
+    suite_span: SourceSpan | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SequenceEntry:
+    """One explicit ``-`` block value in a sequence suite."""
+
+    value: Block
+    marker_span: SourceSpan
+    span: SourceSpan
 
 
 @dataclass(frozen=True, slots=True)
 class Stack:
     segments: tuple[ParsedInvocation | SpecialInvocation, ...]
-    suite: Block
+    suite: Block | None
     span: SourceSpan
+    suite_mode: SuiteMode | None = None
+    suite_span: SourceSpan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +115,7 @@ class GenericInvocation:
 class BraceGroup:
     body: Block
     span: SourceSpan
+    header_raw: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +133,7 @@ class Document:
     span: SourceSpan
 
 
-SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack
+SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack | SequenceEntry
 CanonicalNode = RawTex | GenericInvocation | BraceGroup | Item
 Node = SyntaxNode | CanonicalNode
 
@@ -129,9 +152,11 @@ __all__ = [
     "Node",
     "ParsedInvocation",
     "RawTex",
+    "SequenceEntry",
     "SourcePosition",
     "SourceSpan",
     "SpecialInvocation",
     "Stack",
     "SyntaxNode",
+    "SuiteMode",
 ]

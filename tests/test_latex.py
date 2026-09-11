@@ -13,7 +13,7 @@ class LatexIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "content.tex").write_text(
-                compile_text("@frame{Title}:\n    Generated body\n"),
+                compile_text("@frame{Title}: |\n    Generated body\n"),
                 encoding="utf-8",
             )
             (root / "main.tex").write_text(

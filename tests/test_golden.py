@@ -53,8 +53,8 @@ class GoldenTests(unittest.TestCase):
             (root / "content.tfx").read_text(encoding="utf-8"),
             filename="examples/content.tfx",
         )
-        self.assertIn("\\rightnotebox{Note}{", output)
-        self.assertIn("\\begin{itemize}", output)
+        expected = (root / "content.tex").read_text(encoding="utf-8")
+        self.assertEqual(output, expected)
 
 
 if __name__ == "__main__":

@@ -173,6 +173,8 @@ def _render_block(
             _render_item(emitter, node, source_comments)
         elif isinstance(node, BraceGroup):
             emitter.line("{", source=node.span, role="open")
+            if node.header_raw:
+                emitter.line(node.header_raw, source=node.span, role="content")
             _render_block(emitter, node.body, source_comments)
             emitter.line("}", source=node.span, role="close")
         else:

@@ -12,7 +12,7 @@ from texflux.cli import main
 class RenameTests(unittest.TestCase):
     def test_texflux_package_compiles_tfx_source(self):
         self.assertEqual(
-            compile_text("@center:\n    BODY\n", filename="input.tfx"),
+            compile_text("@center: |\n    BODY\n", filename="input.tfx"),
             "\\begin{center}\nBODY\n\\end{center}\n",
         )
 

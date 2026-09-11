@@ -4,11 +4,11 @@ The small examples are complete .tfx inputs with byte-for-byte .tex outputs.
 
 | Input | Demonstrates |
 | --- | --- |
-| [basic.tfx](basic.tfx) | Raw TeX, an environment, !items, and an overlay |
-| [structured.tfx](structured.tfx) | !arg, !body, !block, and one long command argument |
-| [stacked-items.tfx](stacked-items.tfx) | Prefix-explicit >> stacking and nested items |
+| [basic.tfx](basic.tfx) | Raw TeX, a block environment, !items, and an overlay |
+| [structured.tfx](structured.tfx) | Sequence values, block values, and literal groups |
+| [stacked-items.tfx](stacked-items.tfx) | Closed >> stacking and nested items |
 | [content.tfx](content.tfx) | A converted real-world Beamer content file |
-| [content.tex](content.tex) | The original TeX reference |
+| [content.tex](content.tex) | The generated TeX output golden |
 
 From the repository root:
 
@@ -17,9 +17,9 @@ PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
 diff -u examples/basic.tex /tmp/basic.tex
 ~~~
 
-content.tfx intentionally keeps the original TeX commands, comments, formulas,
-and external asset paths. Only structural boilerplate is shortened. It is a
-TeXFlux conversion of content.tex, not a generated-output golden.
+content.tfx keeps TeX commands opaque while showing sequence values, block
+values, literal groups, and itemize expansion. It is paired with content.tex
+as an exact generated-output golden.
 
 ~~~bash
 PYTHONPATH=src python3 -m texflux compile examples/content.tfx -o /tmp/content.generated.tex

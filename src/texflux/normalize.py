@@ -1,4 +1,4 @@
-"""Syntax-AST normalization and built-in special directives."""
+"""Syntax-AST normalization and built-in TeXFlux specials."""
 
 from __future__ import annotations
 
@@ -19,10 +19,12 @@ from .ast import (
     Node,
     ParsedInvocation,
     RawTex,
+    SequenceEntry,
     SourcePosition,
     SourceSpan,
     SpecialInvocation,
     Stack,
+    SuiteMode,
 )
 from .errors import DirectiveError, ValidationError
 from .parser import scan_group
@@ -40,7 +42,7 @@ SpecialHandler = Callable[
 
 
 class DirectiveRegistry:
-    """The small in-process registry used by normalization."""
+    """The deliberately small in-process special registry."""
 
     def __init__(self):
         self._handlers: dict[str, SpecialHandler] = {}
@@ -62,15 +64,19 @@ def _blank(node: Node) -> bool:
 
 
 def _desugar_block(block: Block) -> Block:
-    """Replace direct stack nodes with their nested syntax shape."""
+    """Desugar stacks wherever a syntax block contains them."""
 
-    nodes = tuple(
-        _desugar_stack(node) if isinstance(node, Stack) else node
-        for node in block.nodes
-    )
-    if nodes == block.nodes:
+    nodes: list[Node] = []
+    changed = False
+    for node in block.nodes:
+        if isinstance(node, Stack):
+            nodes.append(_desugar_stack(node))
+            changed = True
+        else:
+            nodes.append(node)
+    if not changed:
         return block
-    return Block(nodes, block.span)
+    return Block(tuple(nodes), block.span)
 
 
 def _desugar_stack(
@@ -82,11 +88,13 @@ def _desugar_stack(
             node.span,
         )
 
-    # >> is only a structural abbreviation. Give each segment a one-child
-    # suite from right to left, before invocation mode is inspected.
+    # A stack's suffix belongs to its rightmost segment. Every segment to the
+    # left receives exactly one synthetic block value.
     tail: ParsedInvocation | SpecialInvocation = replace(
         node.segments[-1],
         suite=node.suite,
+        suite_mode=node.suite_mode,
+        suite_span=node.suite_span,
     )
     for segment in reversed(node.segments[:-1]):
         child_end = tail.span.end
@@ -100,6 +108,8 @@ def _desugar_stack(
         tail = replace(
             segment,
             suite=Block((tail,), suite_span),
+            suite_mode=SuiteMode.BLOCK,
+            suite_span=suite_span,
         )
     return tail
 
@@ -118,8 +128,13 @@ def _normalize_node(
 ) -> tuple[CanonicalNode, ...]:
     if isinstance(node, RawTex):
         return (node,)
+    if isinstance(node, SequenceEntry):
+        raise ValidationError(
+            "sequence entries are only valid inside a ':' suite",
+            node.span,
+        )
     if isinstance(node, ParsedInvocation):
-        return (_normalize_invocation(node, context),)
+        return _normalize_invocation(node, context)
     if isinstance(node, SpecialInvocation):
         return _normalize_special(node, context)
     if isinstance(node, Stack):
@@ -167,195 +182,150 @@ def _header_arguments(
     return tuple(_normalize_argument(argument, context) for argument in arguments)
 
 
+def _suite_mode(node: ParsedInvocation | SpecialInvocation) -> SuiteMode:
+    return node.suite_mode or SuiteMode.BLOCK
+
+
+def _sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
+    entries = tuple(child for child in suite.nodes if not _blank(child))
+    for child in entries:
+        if not isinstance(child, SequenceEntry):
+            raise ValidationError(
+                "sequence suites require '-' value entries",
+                child.span,
+            )
+    return entries
+
+
+def _argument_from_entry(
+    entry: SequenceEntry,
+    context: TransformContext,
+) -> Argument:
+    value = _normalize_block(entry.value, context)
+    return Argument(GroupKind.REQUIRED, value, ArgumentLayout.BLOCK, entry.span)
+
+
+def _body_from_entry(
+    entry: SequenceEntry,
+    context: TransformContext,
+) -> Block:
+    return _normalize_block(entry.value, context)
+
+
+def _sequence_body(
+    entries: tuple[SequenceEntry, ...],
+    context: TransformContext,
+    span: SourceSpan,
+) -> Block:
+    nodes: list[CanonicalNode] = []
+    for entry in entries:
+        nodes.extend(_normalize_block(entry.value, context).nodes)
+    return Block(tuple(nodes), span)
+
+
 def _normalize_invocation(
     node: ParsedInvocation,
     context: TransformContext,
-) -> GenericInvocation:
+) -> tuple[CanonicalNode, ...]:
     arguments = _header_arguments(node.groups, context)
     if node.suite is None:
-        if node.kind is InvocationKind.ENVIRONMENT:
-            raise ValidationError(
-                "environment directives require a suite marker ':'",
-                node.span,
-            )
-        return GenericInvocation(node.name, arguments, None, node.span)
+        if node.kind is InvocationKind.COMMAND:
+            return (GenericInvocation(node.name, arguments, None, node.span),)
+        raise ValidationError(
+            "container values require a suite or a closed stack payload",
+            node.span,
+        )
 
     suite = _desugar_block(node.suite)
-    direct = tuple(child for child in suite.nodes if not _blank(child))
-    explicit = any(
-        isinstance(child, SpecialInvocation)
-        and child.name in {"arg", "body"}
-        for child in direct
-    )
-
+    mode = _suite_mode(node)
     if node.kind is InvocationKind.COMMAND:
-        return _normalize_command(
-            node,
-            arguments,
-            suite,
-            direct,
-            explicit,
-            context,
-        )
-    return _normalize_environment(
-        node,
-        arguments,
-        direct,
-        explicit,
-        suite,
-        context,
-    )
-
-
-def _normalize_command(
-    node: ParsedInvocation,
-    arguments: tuple[Argument, ...],
-    suite: Block,
-    direct: tuple[Node, ...],
-    explicit: bool,
-    context: TransformContext,
-) -> GenericInvocation:
-    if explicit:
-        long_arguments: list[Argument] = []
-        for child in direct:
-            if not isinstance(child, SpecialInvocation) or child.name != "arg":
-                raise ValidationError(
-                    "explicit command mode accepts only !arg direct children",
-                    child.span,
-                )
-            long_arguments.append(_structured_argument(child, context))
-        return GenericInvocation(
-            node.name,
-            arguments + tuple(long_arguments),
-            None,
-            node.span,
+        if mode is SuiteMode.SEQUENCE:
+            entries = _sequence_entries(suite)
+            return (
+                GenericInvocation(
+                    node.name,
+                    arguments + tuple(
+                        _argument_from_entry(entry, context)
+                        for entry in entries
+                    ),
+                    None,
+                    node.span,
+                ),
+            )
+        return (
+            GenericInvocation(
+                node.name,
+                arguments + (
+                    Argument(
+                        GroupKind.REQUIRED,
+                        _normalize_block(suite, context),
+                        ArgumentLayout.BLOCK,
+                        node.suite_span or node.span,
+                    ),
+                ),
+                None,
+                node.span,
+            ),
         )
 
-    return GenericInvocation(
-        node.name,
-        arguments + (_long_argument(suite, node.span, context),),
-        None,
-        node.span,
-    )
-
-
-def _normalize_environment(
-    node: ParsedInvocation,
-    arguments: tuple[Argument, ...],
-    direct: tuple[Node, ...],
-    explicit: bool,
-    suite: Block,
-    context: TransformContext,
-) -> GenericInvocation:
-    if not explicit:
-        return GenericInvocation(
-            node.name,
-            arguments,
-            _normalize_block(suite, context),
-            node.span,
-        )
-
-    long_arguments: list[Argument] = []
-    body: Block | None = None
-    for child in direct:
-        if not isinstance(child, SpecialInvocation) or child.name not in {
-            "arg",
-            "body",
-        }:
-            raise ValidationError(
-                "explicit environment mode accepts only !arg or !body direct children",
-                child.span,
+    if node.kind is InvocationKind.ENVIRONMENT:
+        if mode is SuiteMode.BLOCK:
+            return (
+                GenericInvocation(
+                    node.name,
+                    arguments,
+                    _normalize_block(suite, context),
+                    node.span,
+                ),
             )
-        if child.name == "arg":
-            if body is not None:
-                raise ValidationError(
-                    "!arg must appear before !body",
-                    child.span,
-                )
-            long_arguments.append(_structured_argument(child, context))
-            continue
-
-        if body is not None:
+        entries = _sequence_entries(suite)
+        if not entries:
             raise ValidationError(
-                "!body may appear only once",
-                child.span,
-            )
-        if child.groups or child.suite is None:
-            raise ValidationError(
-                "!body requires a block suite and no groups",
-                child.span,
-            )
-        body = _normalize_block(child.suite, context)
-
-    if body is None:
-        # An explicit environment with arguments but no !body is still an
-        # environment.  An empty canonical body preserves that distinction
-        # without teaching the renderer about syntax-only nodes.
-        body = Block((), node.span)
-
-    return GenericInvocation(
-        node.name,
-        arguments + tuple(long_arguments),
-        body,
-        node.span,
-    )
-
-
-def _long_argument(
-    suite: Block,
-    span: SourceSpan,
-    context: TransformContext,
-) -> Argument:
-    return Argument(
-        GroupKind.REQUIRED,
-        _normalize_block(suite, context),
-        ArgumentLayout.BLOCK,
-        span,
-    )
-
-
-def _structured_argument(
-    node: SpecialInvocation,
-    context: TransformContext,
-) -> Argument:
-    if node.groups:
-        if node.suite is not None:
-            raise ValidationError("inline !arg cannot have a suite", node.span)
-        if len(node.groups) != 1 or node.groups[0].kind is not GroupKind.REQUIRED:
-            raise ValidationError(
-                "inline !arg requires exactly one required group",
+                "environment sequence suites require a body value",
                 node.span,
             )
-        group = node.groups[0]
-        return Argument(
-            GroupKind.REQUIRED,
-            group.value,
-            ArgumentLayout.INLINE,
-            group.span,
+        return (
+            GenericInvocation(
+                node.name,
+                arguments + tuple(
+                    _argument_from_entry(entry, context)
+                    for entry in entries[:-1]
+                ),
+                _body_from_entry(entries[-1], context),
+                node.span,
+            ),
         )
 
-    if node.suite is None:
-        raise ValidationError(
-            "!arg requires one inline group or a block suite",
-            node.span,
+    if node.kind is InvocationKind.BRACE:
+        if len(node.groups) != 1 or node.groups[0].kind is not GroupKind.REQUIRED:
+            raise ValidationError(
+                "literal brace containers require one raw header group",
+                node.span,
+            )
+        body = (
+            _normalize_block(suite, context)
+            if mode is SuiteMode.BLOCK
+            else _sequence_body(_sequence_entries(suite), context, suite.span)
         )
-    return Argument(
-        GroupKind.REQUIRED,
-        _normalize_block(node.suite, context),
-        ArgumentLayout.BLOCK,
-        node.span,
-    )
+        return (BraceGroup(body, node.span, node.groups[0].value),)
+
+    if node.kind is InvocationKind.TRANSPARENT:
+        if node.groups:
+            raise ValidationError(
+                "transparent containers do not accept header groups",
+                node.span,
+            )
+        if mode is SuiteMode.BLOCK:
+            return _normalize_block(suite, context).nodes
+        return _sequence_body(_sequence_entries(suite), context, suite.span).nodes
+
+    raise TypeError(f"unsupported invocation kind: {node.kind}")
 
 
 def _normalize_special(
     node: SpecialInvocation,
     context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
-    if node.name in {"arg", "body"}:
-        raise DirectiveError(
-            f"!{node.name} is valid only as a direct child of a structured invocation",
-            node.span,
-        )
     handler = context.registry.lookup(node.name)
     if handler is None:
         raise DirectiveError(
@@ -370,23 +340,7 @@ def _normalize_special(
         raise TypeError(
             "special directive handlers must return canonical AST tuples"
         )
-    return tuple(
-        _normalize_canonical(item, context)
-        for item in result
-    )
-
-
-def _block_handler(
-    node: SpecialInvocation,
-    _context: TransformContext,
-) -> tuple[CanonicalNode, ...]:
-    if node.groups or node.suite is None:
-        raise ValidationError(
-            "!block requires a block suite and no groups",
-            node.span,
-        )
-    # _normalize_special normalizes handler output at the canonical boundary.
-    return (BraceGroup(node.suite, node.span),)
+    return tuple(_normalize_canonical(item, context) for item in result)
 
 
 def _vspace(group: Argument) -> GenericInvocation:
@@ -397,32 +351,31 @@ def _vpad_handler(
     node: SpecialInvocation,
     context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
-    if node.suite is None:
-        raise ValidationError(
-            "!vpad requires a block suite",
-            node.span,
-        )
+    if node.suite is None or (node.suite_mode or SuiteMode.BLOCK) is not SuiteMode.BLOCK:
+        raise ValidationError("!vpad requires a ': |' block suite", node.span)
     if not 1 <= len(node.groups) <= 2:
         raise ValidationError(
             "!vpad requires one or two required inline groups",
             node.span,
         )
-    invalid_group = next((
-        group
-        for group in node.groups
-        if group.kind is not GroupKind.REQUIRED
-        or group.layout is not ArgumentLayout.INLINE
-        or not isinstance(group.value, str)
-    ), None)
+    invalid_group = next(
+        (
+            group
+            for group in node.groups
+            if group.kind is not GroupKind.REQUIRED
+            or group.layout is not ArgumentLayout.INLINE
+            or not isinstance(group.value, str)
+        ),
+        None,
+    )
     if invalid_group is not None:
         raise ValidationError(
             "!vpad requires one or two required inline groups",
             invalid_group.span,
         )
 
-    before = node.groups[0]
     body = _normalize_block(node.suite, context)
-    result: list[CanonicalNode] = [_vspace(before)]
+    result: list[CanonicalNode] = [_vspace(node.groups[0])]
     result.extend(body.nodes)
     if len(node.groups) == 2:
         result.append(_vspace(node.groups[1]))
@@ -433,9 +386,13 @@ def _items_handler(
     node: SpecialInvocation,
     _context: TransformContext,
 ) -> tuple[CanonicalNode, ...]:
-    if node.groups or node.suite is None:
+    if (
+        node.groups
+        or node.suite is None
+        or (node.suite_mode or SuiteMode.SEQUENCE) is not SuiteMode.SEQUENCE
+    ):
         raise ValidationError(
-            "!items requires a nonempty block suite and no groups",
+            "!items requires a ':' sequence suite and no groups",
             node.span,
         )
     invalid = next(
@@ -444,7 +401,7 @@ def _items_handler(
     )
     if invalid is not None:
         raise ValidationError(
-            "!items suites may contain raw lines only",
+            "!items suites may contain item lines only",
             invalid.span,
         )
 
@@ -468,10 +425,7 @@ def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
     return None if index == len(lines) else index
 
 
-def _source_span_at(
-    line: RawTex,
-    text_index: int,
-) -> SourceSpan:
+def _source_span_at(line: RawTex, text_index: int) -> SourceSpan:
     start = SourcePosition(
         line.span.start.line,
         line.span.start.column + text_index,
@@ -515,18 +469,10 @@ def _item_prefix(
                 group_span.start.column + end - cursor,
             ),
         )
-        overlay = Argument(
-            GroupKind.OVERLAY,
-            value,
-            ArgumentLayout.INLINE,
-            group_span,
-        )
+        overlay = Argument(GroupKind.OVERLAY, value, ArgumentLayout.INLINE, group_span)
         cursor = end
         if cursor < len(text) and text[cursor] == "<":
-            raise ValidationError(
-                "duplicate item overlay prefix",
-                group_span,
-            )
+            raise ValidationError("duplicate item overlay prefix", group_span)
 
     if cursor < len(text) and text[cursor] == "[":
         group_span = _source_span_at(line, cursor)
@@ -539,12 +485,7 @@ def _item_prefix(
                 group_span.start.column + end - cursor,
             ),
         )
-        label = Argument(
-            GroupKind.OPTIONAL,
-            value,
-            ArgumentLayout.INLINE,
-            group_span,
-        )
+        label = Argument(GroupKind.OPTIONAL, value, ArgumentLayout.INLINE, group_span)
         cursor = end
     elif cursor < len(text) and text[cursor] == "]":
         raise ValidationError("invalid item label prefix", marker_span)
@@ -555,15 +496,9 @@ def _item_prefix(
         and cursor < len(text)
         and text[cursor] == "<"
     ):
-        raise ValidationError(
-            "item label must not precede its overlay",
-            label.span,
-        )
+        raise ValidationError("item label must not precede its overlay", label.span)
     if cursor < len(text) and text[cursor] in "<[":
-        raise ValidationError(
-            "duplicate item prefix",
-            _source_span_at(line, cursor),
-        )
+        raise ValidationError("duplicate item prefix", _source_span_at(line, cursor))
     if cursor < len(text) and text[cursor] != " ":
         if overlay is not None or label is not None:
             raise ValidationError(
@@ -592,6 +527,48 @@ def _nested_itemize(
         Block(tuple(nested_items), span),
         span,
     ), end
+
+
+def _block_item_lines(
+    lines: tuple[RawTex, ...],
+    index: int,
+    depth: int,
+) -> tuple[str, list[RawTex], int]:
+    """Consume the contents of a bare multiline item marker."""
+
+    content: list[RawTex] = []
+    while index < len(lines):
+        current = lines[index]
+        if current.text != "":
+            indent = _leading_spaces(current.text)
+            if indent <= depth:
+                break
+            if indent < depth + 4:
+                raise ValidationError(
+                    "multiline item content requires four spaces",
+                    current.span,
+                )
+            stripped = current.text[depth + 4 :]
+            span = SourceSpan(
+                current.span.file,
+                SourcePosition(
+                    current.span.start.line,
+                    current.span.start.column + depth + 4,
+                ),
+                current.span.end,
+            )
+            content.append(RawTex(stripped, span))
+        else:
+            next_index = _next_item_line(lines, index)
+            if (
+                next_index is not None
+                and _leading_spaces(lines[next_index].text) <= depth
+            ):
+                break
+            content.append(current)
+        index += 1
+    first = content[0].text if content else ""
+    return first, content[1:], index
 
 
 def _parse_item_level(
@@ -636,8 +613,31 @@ def _parse_item_level(
             line.span.end,
         )
         index += 1
-        continuation: list[CanonicalNode] = []
 
+        if first_line == "" and overlay is None and label is None:
+            next_index = _next_item_line(lines, index)
+            has_block_lines = (
+                next_index is not None
+                and _leading_spaces(lines[next_index].text) >= depth + 4
+            )
+            if has_block_lines:
+                first_line, block_lines, index = _block_item_lines(
+                    lines,
+                    index,
+                    depth,
+                )
+                items.append(
+                    Item(
+                        overlay,
+                        label,
+                        first_line,
+                        Block(tuple(block_lines), item_span),
+                        item_span,
+                    )
+                )
+                continue
+
+        continuation: list[CanonicalNode] = []
         while index < len(lines):
             current = lines[index]
             if current.text == "":
@@ -658,11 +658,7 @@ def _parse_item_level(
                     and next_line.text[depth + 4 : depth + 5] == "-"
                 ):
                     continuation.extend(lines[index:next_index])
-                    nested, index = _nested_itemize(
-                        lines,
-                        next_index,
-                        depth + 4,
-                    )
+                    nested, index = _nested_itemize(lines, next_index, depth + 4)
                     continuation.append(nested)
                     continue
                 if next_indent < depth + 2:
@@ -677,21 +673,11 @@ def _parse_item_level(
             indent = _leading_spaces(current.text)
             if indent <= depth:
                 break
-            if (
-                indent == depth + 4
-                and current.text[depth + 4 : depth + 5] == "-"
-            ):
-                nested, index = _nested_itemize(
-                    lines,
-                    index,
-                    depth + 4,
-                )
+            if indent == depth + 4 and current.text[depth + 4 : depth + 5] == "-":
+                nested, index = _nested_itemize(lines, index, depth + 4)
                 continuation.append(nested)
                 continue
-            if (
-                indent >= depth + 4
-                and current.text[indent : indent + 1] == "-"
-            ):
+            if indent >= depth + 4 and current.text[indent : indent + 1] == "-":
                 raise ValidationError(
                     "nested item indentation skips a list level",
                     current.span,
@@ -709,9 +695,7 @@ def _parse_item_level(
                 ),
                 current.span.end,
             )
-            continuation.append(
-                RawTex(current.text[depth + 2 :], continuation_span)
-            )
+            continuation.append(RawTex(current.text[depth + 2 :], continuation_span))
             index += 1
 
         items.append(
@@ -726,7 +710,6 @@ def _parse_item_level(
 
 
 BUILTIN_DIRECTIVES = DirectiveRegistry()
-BUILTIN_DIRECTIVES.register("block", _block_handler)
 BUILTIN_DIRECTIVES.register("items", _items_handler)
 BUILTIN_DIRECTIVES.register("vpad", _vpad_handler)
 
@@ -758,13 +741,10 @@ def normalize(
     document: Document,
     registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
 ) -> Document:
-    """Turn syntax AST into canonical AST and expand built-ins."""
+    """Turn syntax AST into canonical AST and expand built-in specials."""
 
     context = TransformContext(registry)
-    normalized = Document(
-        _normalize_block(document.body, context),
-        document.span,
-    )
+    normalized = Document(_normalize_block(document.body, context), document.span)
     _assert_canonical_block(normalized.body)
     return normalized
 

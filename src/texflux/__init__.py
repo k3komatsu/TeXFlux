@@ -14,10 +14,12 @@ from .ast import (
     Item,
     ParsedInvocation,
     RawTex,
+    SequenceEntry,
     SourcePosition,
     SourceSpan,
     SpecialInvocation,
     Stack,
+    SuiteMode,
 )
 from .errors import DirectiveError, ParseError, TeXFluxError, ValidationError
 from .normalize import (
@@ -108,6 +110,7 @@ __all__ = [
     "ParseError",
     "ParsedInvocation",
     "RawTex",
+    "SequenceEntry",
     "RenderedDocument",
     "RenderedFragment",
     "RemapError",
@@ -118,6 +121,7 @@ __all__ = [
     "SourceSpan",
     "SpecialInvocation",
     "Stack",
+    "SuiteMode",
     "SyncTeXDocument",
     "SyncTeXError",
     "SyncTeXInput",

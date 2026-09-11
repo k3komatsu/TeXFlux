@@ -13,10 +13,12 @@ from .ast import (
     InvocationKind,
     ParsedInvocation,
     RawTex,
+    SequenceEntry,
     SourcePosition,
     SourceSpan,
     SpecialInvocation,
     Stack,
+    SuiteMode,
 )
 from .errors import ParseError
 
@@ -24,7 +26,14 @@ from .errors import ParseError
 @dataclass(frozen=True, slots=True)
 class HeaderScanResult:
     segments: tuple[ParsedInvocation | SpecialInvocation, ...]
-    suite: bool
+    suite_mode: SuiteMode | None
+    suite_span: SourceSpan | None
+
+    @property
+    def suite(self) -> bool:
+        """Compatibility view for callers that only need presence."""
+
+        return self.suite_mode is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +188,8 @@ class HeaderScanner:
         segments: list[ParsedInvocation | SpecialInvocation] = []
         position = 0
         first = True
-        suite = False
+        suite_mode: SuiteMode | None = None
+        suite_span: SourceSpan | None = None
 
         while True:
             segment, position = self._segment(position, first)
@@ -195,13 +205,27 @@ class HeaderScanner:
                 break
 
             if self.text[position] == ":":
+                marker_start = position
+                position += 1
+                while position < self.end and self.text[position] == " ":
+                    position += 1
+                if position == self.end:
+                    self.saw_structure = True
+                    suite_mode = SuiteMode.SEQUENCE
+                    suite_span = self._span(marker_start, position)
+                    break
+                if self.text[position] != "|":
+                    if self.text.startswith(">>", position):
+                        self.saw_structure = True
+                    raise self._error("unexpected token in structural header", position)
                 self.saw_structure = True
-                suite = True
+                suite_mode = SuiteMode.BLOCK
                 position += 1
                 while position < self.end and self.text[position] == " ":
                     position += 1
                 if position != self.end:
                     raise self._error("trailing token after suite marker", position)
+                suite_span = self._span(marker_start, position)
                 break
 
             if self.text.startswith(">>", position):
@@ -230,7 +254,8 @@ class HeaderScanner:
 
         return HeaderScanResult(
             tuple(segments),
-            suite,
+            suite_mode,
+            suite_span,
         )
 
     def _segment(
@@ -257,6 +282,45 @@ class HeaderScanner:
                 )
             raise self._error(
                 "each stack segment must start with '\\', '@', or '!'",
+                position,
+            )
+
+        if prefix == "@" and position < self.end and self.text[position] == "{":
+            group_start = position
+            group_span = self._span(group_start, group_start + 1)
+            position, value = scan_group(
+                self.text,
+                position,
+                span=group_span,
+            )
+            group_span = self._span(group_start, position)
+            return (
+                ParsedInvocation(
+                    InvocationKind.BRACE,
+                    "",
+                    (Argument(
+                        GroupKind.REQUIRED,
+                        value,
+                        ArgumentLayout.INLINE,
+                        group_span,
+                    ),),
+                    None,
+                    self._span(segment_start, position),
+                ),
+                position,
+            )
+
+        if prefix == "@" and (
+            position >= self.end or self.text[position] in ":> "
+        ):
+            return (
+                ParsedInvocation(
+                    InvocationKind.TRANSPARENT,
+                    "",
+                    (),
+                    None,
+                    self._span(segment_start, position),
+                ),
                 position,
             )
 
@@ -516,12 +580,9 @@ class _Parser:
     ):
         self.index += 1
 
-        if not result.suite:
+        if result.suite_mode is None:
             if len(result.segments) > 1:
-                raise ParseError(
-                    "stack requires a suite marker ':'",
-                    header_span,
-                )
+                return Stack(result.segments, None, header_span)
             segment = result.segments[0]
             if (
                 isinstance(segment, ParsedInvocation)
@@ -545,29 +606,230 @@ class _Parser:
                 )
             return segment
 
-        suite_base = base + 4
-        next_index = self._next_nonblank(self.index)
-        if (
-            next_index is None
-            or self.lines[next_index].indent < suite_base
-        ):
-            raise ParseError(
-                "suite marker ':' requires an indented suite",
-                header_span,
-            )
-        raw_suite = (
-            isinstance(result.segments[-1], SpecialInvocation)
-            and result.segments[-1].name == "items"
-        )
-        suite = self._block(
-            suite_base,
+        suite = self._parse_suite(
+            base,
+            result,
             header_span,
-            raw_suite=raw_suite,
         )
 
         if len(result.segments) == 1:
-            return replace(result.segments[0], suite=suite, span=header_span)
-        return Stack(result.segments, suite, header_span)
+            return replace(
+                result.segments[0],
+                suite=suite,
+                suite_mode=result.suite_mode,
+                suite_span=result.suite_span,
+                span=header_span,
+            )
+        return Stack(
+            result.segments,
+            suite,
+            header_span,
+            result.suite_mode,
+            result.suite_span,
+        )
+
+    def _parse_suite(
+        self,
+        base: int,
+        result: HeaderScanResult,
+        header_span: SourceSpan,
+    ) -> Block:
+        suite_base = base + 4
+        next_index = self._next_nonblank(self.index)
+        raw_suite = (
+            isinstance(result.segments[-1], SpecialInvocation)
+            and result.segments[-1].name == "items"
+            and result.suite_mode is SuiteMode.SEQUENCE
+        )
+        if raw_suite:
+            return self._block(suite_base, header_span, raw_suite=True)
+        if result.suite_mode is SuiteMode.SEQUENCE:
+            if (
+                next_index is not None
+                and base < self.lines[next_index].indent < suite_base
+            ):
+                raise ParseError(
+                    "sequence suite entries require four-space indentation",
+                    self._line_span(
+                        self.lines[next_index],
+                        self.lines[next_index].indent + 1,
+                    ),
+                )
+            suite = self._sequence_suite(suite_base, header_span)
+            requires_entry = (
+                isinstance(result.segments[-1], ParsedInvocation)
+                and result.segments[-1].kind is InvocationKind.COMMAND
+            )
+            if not suite.nodes and requires_entry:
+                raise ParseError(
+                    "sequence suites require at least one '-' value entry",
+                    header_span,
+                )
+            return suite
+        if (
+            next_index is not None
+            and self.lines[next_index].indent >= suite_base
+        ):
+            return self._block(suite_base, header_span)
+        return Block((), header_span)
+
+    def _sequence_suite(self, base: int, boundary: SourceSpan) -> Block:
+        """Parse a ``:`` suite whose values are explicitly marked with ``-``."""
+
+        entries: list[SequenceEntry] = []
+        while self.index < len(self.lines):
+            line = self.lines[self.index]
+            if line.blank:
+                run_start = self.index
+                while (
+                    self.index < len(self.lines)
+                    and self.lines[self.index].blank
+                ):
+                    self.index += 1
+                next_index = self.index
+                if (
+                    next_index >= len(self.lines)
+                    or self.lines[next_index].indent < base
+                ):
+                    self.index = run_start
+                    break
+                continue
+            if line.indent < base:
+                break
+            if line.indent != base:
+                raise ParseError(
+                    "sequence entries must start at suite indentation",
+                    self._line_span(line, line.indent + 1),
+                )
+            if not line.text.startswith("-", base):
+                raise ParseError(
+                    "sequence suites require '-' value entries",
+                    self._line_span(line, base + 1),
+                )
+            entries.append(self._sequence_entry(line, base))
+        return Block(tuple(entries), _block_span(boundary, entries))
+
+    def _sequence_entry(
+        self,
+        line: _PhysicalLine,
+        base: int,
+    ) -> SequenceEntry:
+        marker_span = self._line_span(line, base + 1, "-")
+        entry_span = self._line_span(line, base + 1, line.text[base:])
+        payload_start = base + 1
+        while payload_start < len(line.text) and line.text[payload_start] == " ":
+            payload_start += 1
+        payload = line.text[payload_start:].rstrip(" ")
+
+        self.index += 1
+
+        nodes: list[RawTex | Block | ParsedInvocation | SpecialInvocation | Stack] = []
+        if payload:
+            if payload.startswith("@@"):
+                nodes.append(
+                    RawTex(
+                        payload[1:],
+                        self._line_span(line, payload_start + 1, payload),
+                    )
+                )
+            elif payload[0] in "\\@!":
+                header_span = self._line_span(line, payload_start + 1, payload)
+                scanner = HeaderScanner(payload, span=header_span)
+                try:
+                    result = scanner.scan()
+                except ParseError:
+                    if payload[0] != "\\":
+                        raise
+                    if scanner.saw_structure or _has_top_level_trailing_colon(
+                        payload,
+                        span=header_span,
+                    ):
+                        raise
+                    result = None
+                if result is not None:
+                    nodes.append(
+                        self._sequence_structural_value(
+                            base,
+                            result,
+                            header_span,
+                        )
+                    )
+                else:
+                    nodes.append(
+                        RawTex(
+                            payload,
+                            self._line_span(line, payload_start + 1, payload),
+                        )
+                    )
+            else:
+                nodes.append(
+                    RawTex(
+                        payload,
+                        self._line_span(line, payload_start + 1, payload),
+                    )
+                )
+
+        continuation = self._sequence_continuation(base, entry_span)
+        nodes.extend(continuation.nodes)
+
+        value_end = entry_span.end
+        for node in nodes:
+            value_end = max(value_end, node.span.end)
+            suite = getattr(node, "suite", None)
+            if suite is not None:
+                value_end = max(value_end, suite.span.end)
+        value_span = SourceSpan(entry_span.file, entry_span.start, value_end)
+        value = Block(tuple(nodes), value_span)
+        return SequenceEntry(value, marker_span, value_span)
+
+    def _sequence_continuation(
+        self,
+        base: int,
+        boundary: SourceSpan,
+    ) -> Block:
+        next_index = self._next_nonblank(self.index)
+        if (
+            next_index is None
+            or self.lines[next_index].indent <= base
+        ):
+            return Block((), boundary)
+        return self._block(
+            self.lines[next_index].indent,
+            boundary,
+        )
+
+    def _sequence_structural_value(
+        self,
+        base: int,
+        result: HeaderScanResult,
+        header_span: SourceSpan,
+    ) -> ParsedInvocation | SpecialInvocation | Stack:
+        if result.suite_mode is None:
+            if len(result.segments) == 1:
+                return result.segments[0]
+            return Stack(result.segments, None, header_span)
+
+        suite = self._parse_suite(
+            base,
+            result,
+            header_span,
+        )
+
+        if len(result.segments) == 1:
+            return replace(
+                result.segments[0],
+                suite=suite,
+                suite_mode=result.suite_mode,
+                suite_span=result.suite_span,
+                span=header_span,
+            )
+        return Stack(
+            result.segments,
+            suite,
+            header_span,
+            result.suite_mode,
+            result.suite_span,
+        )
 
 
 def parse(source: str, filename: str = "<string>") -> Document:

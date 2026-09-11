@@ -1,7 +1,7 @@
 % Ordinary lines are raw TeX.
 \section{TeXFlux}
 
-@frame{A small example}:
+@frame{A small example}: |
     \vspace{-.5em}
     !items:
         - Keep the TeX-first model
