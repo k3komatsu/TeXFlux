@@ -83,6 +83,10 @@ Only depth-zero trailing colon and space-separated >> are structural. Group
 internal colon, pipe, and >> remain raw text. Structural header trailing TeX
 comments are unsupported.
 
+A depth-zero `>>` at the end of a structural header line continues that header
+on the immediately following physical line (section 8). The newline replaces
+the spaces after `>>`; at least one space before it is still required.
+
 A suite suffix is exactly a colon optionally followed by spaces and one pipe.
 The pipe is optional whitespace-separated syntax, not a raw scalar marker:
 
@@ -304,6 +308,39 @@ A suffix-less stack whose rightmost segment is an open container is invalid:
 
 All stack segments have complete prefixes. Stack semantics do not depend on
 template or TeX knowledge.
+
+A stack header may be split immediately after any `>>`:
+
+~~~text
+@hoge >>
+@fuga >>
+@fuge: |
+    foobarhoge
+~~~
+
+This is equivalent to `@hoge >> @fuga >> @fuge: |` with the same suite. Keeping
+`@hoge >> @fuga >>` on the first line is also valid. A closed terminal needs no
+suite suffix, so this is valid too:
+
+~~~text
+@hoge >>
+@fuga >> \foobar
+~~~
+
+Each continuation must be the immediately following physical line, must be
+nonblank, at the same indentation as the first header line, and start with a complete
+segment prefix. Blank lines, comments, missing segments, and changed indentation
+are parse errors. Spaces after a trailing `>>` are allowed. Any suite suffix
+belongs to the final segment on the final header line; its suite is indented
+four spaces from the header's structural base as usual.
+
+In a sequence entry beginning `- @hoge >>`, continuation lines align with the
+`-` marker, without repeating it; the suite base remains four spaces deeper
+than that marker. Such a value spans multiple physical lines, so the existing
+multiline argument-brace layout applies. Raw TeX, escaped `@@` lines, and raw
+`!items` content do not acquire continuation syntax. Groups cannot be split
+across lines. Segments, groups, and suffixes retain their physical source spans;
+the parser produces one ordinary Stack, with no new canonical node type.
 
 ## 9. Specials
 
@@ -777,7 +814,8 @@ first-line        ::= inline-value | structural-expression
 continuation-line ::= indented TeXFlux line
 
 structural-expression
-                  ::= segment (SP+ ">>" SP+ segment)* suite-suffix?
+                  ::= segment (stack-separator segment)* suite-suffix?
+stack-separator   ::= SP+ ">>" (SP+ | SP* NEWLINE SAME-INDENT)
 
 segment           ::= command-segment
                     | named-container-segment

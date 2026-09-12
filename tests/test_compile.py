@@ -20,6 +20,34 @@ from texflux.render import render
 
 
 class CompileTests(unittest.TestCase):
+    def test_multiline_stacks_match_single_line_stacks(self):
+        for header in (
+            "@hoge >>\n@fuga >>\n@fuge: |",
+            "@hoge >> @fuga >>\n@fuge: |",
+        ):
+            with self.subTest(header=header):
+                self.assertEqual(
+                    compile_text(header + "\n    foobarhoge\n"),
+                    "\\begin{hoge}\n\\begin{fuga}\n\\begin{fuge}\n"
+                    "foobarhoge\n\\end{fuge}\n\\end{fuga}\n\\end{hoge}\n",
+                )
+        for source in (
+            "@hoge >>\n@fuga >> \\foobar\n",
+            "\\outer >>\n\\inner:\n    - A\n    - B\n",
+            "@outer: |\n    @center >>\n    \\textbf{A}\n",
+            "!off{unused} >>\n!vpad{1em} >>\n\\x\n",
+            "@center >>\n!items:\n    - A\n",
+        ):
+            with self.subTest(source=source):
+                joined = source.replace(">>\n    ", ">> ").replace(">>\n", ">> ")
+                self.assertEqual(compile_text(source), compile_text(joined))
+
+    def test_multiline_stack_sequence_value_uses_multiline_braces(self):
+        self.assertEqual(
+            compile_text("\\cmd:\n    - @center >>\n    \\x\n    - tail\n"),
+            "\\cmd{\n\\begin{center}\n\\x\n\\end{center}\n}{tail}\n",
+        )
+
     def test_raw_commands_and_named_environment(self):
         self.assertEqual(compile_text("\\foo{A}\n"), "\\foo{A}\n")
         self.assertEqual(
@@ -371,7 +399,7 @@ class CompileTests(unittest.TestCase):
 
     def test_normalized_ast_has_no_syntax_only_nodes(self):
         document = normalize(
-            parse("@frame >> @center >> !items:\n    - A\n")
+            parse("@frame >>\n@center >> !items:\n    - A\n")
         )
 
         def walk(value):
@@ -394,6 +422,7 @@ class CompileTests(unittest.TestCase):
             return False
 
         self.assertTrue(walk(document.body))
+        self.assertEqual(document.body.nodes[0].body.nodes[0].span.start.line, 2)
         self.assertEqual(
             render(document),
             compile_text("@frame >> @center >> !items:\n    - A\n"),

@@ -15,6 +15,40 @@ from texflux.parser import parse
 
 
 class ParserTests(unittest.TestCase):
+    def test_multiline_stack_keeps_physical_spans(self):
+        node = parse("@a >>  \r\n@b{B} >>\r\n@c: |\r\n    X\r\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(node, Stack)
+        self.assertEqual(
+            [(s.span.start.line, s.span.start.column) for s in node.segments],
+            [(1, 1), (2, 1), (3, 1)],
+        )
+        self.assertEqual(node.segments[1].groups[0].span.start.line, 2)
+        self.assertEqual(node.suite_span.start.line, 3)
+        self.assertEqual(node.suite_span.start.column, 3)
+        self.assertEqual(node.span.end.line, 3)
+        self.assertEqual(node.suite.nodes[0].span.start.line, 4)
+
+    def test_multiline_stack_requires_immediate_aligned_segment(self):
+        for source, location in (
+            ("@a >>\n", "1:4"),
+            ("\\a >>\n", "1:4"),
+            ("@a >>\n\n@b: |\n", "2:1"),
+            ("@a >>\n    @b: |\n", "2:5"),
+            ("@a: |\n    @b >>\n@c: |\n", "3:1"),
+            ("@a >>\nraw\n", "2:1"),
+            ("@a >>\n\\verb|raw|\n", "2:6"),
+            ("@a >>\n@b: | extra\n", "2:7"),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ParseError, rf"x\.tfx:{location}: parse error"):
+                    parse(source, "x.tfx")
+
+    def test_raw_tex_does_not_continue_on_trailing_arrows(self):
+        source = "raw >>\n\\foo{A >>}\n\\verb|x| >>\n@@literal >>\n"
+        self.assertTrue(all(isinstance(n, RawTex) for n in parse(source).body.nodes))
+        items = parse("!items:\n    - literal >>\n    - next\n").body.nodes[0]
+        self.assertEqual(len(items.suite.nodes), 2)
+
     def test_prefixes_and_suite_modes_are_lexical(self):
         document = parse(
             "\\foo{A}\n"

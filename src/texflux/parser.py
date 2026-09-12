@@ -30,9 +30,12 @@ from .syntax import is_escaped
 
 @dataclass(frozen=True, slots=True)
 class HeaderScanResult:
+    """One physical header; a trailing separator requests another line."""
+
     segments: tuple[ParsedInvocation | SpecialInvocation, ...]
     suite_mode: SuiteMode | None
     suite_span: SourceSpan | None
+    continuation_span: SourceSpan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +180,7 @@ class HeaderScanner:
         position = 0
         suite_mode: SuiteMode | None = None
         suite_span: SourceSpan | None = None
+        continuation_span: SourceSpan | None = None
 
         while True:
             segment, position = self._segment(position, not segments)
@@ -192,10 +196,14 @@ class HeaderScanner:
                 break
 
             if self.text.startswith(">>", position):
+                operator_start = position
                 position = self._stack_separator(
                     position,
                     spaced=position > separator_start,
                 )
+                if position == self.end:
+                    continuation_span = self._span(operator_start, operator_start + 2)
+                    break
                 continue
 
             raise self._error("unexpected token in structural header", position)
@@ -204,6 +212,7 @@ class HeaderScanner:
             tuple(segments),
             suite_mode,
             suite_span,
+            continuation_span,
         )
 
     def _skip_spaces(self, position: int) -> int:
@@ -232,9 +241,12 @@ class HeaderScanner:
         return SuiteMode.BLOCK, self._span(marker_start, position)
 
     def _stack_separator(self, position: int, *, spaced: bool) -> int:
-        """Scan one ``>>`` separator and return the next segment's offset."""
+        """Return the next segment's offset, or the line end for continuation."""
 
-        if not spaced or self.text[position + 2 : position + 3] != " ":
+        if not spaced or (
+            position + 2 != self.end
+            and self.text[position + 2 : position + 3] != " "
+        ):
             raise self._error(
                 "stack separator requires surrounding spaces",
                 position,
@@ -242,11 +254,6 @@ class HeaderScanner:
         position += 2
         self.saw_structure = True
         position = self._skip_spaces(position)
-        if position == self.end:
-            raise self._error(
-                "stack separator needs a following segment",
-                position,
-            )
         return position
 
     def _inline_group(self, position: int) -> tuple[Argument, int]:
@@ -543,7 +550,11 @@ class _Parser:
         result = _scan_structural_header(line.text[base:], header_span)
         if result is None:
             return None
-        if result.suite_mode is None and len(result.segments) == 1:
+        if (
+            result.suite_mode is None
+            and result.continuation_span is None
+            and len(result.segments) == 1
+        ):
             # A closed single-segment command line is ordinary TeX.
             return None
         return result, header_span
@@ -573,7 +584,11 @@ class _Parser:
         header_span: SourceSpan,
     ):
         self.index += 1
-        if result.suite_mode is None and len(result.segments) == 1:
+        if (
+            result.suite_mode is None
+            and result.continuation_span is None
+            and len(result.segments) == 1
+        ):
             self._reject_missing_suite(base, result.segments[0])
         return self._structural_node(base, result, header_span)
 
@@ -607,6 +622,27 @@ class _Parser:
         header_span: SourceSpan,
     ) -> ParsedInvocation | SpecialInvocation | Stack:
         """Attach the parsed suite, if any, to one scanned header."""
+
+        if result.continuation_span is not None:
+            segments = list(result.segments)
+            while result.continuation_span is not None:
+                if self.index == len(self.lines):
+                    raise ParseError(
+                        "stack separator needs a following segment",
+                        result.continuation_span,
+                    )
+                line = self.lines[self.index]
+                if line.blank or line.indent != base:
+                    raise ParseError(
+                        "stack continuation requires the next line at the same indentation",
+                        self._line_span(line, line.indent + 1),
+                    )
+                line_span = self._header_span(line, base)
+                result = HeaderScanner(line.text[base:], span=line_span).scan()
+                segments.extend(result.segments)
+                header_span = SourceSpan(header_span.file, header_span.start, line_span.end)
+                self.index += 1
+            result = replace(result, segments=tuple(segments))
 
         if result.suite_mode is None:
             if len(result.segments) == 1:
