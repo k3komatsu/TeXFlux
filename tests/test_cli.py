@@ -146,5 +146,65 @@ class CliTests(unittest.TestCase):
         self.assertIn("usage:", stderr.getvalue())
 
 
+class CliFlagTests(unittest.TestCase):
+    SOURCE = (
+        "!flag{draft}{off}\n"
+        "!flag{notes}{on}\n"
+        "!when{draft} >> \\todo\n"
+        "!when{notes} >> \\note\n"
+    )
+
+    def run_compile(self, *flags):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "slides.tfx"
+            output_path = root / "out.tex"
+            input_path.write_text(self.SOURCE, encoding="utf-8")
+            arguments = ["compile", str(input_path), "-o", str(output_path)]
+            for flag in flags:
+                arguments += ["--flag", flag]
+            stderr = StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = main(arguments)
+            text = output_path.read_text(encoding="utf-8") if status == 0 else ""
+            return status, text, stderr.getvalue()
+
+    def test_declared_defaults_apply_without_any_flag(self):
+        self.assertEqual(self.run_compile()[:2], (0, "\\note\n"))
+
+    def test_a_bare_name_turns_a_flag_on(self):
+        self.assertEqual(
+            self.run_compile("draft")[:2],
+            (0, "\\todo\n\\note\n"),
+        )
+
+    def test_an_explicit_value_can_turn_a_flag_off(self):
+        # Every statement is gone, so only the renderer's final newline is left.
+        self.assertEqual(self.run_compile("notes=off")[:2], (0, "\n"))
+
+    def test_a_flag_no_declaration_matches_is_rejected(self):
+        status, _, stderr = self.run_compile("drfat")
+        self.assertEqual(status, 1)
+        self.assertIn("drfat", stderr)
+        self.assertIn("draft", stderr)
+
+    def test_a_value_outside_on_and_off_is_rejected(self):
+        status, _, stderr = self.run_compile("draft=yes")
+        self.assertEqual(status, 1)
+        self.assertIn("draft=yes", stderr)
+
+    def test_surrounding_whitespace_is_ignored(self):
+        # Shell quoting and make substitution both leak spaces in.
+        self.assertEqual(
+            self.run_compile(" draft ", "notes = off")[:2],
+            (0, "\\todo\n"),
+        )
+
+    def test_setting_one_flag_twice_is_rejected(self):
+        status, _, stderr = self.run_compile("draft", "draft=off")
+        self.assertEqual(status, 1)
+        self.assertIn("more than once", stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

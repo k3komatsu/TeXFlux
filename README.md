@@ -67,7 +67,9 @@ TeXFlux を使うと、Beamer スライドの記述が以下のようにスッ�
    - `@center >> @{\small} >> \input{fig.tex}` のように、入れ子構造を1行でスッキリ記述。
 4. **SyncTeX 完全対応（PDF とソースの相互ジャンプ）**
    - ソースマップ（`.tfxmap`）を出力し、SyncTeX をリマップすることで、PDF ビューアとエディタ間の相互ジャンプ（前方検索・後方検索）が `.tfx` ファイルに対してそのまま動作します。
-5. **外部依存ゼロ**
+5. **1ソースから複数バージョン**
+   - `!flag` / `!when` でドラフト用の注記や配布版の差分を切り替え、同じソースから別々の `.tex` を生成。
+6. **外部依存ゼロ**
    - Python 3.11 以上の標準ライブラリのみで動作します（追加パッケージのインストール不要）。
 
 ---
@@ -93,6 +95,12 @@ python3 -m pip install .
 
 ```bash
 texflux compile slides.tfx -o slides.tex
+```
+
+文書が `!flag` を宣言している場合は、`--flag` で既定値を上書きできます。
+
+```bash
+texflux compile slides.tfx -o handout.tex --flag draft --flag handout=off
 ```
 
 ### 2. LaTeX コンパイルと SyncTeX の連携（推奨ワークフロー）
@@ -123,7 +131,7 @@ TeXFlux の文法規則はとてもシンプルです。3つのプレフィッ�
 
 - `\` : **TeX コマンド**（例: `\section{...}`, `\textbf{...}`）
 - `@` : **構造コンテナ / 環境**（例: `@frame`, `@center`, `@{...}`）
-- `!` : **TeXFlux の特殊変換**（例: `!items:`, `!defmacro`）
+- `!` : **TeXFlux の特殊変換**（例: `!items:`, `!defmacro`, `!when`）
 
 プレフィックスを伴わない通常の行は、すべてそのまま「生の TeX（raw TeX）」として扱われます。
 
@@ -239,6 +247,48 @@ $E = mc^2$ などの数式もそのまま記述可能です。
 `@block{\textbf{!param{title}}}` のように `group {...}` の中へ `!param` を書くことはできません（group の中身は raw TeX として不可侵なため）。
 引数へ渡すときは上のように `-` で構造的に渡します。
 
+#### ⑦ ビルドフラグ（`!flag` / `!when` / `!unless`）
+1つのソースから、配布用・発表用・ドラフトなど**複数のバージョン**を生成できます。フラグは真偽値で、既定値を文書側で宣言し、コンパイル時に上書きします。
+
+```text
+!flag{draft}{off}
+!flag{handout}{on}
+
+@frame{結果}: |
+    !when{draft} >> \marginpar{発表前に測り直す}
+    実験の結果は次の通りです。
+    !unless{handout}: |
+        \pause
+        @{\small} >> \textit{ここでテールレイテンシに触れる}
+```
+
+既定のままコンパイルすると（`draft` は off、`handout` は on）:
+```latex
+\begin{frame}{結果}
+実験の結果は次の通りです。
+\end{frame}
+```
+
+`texflux compile ... --flag draft --flag handout=off` とすると:
+```latex
+\begin{frame}{結果}
+\marginpar{発表前に測り直す}
+実験の結果は次の通りです。
+\pause
+{
+\small
+\textit{ここでテールレイテンシに触れる}
+}
+\end{frame}
+```
+
+注:
+- `--flag NAME` は on、`--flag NAME=off` は off です。**宣言されていない名前を指定するとエラー**になるので、タイプミスで中身が黙って消えることはありません。
+- 複数フラグは `[and]` / `[or]` でまとめられます（`!when[or]{draft}{internal}`）。2つ以上並べるときはモディファイアが必須です。
+- `!unless[X]` は `!when[X]` **全体の否定**です。「どちらでもない」は `!unless[or]{a}{b}`、「両方ではない」は `!unless[and]{a}{b}` になります。
+- 畳み込めるのは1段だけで、ネストや括弧、一部のフラグだけの否定はありません。`a かつ b でない` は `!when{a} >> !unless{b}` と合成で書きます。
+- off になった側の中身は展開も検査もされません。壊れた箇所を一時的に無効化したままビルドできます。
+
 ---
 
 ## 🐍 Python API からの利用
@@ -254,6 +304,8 @@ source = """@frame{API サンプル}: |
 tex = compile_text(source, filename="slides.tfx")
 print(tex)
 ```
+
+ビルドフラグは `flags` で渡します（`compile_text(source, flags={"draft": True})`）。
 
 ---
 

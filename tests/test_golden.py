@@ -11,6 +11,7 @@ class GoldenTests(unittest.TestCase):
         self.assertEqual(
             {path.parent.name for path in input_paths},
             {
+                "build-flags",
                 "generic-groups",
                 "items-nested",
                 "macro-each",
@@ -38,6 +39,18 @@ class GoldenTests(unittest.TestCase):
                     source_comments=input_path.parent.name == "source-comments",
                 ).encode("utf-8")
                 self.assertEqual(actual, expected)
+
+    def test_build_flags_golden_also_pins_its_overridden_build(self):
+        # The shared harness compiles every case with its declared defaults,
+        # so the other build of this one needs its own exact output.
+        root = Path(__file__).with_name("golden") / "build-flags"
+        actual = compile_text(
+            (root / "input.tfx").read_text(encoding="utf-8"),
+            filename="tests/golden/build-flags/input.tfx",
+            flags={"draft": True, "handout": False},
+        )
+        expected = (root / "expected-draft.tex").read_text(encoding="utf-8")
+        self.assertEqual(actual, expected)
 
     def test_small_examples_match_documented_goldens(self):
         root = Path(__file__).parents[1] / "examples"

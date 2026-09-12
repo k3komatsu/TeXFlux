@@ -49,10 +49,7 @@ class RenderWarning:
     span: SourceSpan
 
     def diagnostic(self) -> str:
-        return (
-            f"{self.span.file}:{self.span.start.line}:{self.span.start.column}: "
-            f"warning: {self.message}"
-        )
+        return f"{self.span.location}: warning: {self.message}"
 
 
 @dataclass(frozen=True, slots=True)

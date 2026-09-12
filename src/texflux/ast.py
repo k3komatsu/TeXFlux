@@ -21,6 +21,12 @@ class SourceSpan:
     start: SourcePosition
     end: SourcePosition
 
+    @property
+    def location(self) -> str:
+        """This span's start as the ``file:line:column`` diagnostics prefix."""
+
+        return f"{self.file}:{self.start.line}:{self.start.column}"
+
 
 class GroupKind(StrEnum):
     """A TeX group, identified by the delimiter pair that encloses it."""

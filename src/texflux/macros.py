@@ -34,7 +34,13 @@ from .ast import (
     SyntaxNode,
 )
 from .errors import MacroExpansionError, ValidationError
-from .syntax import required_text, sequence_entries, walk
+from .flags import (
+    CONDITIONAL_NAMES,
+    Conditional,
+    Flags,
+    evaluate_conditional,
+)
+from .syntax import demand_text, required_text, sequence_entries, walk
 
 
 class Reserved(StrEnum):
@@ -46,7 +52,7 @@ class Reserved(StrEnum):
 
 
 #: Reserved names may be neither redefined nor used as macro names.
-RESERVED_NAMES: Final = frozenset(Reserved)
+RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
 
 # A macro must be callable as '!name', so it uses the special-name grammar.
 _MACRO_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
@@ -99,22 +105,6 @@ class MacroDefinition:
         return f"{shape or '(no parameters)'}, {bound} {self.required} value(s)"
 
 
-def _position(span: SourceSpan) -> str:
-    return f"{span.file}:{span.start.line}:{span.start.column}"
-
-
-def _required_text(argument: Argument, label: str) -> str:
-    """Read one required inline group, or reject it at its own span."""
-
-    text = required_text(argument)
-    if text is None:
-        raise ValidationError(
-            f"{label} must be a required '{{...}}' group",
-            argument.span,
-        )
-    return text.strip()
-
-
 # --------------------------------------------------------------------------
 # Definition collection
 # --------------------------------------------------------------------------
@@ -124,7 +114,7 @@ def _parameters(groups: tuple[Argument, ...]) -> tuple[MacroParameter, ...]:
     parameters: list[MacroParameter] = []
     seen: set[str] = set()
     for group in groups:
-        text = _required_text(group, "macro parameter")
+        text = demand_text(group, "macro parameter")
         rest = text.startswith(_REST_PREFIX)
         name = text.removeprefix(_REST_PREFIX) if rest else text
         if _PARAM_NAME_RE.fullmatch(name) is None:
@@ -158,7 +148,7 @@ def _definition(
         raise ValidationError("!defmacro requires a macro name group", node.span)
 
     name_group = node.groups[0]
-    name = _required_text(name_group, "!defmacro name")
+    name = demand_text(name_group, "!defmacro name")
     if _MACRO_NAME_RE.fullmatch(name) is None:
         raise ValidationError(f"invalid macro name '{name}'", name_group.span)
     if name in RESERVED_NAMES:
@@ -169,7 +159,7 @@ def _definition(
             name_group.span,
         )
     if name in defined:
-        previous = _position(defined[name].span)
+        previous = defined[name].span.location
         raise ValidationError(
             f"macro '!{name}' is already defined at {previous}",
             name_group.span,
@@ -275,7 +265,7 @@ class _Frame:
         """Locate this expansion: its chain and the call site it came from."""
 
         chain = " -> ".join(self.chain)
-        return f"while expanding '{chain}' called at {_position(self.call_span)}"
+        return f"while expanding '{chain}' called at {self.call_span.location}"
 
 
 def _error(
@@ -291,10 +281,11 @@ def _error(
 
 
 class _Expander:
-    """Rewrite macro calls, ``!param`` and ``!each`` into plain syntax AST."""
+    """Rewrite macro calls, conditionals and template constructs away."""
 
-    def __init__(self, macros: Mapping[str, MacroDefinition]):
+    def __init__(self, macros: Mapping[str, MacroDefinition], flags: Flags):
         self._macros = macros
+        self._flags = flags
 
     def document(self, document: Document) -> Document:
         return replace(document, body=self.block(document.body, None))
@@ -320,6 +311,8 @@ class _Expander:
                 return self._param(node, frame)
             case SpecialInvocation(name=Reserved.EACH):
                 return self._each(node, frame)
+            case SpecialInvocation(name=Conditional.WHEN | Conditional.UNLESS):
+                return self._conditional(node, frame)
             case SpecialInvocation(name=name) if name in self._macros:
                 return self._call(node, self._macros[name], frame)
             case ParsedInvocation() | SpecialInvocation():
@@ -385,7 +378,7 @@ class _Expander:
                 node.span,
             )
         return tuple(
-            _required_text(group, f"{label} name") for group in node.groups
+            demand_text(group, f"{label} name") for group in node.groups
         )
 
     def _param(
@@ -457,6 +450,33 @@ class _Expander:
             iteration = self.block(node.suite, frame.bound(item_name, value))
             nodes.extend(iteration.nodes)
         return tuple(nodes)
+
+    # -- conditionals ------------------------------------------------------
+
+    def _conditional(
+        self,
+        node: SpecialInvocation,
+        frame: _Frame | None,
+    ) -> tuple[Node, ...]:
+        """Keep or drop one ``!when``/``!unless`` payload, whole."""
+
+        keep = evaluate_conditional(node, self._flags)
+        if node.suite is None:
+            raise ValidationError(
+                f"!{node.name} requires a ': |' suite or a '>>' payload",
+                node.span,
+            )
+        if node.suite_mode is not SuiteMode.BLOCK:
+            raise ValidationError(
+                f"!{node.name} does not accept a ':' sequence suite",
+                node.span,
+            )
+
+        if not keep:
+            # A dropped payload is never expanded, so an author can disable
+            # content that no longer compiles and still build the document.
+            return ()
+        return self.block(node.suite, frame).nodes
 
     # -- calls -------------------------------------------------------------
 
@@ -540,14 +560,16 @@ class _Expander:
 def expand_macros(
     document: Document,
     macros: Mapping[str, MacroDefinition],
+    flags: Flags,
 ) -> Document:
-    """Expand every macro call, ``!param`` and ``!each`` in one document.
+    """Expand macro calls and resolve conditionals in one document.
 
     ``document`` must already be desugared, as ``normalize`` arranges: a
-    surviving ``>>`` stack would hide the single block value a call binds.
+    surviving ``>>`` stack would hide the single block value a call binds and
+    the single payload a conditional keeps or drops.
     """
 
-    return _Expander(macros).document(document)
+    return _Expander(macros, flags).document(document)
 
 
 __all__ = [

@@ -28,6 +28,7 @@ from .ast import (
     SuiteMode,
 )
 from .errors import DirectiveError, ParseError, ValidationError
+from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
 from .syntax import required_text, sequence_entries
@@ -806,16 +807,26 @@ def _assert_canonical_block(block: Block) -> None:
 def normalize(
     document: Document,
     registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
+    *,
+    flags: Flags | None = None,
 ) -> Document:
-    """Turn syntax AST into canonical AST, expanding macros and specials."""
+    """Turn syntax AST into canonical AST, expanding macros and specials.
+
+    ``flags`` overrides the defaults the document's ``!flag`` declarations
+    give. An override raises ``FlagError`` unless it names a declared flag and
+    carries a real ``bool``, so a typo or a stray ``"off"`` cannot quietly
+    build the other version of the document.
+    """
 
     validate_macro_forms(document)
+    validate_flag_forms(document)
     document = desugar(document)
+    document, resolved = collect_flags(document, flags)
     document, macros = collect_macros(
         document,
         lambda name: registry.lookup(name) is not None,
     )
-    document = expand_macros(document, macros)
+    document = expand_macros(document, macros, resolved)
 
     context = TransformContext(registry)
     normalized = Document(_normalize_block(document.body, context), document.span)

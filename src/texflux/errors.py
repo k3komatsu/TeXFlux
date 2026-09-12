@@ -12,10 +12,7 @@ class TeXFluxError(Exception):
         super().__init__(message)
 
     def diagnostic(self) -> str:
-        return (
-            f"{self.span.file}:{self.span.start.line}:{self.span.start.column}: "
-            f"{self.error_kind}: {self.message}"
-        )
+        return f"{self.span.location}: {self.error_kind}: {self.message}"
 
     def __str__(self) -> str:
         return self.diagnostic()
@@ -37,8 +34,19 @@ class MacroExpansionError(TeXFluxError):
     error_kind = "macro error"
 
 
+class FlagError(Exception):
+    """A build-flag override that no declaration matches or that is not a bool.
+
+    An override describes the build rather than the document, so it has no
+    source span and cannot implement ``diagnostic()``. That is why this is
+    deliberately not a ``TeXFluxError``: only a call that passes ``flags``
+    can raise it, and such a call has to handle it explicitly.
+    """
+
+
 __all__ = [
     "DirectiveError",
+    "FlagError",
     "MacroExpansionError",
     "ParseError",
     "TeXFluxError",

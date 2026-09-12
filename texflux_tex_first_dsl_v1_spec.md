@@ -478,7 +478,130 @@ Expansion is an AST-to-AST pass that runs after `>>` desugaring and before
 value consumption, so no macro construct reaches normalization or the
 renderer. `!splice` is not part of v1.
 
-## 11. Normalization and renderer boundary
+## 11. Build flags
+
+A build flag is a boolean that lets one source produce several versions of the
+same document. `!flag` declares a flag and its default; `!when` and `!unless`
+keep or drop a whole payload according to one flag, or to several folded by an
+`[and]`/`[or]` modifier.
+
+That flat fold is the whole conditional language. A fold admits no
+parentheses, no fold inside a fold, and no negation of one of its operands,
+and a flag holds nothing but on and off. Composing whole conditionals with
+`>>` is unrestricted, and is how anything deeper than a single fold is
+written.
+
+### 11.1 Declaration
+
+~~~text
+!flag{draft}{off}
+!flag{handout}{on}
+~~~
+
+A declaration takes exactly two required inline groups -- the flag name and
+the default, spelled `on` or `off` -- and no suite. A flag name matches
+`[A-Za-z][A-Za-z0-9_-]*`. `!flag` is a top-level statement: it may not appear
+inside a suite and may not be a `>>` segment. Redeclaring a name is a
+validation error that names the first declaration. A declaration emits no TeX.
+
+Declarations are collected before any conditional is read, so a `!when` may
+precede the `!flag` it names.
+
+### 11.2 Overrides
+
+A compile may override a declared default:
+
+~~~text
+texflux compile talk.tfx -o talk.tex --flag draft --flag handout=off
+~~~
+
+`--flag NAME` turns a flag on; `--flag NAME=on` and `--flag NAME=off` are
+explicit. Overriding a name that no declaration matches is an error, as is
+setting one flag twice or giving a value other than on or off. An override
+therefore never silently does nothing.
+
+### 11.3 !when and !unless
+
+~~~text
+!when{draft} >> \marginpar{re-measure before the talk}
+
+!unless{handout}: |
+    \pause
+    @{\small} >> \textit{Ask about the tail latency here.}
+~~~
+
+Each takes one or more required inline groups, every one naming a declared
+flag, and a payload written either as a `': |'` suite or as the rest of a `>>`
+composition. A sequence suite is a validation error, as is a missing payload,
+a flag no declaration matches, or the same flag listed twice.
+
+A kept payload is spliced into the enclosing block; it is not wrapped in a
+group of its own.
+
+### 11.4 [and] and [or]
+
+A leading optional group folds several flags into one answer:
+
+~~~text
+!when[or]{draft}{internal} >> \marginpar{re-measure before the talk}
+!when[and]{notes}{handout}: |
+    ...
+~~~
+
+The modifier is `[and]` or `[or]`, nothing else. It is required whenever a
+conditional names more than one flag -- two flags without a modifier are a
+validation error rather than an implicit conjunction -- and is permitted, as a
+no-op, on a single flag. Only the leading group is read as a modifier; an
+optional group anywhere else is read as a flag name and rejected as one.
+
+`!unless[X]` is the negation of the whole `!when[X]` it mirrors, so "neither"
+is spelled with `[or]` and "not both" with `[and]`:
+
+~~~text
+!when[and]{a}{b}     keeps while both are on
+!when[or]{a}{b}      keeps while either is on
+!unless[and]{a}{b}   keeps unless both are on
+!unless[or]{a}{b}    keeps unless either is on, that is while neither is
+~~~
+
+A fold cannot negate one of its operands, so `a and not b` stays a
+composition, and so does any deeper combination:
+
+~~~text
+!when{a} >> !unless{b} >> \note{...}
+~~~
+
+### 11.5 Resolution
+
+Flags are resolved before macro expansion, and conditionals are resolved
+during it, so no flag construct reaches normalization or the renderer. A
+conditional inside a template is resolved when the template is instantiated.
+
+A dropped payload is never expanded and never normalized, so content that no
+longer compiles can be disabled and the document still builds. An unknown
+special, a macro call of the wrong arity and a misplaced `!defmacro` all go
+unreported inside one.
+
+What a dropped payload must still satisfy is every rule checked before
+conditionals are resolved. Its syntax must parse; `!flag` must be a top-level
+statement; and the two stack-form rules of section 10 hold, so `!defmacro` may
+not be a `>>` segment and `!each` must own its `': |'` suite. Those three are
+the complete list.
+
+A conditional keeps or drops statements, not arguments. A sequence entry whose
+value is dropped remains an entry, and renders as an empty argument:
+
+~~~text
+\cmd:
+    - !when{draft} >> \x
+    - tail
+~~~
+
+renders `\cmd{}{tail}` while `draft` is off. An `!items` entry payload is raw
+item text, so no `!` construct -- a conditional included -- is read inside one;
+a conditional list is written by wrapping the whole `!items`.
+
+## 12. Normalization and renderer boundary
 
 The compiler pipeline is:
 
@@ -486,7 +609,8 @@ The compiler pipeline is:
 physical lines
  -> syntax AST
  -> pure >> desugaring
- -> source macro collection and expansion
+ -> build flag collection
+ -> source macro collection, conditional resolution and expansion
  -> value consumption and special expansion
  -> canonical AST validation
  -> renderer
@@ -498,10 +622,11 @@ environment. BraceGroup always renders literal braces.
 
 No ParsedInvocation, SpecialInvocation, Stack, SequenceEntry, suite mode, or
 special name may reach the renderer. The renderer knows only canonical AST.
-No macro definition, call, parameter reference, or `!each` survives expansion,
-so the renderer knows nothing about macros either.
+No macro definition, call, parameter reference, `!each`, flag declaration or
+conditional survives expansion, so the renderer knows nothing about macros or
+build flags either.
 
-## 12. Argument brace placement
+## 13. Argument brace placement
 
 A sequence value's own shape decides where its generated braces go. A value
 confined to one line renders with braces that hug it; a value that needs more
@@ -561,7 +686,7 @@ unescaped `%`, TeXFlux warns and leaves the brace hugged, because moving it
 would require rewriting the author's TeX. An escaped `\%` is not a comment.
 Warnings name the value's span and never fail the compilation.
 
-## 13. Source spans and SyncTeX
+## 14. Source spans and SyncTeX
 
 Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
@@ -588,14 +713,16 @@ the call site.
 Rendering records generated spans and source spans. Source-map serialization and
 SyncTeX remapping remain part of v1 and must not be removed or bypassed.
 
-## 14. Errors and non-goals
+## 15. Errors and non-goals
 
 ParseError covers malformed physical structure, headers, groups, suffixes,
 indentation, and sequence markers. ValidationError covers invalid value
 consumption, special/container contracts, and macro definition contracts.
 DirectiveError covers unknown specials. MacroExpansionError covers macro
 expansion: arity, unbound or misused parameters, shadowing, and recursion. All
-diagnostics point to the originating span.
+diagnostics point to the originating span. FlagError is the one exception: it
+covers a command-line override that no declaration matches, which has no span
+in the document to point at.
 
 v1 does not include:
 
@@ -603,7 +730,13 @@ v1 does not include:
 - package, command, or environment discovery
 - TeX argument-count or semantic validation
 - automatic escaping
-- variables, expressions, arithmetic, conditions, or pattern matching
+- variables, expressions, arithmetic, or pattern matching
+- conditions beyond the declared on/off build flags of section 11: no
+  comparisons, no arithmetic, and no value a flag can hold but on and off. A
+  conditional folds a flat list of flag names with one [and]/[or]; that fold
+  admits no parentheses, no fold inside a fold, and no negation of a single
+  operand. Composing whole conditionals with >> is how anything deeper is
+  written, and is not restricted
 - textual macros, parameter interpolation into raw TeX, and !splice
 - optional, default, or keyword macro parameters, and macro recursion
 - YAML/Python embedded authoring
@@ -613,7 +746,7 @@ v1 does not include:
 - structural trailing comments
 - block-scalar suffixes other than : |
 
-## 15. Conceptual grammar
+## 16. Conceptual grammar
 
 ~~~text
 document          ::= statement*
@@ -646,6 +779,11 @@ special-segment  ::= "!" special-name group*
 
 block-suffix      ::= ":" SP* "|"
 
+flag-declaration  ::= "!flag" "{" flag-name "}" "{" ("on" | "off") "}"
+combinator        ::= "[" ("and" | "or") "]"
+conditional       ::= ("!when" | "!unless") combinator? "{" flag-name "}"+
+                      (block-suffix | SP+ ">>" SP+ segment ...)
+
 macro-definition  ::= "!defmacro" "{" macro-name "}" parameter* block-suffix
 parameter         ::= "{" ("..." )? parameter-name "}"
 macro-call        ::= special-segment
@@ -659,7 +797,7 @@ the handwritten parser. A sequence-block continues until the next sibling '-'.
 Its normative distinctions are the explicit '-' block sequence, the single
 : | block, and suffix-less closed values.
 
-## 16. Representative goldens
+## 17. Representative goldens
 
 ~~~text
 \foo:

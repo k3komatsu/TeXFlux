@@ -8,7 +8,8 @@ from pathlib import Path
 import sys
 
 from . import compile_with_map
-from .errors import TeXFluxError
+from .errors import FlagError, TeXFluxError
+from .flags import FLAG_VALUES
 from .paths import same_path
 from .remap import RemapError, remap_synctex_file
 from .source_map import serialize_source_map
@@ -22,6 +23,13 @@ def _parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("input", metavar="INPUT")
     compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT")
     compile_parser.add_argument("--source-comments", action="store_true")
+    compile_parser.add_argument(
+        "--flag",
+        dest="flags",
+        action="append",
+        default=[],
+        metavar="NAME[=on|off]",
+    )
     synctex_parser = commands.add_parser("synctex")
     synctex_commands = synctex_parser.add_subparsers(
         dest="synctex_command",
@@ -38,6 +46,31 @@ def _parser() -> argparse.ArgumentParser:
     )
     remap_parser.add_argument("--output", metavar="OUTPUT")
     return parser
+
+
+def _flags(arguments: Sequence[str]) -> dict[str, bool]:
+    """Read ``--flag NAME``, ``--flag NAME=on`` and ``--flag NAME=off``.
+
+    A bare name turns its flag on, because enabling one is what a command
+    line is usually for. Names are checked against the document's own
+    declarations later, once those have been collected.
+    """
+
+    flags: dict[str, bool] = {}
+    for argument in arguments:
+        name, separator, value = argument.partition("=")
+        # A flag group in the document is stripped, so a shell-quoted or
+        # make-substituted argument reads the same way here.
+        name, value = name.strip(), value.strip()
+        if separator and value not in FLAG_VALUES:
+            raise FlagError(
+                "build flag must be NAME, NAME=on or NAME=off; "
+                f"got '{argument}'"
+            )
+        if name in flags:
+            raise FlagError(f"build flag '{name}' is set more than once")
+        flags[name] = FLAG_VALUES[value] if separator else True
+    return flags
 
 
 def _fail(message: str) -> int:
@@ -63,6 +96,7 @@ def _compile(args: argparse.Namespace) -> int:
             source_bytes.decode("utf-8"),
             filename=str(input_path),
             source_comments=args.source_comments,
+            flags=_flags(args.flags),
         )
         output_bytes = result.text.encode("utf-8")
         map_text = serialize_source_map(
@@ -80,6 +114,8 @@ def _compile(args: argparse.Namespace) -> int:
     except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
+    except FlagError as error:
+        return _fail(str(error))
     except ValueError as error:
         return _fail(str(error))
     except (OSError, UnicodeError) as error:

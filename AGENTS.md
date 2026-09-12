@@ -34,11 +34,11 @@ The approved syntax is:
 - !foo is a TeXFlux special construct.
 - A top-level trailing colon is reserved by TeXFlux.
 - >> is pure single-child-suite desugaring.
-- !block: always emits one actual TeX brace group.
 - !items: is the itemize mini-grammar.
 - !vpad{before}{after}: emits \vspace{before} before its suite and an
   optional \vspace{after} after it.
-- !arg and !body are explicit fallback forms only.
+- !flag declares a build flag; !when and !unless keep or drop one payload,
+  over one flag or over several folded by an [and]/[or] modifier.
 
 Unknown environment names must render because environment names are not looked
 up. Unknown special names must fail. Ordinary/raw TeX must remain opaque:
@@ -48,15 +48,9 @@ TeXFlux operators.
 
 Structured command rules are deterministic:
 
-- In implicit mode, the complete indented suite is one required long
-  argument, including all of its normalized children.
-- !block always remains its own brace group; an implicit command suite wraps it
-  in the command argument, so the braces are intentionally nested.
-- A direct !arg or !body selects explicit mode; implicit and explicit
-  children may not be mixed.
-- Command explicit mode accepts only direct !arg children.
-- Environment explicit mode accepts only direct !arg and !body children;
-  !body is optional, unique, and last.
+- A ': |' suite is one required long argument, including all of its
+  normalized children.
+- A ':' suite is one required argument per '-' entry.
 - A suite marker accepts no trailing block-scalar marker.
 
 Every major syntax/canonical node and diagnostic keeps file, 1-based line, and
@@ -76,9 +70,17 @@ Do not add in v1:
 - a TeX or template parser;
 - command/environment discovery or mandatory registries;
 - automatic escaping, normalization, or TeX argument-count validation;
-- variables, expressions, arithmetic, conditions, or pattern matching;
+- variables, expressions, arithmetic, or pattern matching;
+- conditions beyond the declared on/off build flags described below: no
+  comparisons, no arithmetic, and no value a flag can hold but on and off. A
+  conditional folds a flat list of flag names with one [and]/[or]; that fold
+  admits no parentheses, no fold inside a fold, and no negation of a single
+  operand. Composing whole conditionals with >> is unrestricted;
 - textual macros, interpolation into raw TeX, !splice, optional/default/keyword
   macro parameters, or macro recursion;
+- !block, !arg, !body, or any other explicit-mode fallback construct: these
+  existed once and were removed deliberately, so they must keep failing as
+  unknown specials rather than coming back as aliases;
 - YAML or Python-embedded authoring DSLs;
 - implicit extension loading or a general plugin framework;
 - renderer backend frameworks;
@@ -93,6 +95,24 @@ AST template; a call binds values by the existing value syntax; !param and
 desugaring and value consumption, so no macro construct reaches the renderer.
 Template output is retargeted onto the call site, while !param output keeps its
 call-site span.
+
+Build flags are part of v1. !flag is top-level only and declares a boolean
+with an on/off default that the compile command may override with --flag; an
+override that no declaration matches, or that is not a real bool through the
+Python API, is an error. !when and !unless take one or more declared flags and
+one payload, written as a ': |' suite or as the rest of a >> composition, and
+splice or drop that payload whole. A leading [and]/[or] group folds several
+flags and is required whenever more than one is named; !unless[X] is the
+negation of the whole !when[X] it mirrors, never of each operand.
+
+Flags are collected between >> desugaring and macro collection, and
+conditionals are resolved inside the macro expansion pass, so no flag construct
+reaches the renderer. A dropped payload is never expanded and never normalized,
+so disabling content that no longer compiles has to keep working. Exactly three
+rules still reach inside one, because all three are checked before conditionals
+resolve: the payload must parse, !flag must be top-level, and the stack-form
+rules for !defmacro and !each hold. Do not add a fourth without deciding that
+the "disable broken content" guarantee can afford it.
 
 ## Agent and review budget
 
@@ -149,14 +169,17 @@ Before finishing a DSL change, verify:
 - top-level colon and >> are deterministic;
 - group-internal colon and >> remain opaque;
 - starred environment names work;
-- implicit command suites produce exactly one long argument;
-- command and environment explicit modes reject mixing;
+- a ': |' command suite produces exactly one long argument;
 - no block-scalar marker is accepted after a suite colon;
-- !block always has exactly its own brace group;
+- the removed !block, !arg and !body still fail as unknown specials;
 - !vpad accepts one or two required inline groups and preserves suite order;
-- !arg around !block retains the intentional double brace;
 - >> is normalized before rendering and has no semantic terminal rule;
 - !items preserves overlay, label, multiline, and nested-list behavior;
+- !flag is rejected below the top level and as a >> segment, and a conditional
+  naming an undeclared flag is an error rather than a silent removal;
+- several flags without an [and]/[or] modifier are an error, not an implicit
+  conjunction, and only the leading group is read as the modifier;
+- a dropped conditional payload is neither expanded nor normalized;
 - source spans survive desugaring and special expansion;
 - exact-output golden tests cover the representative command/environment/special
   example;

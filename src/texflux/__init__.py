@@ -23,11 +23,13 @@ from .ast import (
 )
 from .errors import (
     DirectiveError,
+    FlagError,
     MacroExpansionError,
     ParseError,
     TeXFluxError,
     ValidationError,
 )
+from .flags import FLAG_VALUES, Flags, collect_flags
 from .macros import (
     MacroDefinition,
     MacroParameter,
@@ -83,11 +85,13 @@ def compile_text(
     *,
     filename: str = "<string>",
     source_comments: bool = False,
+    flags: Flags | None = None,
 ) -> str:
     return compile_with_map(
         source,
         filename=filename,
         source_comments=source_comments,
+        flags=flags,
     ).text
 
 
@@ -96,8 +100,9 @@ def compile_with_map(
     *,
     filename: str = "<string>",
     source_comments: bool = False,
+    flags: Flags | None = None,
 ) -> CompilationResult:
-    document = normalize(parse(source, filename=filename))
+    document = normalize(parse(source, filename=filename), flags=flags)
     rendered = render_with_provenance(
         document,
         source_comments=source_comments,
@@ -115,6 +120,9 @@ __all__ = [
     "DirectiveError",
     "DirectiveRegistry",
     "Document",
+    "FLAG_VALUES",
+    "FlagError",
+    "Flags",
     "GenericInvocation",
     "GeneratedSpan",
     "GroupKind",
@@ -152,6 +160,7 @@ __all__ = [
     "TransformContext",
     "ValidationError",
     "__version__",
+    "collect_flags",
     "collect_macros",
     "compile_text",
     "compile_with_map",

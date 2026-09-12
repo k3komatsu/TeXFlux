@@ -41,16 +41,43 @@ def _blank(node: Node) -> bool:
     return isinstance(node, RawTex) and not node.text
 
 
-def required_text(argument: Argument) -> str | None:
-    """The raw text of one required inline group, or ``None`` if it is not one."""
-
+def _inline_text(argument: Argument, kind: GroupKind) -> str | None:
     if (
-        argument.kind is not GroupKind.REQUIRED
+        argument.kind is not kind
         or argument.layout is not ArgumentLayout.INLINE
         or not isinstance(argument.value, str)
     ):
         return None
     return argument.value
+
+
+def required_text(argument: Argument) -> str | None:
+    """The raw text of one required ``{...}`` group, or ``None`` if it is not one."""
+
+    return _inline_text(argument, GroupKind.REQUIRED)
+
+
+def optional_text(argument: Argument) -> str | None:
+    """The raw text of one optional ``[...]`` group, or ``None`` if it is not one."""
+
+    return _inline_text(argument, GroupKind.OPTIONAL)
+
+
+def demand_text(argument: Argument, label: str) -> str:
+    """Read one required inline group, or reject it at its own span.
+
+    Every ``!`` construct that names something -- a macro, a parameter, a
+    build flag -- spells that name as one ``{...}`` group, so they share both
+    the reading and the diagnostic.
+    """
+
+    text = required_text(argument)
+    if text is None:
+        raise ValidationError(
+            f"{label} must be a required '{{...}}' group",
+            argument.span,
+        )
+    return text.strip()
 
 
 def walk(block: Block) -> Iterator[Node]:
@@ -92,4 +119,11 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
     return entries
 
 
-__all__ = ["is_escaped", "required_text", "sequence_entries", "walk"]
+__all__ = [
+    "demand_text",
+    "is_escaped",
+    "optional_text",
+    "required_text",
+    "sequence_entries",
+    "walk",
+]
