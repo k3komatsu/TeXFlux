@@ -1,0 +1,2 @@
+\fuga >> !off{\foo{a}{b}} >> \hoge
+!drop >> \hoge >> \fuga

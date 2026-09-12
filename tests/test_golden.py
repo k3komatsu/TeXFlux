@@ -18,6 +18,7 @@ class GoldenTests(unittest.TestCase):
                 "macro-variadic",
                 "macro-wrapper",
                 "nested-environments",
+                "off-drop",
                 "real-slide",
                 "representative-command",
                 "source-comments",

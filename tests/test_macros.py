@@ -322,7 +322,9 @@ class MacroCompositionTests(unittest.TestCase):
 class MacroNamespaceTests(unittest.TestCase):
     def test_builtin_and_reserved_names_are_protected(self):
         cases = {
+            "!defmacro{drop}{x}: |\n    A\n": "built-in special",
             "!defmacro{items}{x}: |\n    A\n": "built-in special",
+            "!defmacro{off}{x}: |\n    A\n": "built-in special",
             "!defmacro{vpad}{x}: |\n    A\n": "built-in special",
             "!defmacro{defmacro}{x}: |\n    A\n": "reserved by TeXFlux",
             "!defmacro{param}{x}: |\n    A\n": "reserved by TeXFlux",

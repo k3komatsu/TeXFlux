@@ -381,6 +381,37 @@ def _vspace(group: Argument) -> GenericInvocation:
     return GenericInvocation("vspace", (group,), None, group.span)
 
 
+def _off_handler(
+    node: SpecialInvocation,
+    registry: DirectiveRegistry,
+) -> tuple[CanonicalNode, ...]:
+    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
+        raise ValidationError(
+            "!off requires a ': |' block suite or a '>>' payload",
+            node.span,
+        )
+    if len(node.groups) != 1 or required_text(node.groups[0]) is None:
+        raise ValidationError(
+            "!off requires one required inline group",
+            node.span,
+        )
+    return _normalize_block(node.suite, registry).nodes
+
+
+def _drop_handler(
+    node: SpecialInvocation,
+    _registry: DirectiveRegistry,
+) -> tuple[CanonicalNode, ...]:
+    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
+        raise ValidationError(
+            "!drop requires a ': |' block suite or a '>>' payload",
+            node.span,
+        )
+    if node.groups:
+        raise ValidationError("!drop does not accept groups", node.span)
+    return ()
+
+
 def _vpad_handler(
     node: SpecialInvocation,
     registry: DirectiveRegistry,
@@ -738,7 +769,9 @@ def _parse_item_level(
 
 
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
+    "drop": _drop_handler,
     "items": _items_handler,
+    "off": _off_handler,
     "vpad": _vpad_handler,
 }
 

@@ -314,6 +314,8 @@ The v1 built-ins are:
 
 - !items, which accepts a sequence suite and converts item values to itemize.
 - !vpad, which accepts one or two required inline groups and a block suite.
+- !off, which ignores one required inline group and splices its block suite.
+- !drop, which accepts no groups and discards its block suite.
 
 !items preserves overlay, optional label, continuation, nested-list, and raw
 item behavior. Its canonical suffix is plain colon. A bare '-' followed by
@@ -338,6 +340,29 @@ boundary.
 It emits a canonical vspace command before the normalized body and, when the
 second group exists, after it. A sequence suite, invalid group kind/count, or
 missing suite is a validation error.
+
+!off removes one wrapper-like fragment from a composition. Its required inline
+group is opaque and ignored, while its block payload is normalized and spliced
+in place:
+
+~~~text
+\fuga >> !off{\foo{a}{b}} >> \hoge
+~~~
+
+is equivalent to `\fuga >> \hoge`. !off requires exactly one required inline
+group and a block payload, supplied either by `': |'` or by the rest of a `>>`
+composition.
+
+!drop emits no nodes and does not normalize its block payload:
+
+~~~text
+!drop >> \hoge >> \fuga
+~~~
+
+The example emits no TeX content. !drop accepts no groups and requires a block
+payload, supplied either by `': |'` or by the rest of a `>>` composition. A
+sequence suite, missing payload, or invalid group shape for either construct is
+a validation error.
 
 The old !block, !arg, and !body constructs are removed and are not aliases.
 

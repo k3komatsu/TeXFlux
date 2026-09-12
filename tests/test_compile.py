@@ -291,6 +291,30 @@ class CompileTests(unittest.TestCase):
                 with self.assertRaises(DirectiveError):
                     compile_text(old)
 
+    def test_off_ignores_its_group_and_keeps_the_stack_payload(self):
+        self.assertEqual(
+            compile_text("\\fuga >> !off{\\foo{a}{b}} >> \\hoge\n"),
+            "\\fuga{\n\\hoge\n}\n",
+        )
+
+    def test_drop_discards_its_whole_stack_payload(self):
+        self.assertEqual(
+            compile_text("!drop >> \\hoge >> \\fuga\n"),
+            "\n",
+        )
+
+    def test_off_and_drop_validate_their_shapes(self):
+        cases = {
+            "!off >> \\hoge\n": "!off requires one required inline group",
+            "!off{\\foo}\n": "!off requires a ': \\|' block suite",
+            "!drop{unused} >> \\hoge\n": "!drop does not accept groups",
+            "!drop\n": "!drop requires a ': \\|' block suite",
+        }
+        for source, message in cases.items():
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValidationError, message):
+                    compile_text(source)
+
     def test_items_overlay_labels_nested_and_multiline(self):
         source = (
             "!items:\n"
