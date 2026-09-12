@@ -9,7 +9,6 @@
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen.svg" alt="Zero Dependencies">
   <img src="https://img.shields.io/badge/SyncTeX-supported-orange.svg" alt="SyncTeX Supported">
-  <img src="https://img.shields.io/badge/license-MIT-informational.svg" alt="License: MIT">
 </p>
 
 ---
@@ -32,7 +31,7 @@ TeX の文章、数式、コマンド、パッケージ資産は 100% そのま�
 
 2段組スライド（箇条書き＋画像）を記述した場合の比較です。
 
-### 従来の LaTeX / Beamer（38行・多重ネスト）
+### 従来の LaTeX / Beamer（16行・半分以上が定型句）
 ```latex
 \begin{frame}{研究の概要}
   \begin{columns}
@@ -52,7 +51,7 @@ TeX の文章、数式、コマンド、パッケージ資産は 100% そのま�
 \end{frame}
 ```
 
-### ✨ TeXFlux（11行・直感的な構造）
+### ✨ TeXFlux（9行・閉じタグゼロで直感的）
 ```text
 @frame{研究の概要}: |
     @columns: |
@@ -65,8 +64,8 @@ TeX の文章、数式、コマンド、パッケージ資産は 100% そのま�
             @center >> \includegraphics[width=\linewidth]{architecture.pdf}
 ```
 
-- **行数が 1/3 以下に激減**: 煩わしい `\begin{...}` と `\end{...}` はすべて不要。
-- **閉じ忘れエラーはゼロ**: インデント（半角スペース4個）だけで階層構造を表現。
+- **定型句・閉じタグが完全ゼロに**: 従来の 16 行中 12 行（4分の3）を占めていた `\begin` と `\end` のボイラープレートを全廃し、16 行が 9 行に。
+- **閉じ忘れエラーは原理的にゼロ**: インデント（半角スペース4個）だけで階層構造を表現。
 - **`>>` による1行合成**: `@center >> \includegraphics{...}` のように、単一要素の入れ子は1行でスマートに圧縮。
 - **TeX コードは 100% 透過**: 数式（`$E=mc^2$`）やコマンド（`\textbf{...}`）は勝手にエスケープされず、完全な TeX としてコンパイルされます。
 
@@ -149,8 +148,8 @@ Python 3.11 以上の標準ライブラリのみで実装されています。�
 
 ```bash
 # リポジトリから直接インストール
-git clone https://github.com/komatsu/beamercraft.git
-cd beamercraft
+git clone https://github.com/k3komatsu/TeXFlux.git
+cd TeXFlux
 pip install .
 ```
 
@@ -321,7 +320,7 @@ clean:
 ```
 
 ### デバッグに便利な `--source-comments`
-`texflux compile slides.tfx -o slides.tex --source-comments` を指定すると、生成された `.tex` 内に元ソースの行番号コメント（`% 12:4` など）が挿入され、生成結果の検証がより一層容易になります。
+`texflux compile slides.tfx -o slides.tex --source-comments` を指定すると、生成された `.tex` の各要素の直前に由来を示すコメント（`% texflux: slides.tfx:12`）が挿入され、生成結果の検証がより一層容易になります。
 
 ---
 
@@ -332,19 +331,21 @@ Python スクリプトやビルドツール内から、TeXFlux の変換エン�
 ```python
 from texflux import compile_text
 
-source = """
+source = r"""!flag{draft}{off}
+
 @frame{Python からのコンパイル}: |
     !items:
         - 簡単・高速
         - 外部依存なし
+    !when{draft} >> \marginpar{草稿用のメモ}
 """
 
 # テキストから直接 LaTeX コードを生成
 latex_code = compile_text(source, filename="example.tfx")
 print(latex_code)
 
-# ビルドフラグを指定してコンパイル
-latex_draft = compile_text(source, flags={"draft": True})
+# ビルドフラグを上書きしてコンパイル（宣言済みのフラグ名しか渡せません）
+latex_draft = compile_text(source, filename="example.tfx", flags={"draft": True})
 ```
 
 ---
@@ -392,9 +393,3 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 # テストスイートの実行
 python3 -m unittest discover
 ```
-
----
-
-<p align="center">
-  Released under the <a href="LICENSE">MIT License</a>.
-</p>
