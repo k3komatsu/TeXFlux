@@ -1,6 +1,4 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 from texflux import (
     FlagError,
@@ -11,8 +9,9 @@ from texflux import (
     desugar,
     load_source_map,
     parse,
-    serialize_source_map,
 )
+
+from .support import TempDirTestCase
 
 
 DECLARED = "!flag{draft}{off}\n!flag{notes}{on}\n\n"
@@ -312,7 +311,7 @@ class FlagOverrideTests(unittest.TestCase):
         self.assertIn("no flags", str(caught.exception))
 
 
-class FlagSourceMapTests(unittest.TestCase):
+class FlagSourceMapTests(TempDirTestCase):
     """Dropping content must not disturb the spans of what survives."""
 
     SOURCE = (
@@ -337,29 +336,9 @@ class FlagSourceMapTests(unittest.TestCase):
         self.assertEqual(lines["\\keep{two}"], 6)
 
     def test_the_written_map_loads_back_through_the_remapper(self):
-        with tempfile.TemporaryDirectory() as work:
-            source_path = Path(work) / "in.tfx"
-            generated_path = Path(work) / "out.tex"
-            map_path = Path(work) / "out.tex.tfxmap"
-            source_path.write_text(self.SOURCE, encoding="utf-8")
-            result = compile_with_map(self.SOURCE, filename=str(source_path))
-            generated = result.text.encode("utf-8")
-            map_path.write_text(
-                serialize_source_map(
-                    result,
-                    source_path=source_path,
-                    generated_path=generated_path,
-                    map_path=map_path,
-                    source_bytes=source_path.read_bytes(),
-                    generated_bytes=generated,
-                ),
-                encoding="utf-8",
-                newline="\n",
-            )
-            generated_path.write_bytes(generated)
+        map_path, result = self.compile_to_disk(self.SOURCE)
 
-            self.assertTrue(load_source_map(map_path).mappings)
-
+        self.assertTrue(load_source_map(map_path).mappings)
         for fragment in result.rendered.fragments:
             if fragment.source is not None:
                 self.assertLessEqual(fragment.source.start, fragment.source.end)

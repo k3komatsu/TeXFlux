@@ -1,27 +1,38 @@
-# TeXFlux examples
+# TeXFlux サンプル集（examples）
 
-The small examples are complete .tfx inputs with byte-for-byte .tex outputs.
+このディレクトリには、TeXFlux（`.tfx`）の機能と記法を網羅したサンプルファイルと、その厳密な変換結果（`.tex` ゴールデンファイル）が用意されています。
 
-| Input | Demonstrates |
-| --- | --- |
-| [basic.tfx](basic.tfx) | Raw TeX, a block environment, !items, and an overlay |
-| [structured.tfx](structured.tfx) | Sequence values, block values, and literal groups |
-| [stacked-items.tfx](stacked-items.tfx) | Closed >> stacking and nested items |
-| [macros.tfx](macros.tfx) | Wrapper, two-argument, and variadic source macros |
-| [content.tfx](content.tfx) | A converted real-world Beamer content file |
-| [content.tex](content.tex) | The generated TeX output golden |
+すべてのサンプルは、実際の TeXFlux コンパイラによって 1 バイトの狂いもなく `.tex` へとコンパイル・テストされています。
 
-From the repository root:
+---
 
-~~~bash
+## 📂 サンプル一覧
+
+| 入力ファイル (`.tfx`) | 変換結果 (`.tex`) | 主な見どころ・解説 |
+| :--- | :--- | :--- |
+| [basic.tfx](basic.tfx) | [basic.tex](basic.tex) | **最小限の基本構成**: 生の TeX、`@frame` 環境、`!items` による箇条書き、Beamer オーバーレイ指定（`<2->[A]`） |
+| [structured.tfx](structured.tfx) | [structured.tex](structured.tex) | **構造化引数と中括弧**: 複数引数（シーケンスモード `:` と `-`）、ブロックモード（`: \|`）、リテラル中括弧コンテナ（`@{...}`） |
+| [stacked-items.tfx](stacked-items.tfx) | [stacked-items.tex](stacked-items.tex) | **パイプライン合成とネスト**: `>>` による1行の環境連結と、多重にネストした箇条書きリスト |
+| [macros.tfx](macros.tfx) | [macros.tex](macros.tex) | **構造マクロ (`!defmacro`)**: ラッパーマクロ、2引数マクロ、可変長引数（`!each`）マクロの実例 |
+| [content.tfx](content.tfx) | [content.tex](content.tex) | **学術発表の実践コード**: 実際の Beamer スライド（1000行超）を TeXFlux に移植した実践サンプル |
+
+---
+
+## 🚀 サンプルの実行・検証方法
+
+リポジトリのルートディレクトリから、以下のコマンドでコンパイルと差分検証を実行できます。
+
+### 基本サンプルのコンパイル
+```bash
 PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
 diff -u examples/basic.tex /tmp/basic.tex
-~~~
+```
 
-content.tfx keeps TeX commands opaque while showing sequence values, block
-values, literal groups, and itemize expansion. It is paired with content.tex
-as an exact generated-output golden.
+### 実践スライドサンプルのコンパイル
+`content.tfx` は、生の TeX コマンドを透過しつつ、環境の構造化、中括弧グループ、`!items` の展開をフル活用したリアルワールドの実例です。
 
-~~~bash
+```bash
 PYTHONPATH=src python3 -m texflux compile examples/content.tfx -o /tmp/content.generated.tex
-~~~
+diff -u examples/content.tex /tmp/content.generated.tex
+```
+（差分が出力されなければ、ゴールデンファイルと完全に一致しています）

@@ -13,7 +13,7 @@ from texflux.ast import (
     SpecialInvocation,
     Stack,
 )
-from texflux.errors import DirectiveError, ParseError, ValidationError
+from texflux.errors import DirectiveError, ValidationError
 from texflux.normalize import BUILTIN_DIRECTIVES, normalize
 from texflux.parser import parse
 from texflux.render import render

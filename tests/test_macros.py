@@ -1,6 +1,4 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 from texflux import (
     BUILTIN_DIRECTIVES,
@@ -12,8 +10,9 @@ from texflux import (
     desugar,
     load_source_map,
     parse,
-    serialize_source_map,
 )
+
+from .support import TempDirTestCase
 
 
 WRAPPER = """!defmacro{smallred}{body}: |
@@ -467,7 +466,7 @@ class MacroFormTests(unittest.TestCase):
             compile_text(source, filename="m.tfx")
 
 
-class MacroSourceMapArtifactTests(unittest.TestCase):
+class MacroSourceMapArtifactTests(TempDirTestCase):
     """A macro document's .tfxmap must survive the remapper's validation."""
 
     # A retargeted template span is shorter than the raw item text it covers,
@@ -480,30 +479,10 @@ class MacroSourceMapArtifactTests(unittest.TestCase):
         ITEMS + "!items_simple:\n    - A\n    - B\n",
     )
 
-    def written_map(self, work, source):
-        source_path = Path(work) / "in.tfx"
-        generated_path = Path(work) / "out.tex"
-        map_path = Path(work) / "out.tex.tfxmap"
-        source_path.write_text(source, encoding="utf-8")
-        result = compile_with_map(source, filename=str(source_path))
-        generated = result.text.encode("utf-8")
-        text = serialize_source_map(
-            result,
-            source_path=source_path,
-            generated_path=generated_path,
-            map_path=map_path,
-            source_bytes=source_path.read_bytes(),
-            generated_bytes=generated,
-        )
-        generated_path.write_bytes(generated)
-        map_path.write_text(text, encoding="utf-8", newline="\n")
-        return map_path, result
-
     def test_macro_maps_have_no_reversed_source_ranges(self):
         for source in self.SOURCES:
             with self.subTest(source=source):
-                with tempfile.TemporaryDirectory() as work:
-                    _, result = self.written_map(work, source)
+                _, result = self.compile_to_disk(source)
                 for fragment in result.rendered.fragments:
                     if fragment.source is not None:
                         self.assertLessEqual(
@@ -514,10 +493,8 @@ class MacroSourceMapArtifactTests(unittest.TestCase):
     def test_macro_maps_load_back_through_the_remapper(self):
         for source in self.SOURCES:
             with self.subTest(source=source):
-                with tempfile.TemporaryDirectory() as work:
-                    map_path, _ = self.written_map(work, source)
-                    loaded = load_source_map(map_path)
-                self.assertTrue(loaded.mappings)
+                map_path, _ = self.compile_to_disk(source)
+                self.assertTrue(load_source_map(map_path).mappings)
 
     def test_items_inside_a_template_maps_onto_the_call_site(self):
         source = "!defmacro{d}: |\n    !items:\n        - a\n            - b\n\n!d\n"

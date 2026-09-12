@@ -179,5 +179,6 @@ Before finishing a DSL change, verify:
 - a dropped conditional payload is neither expanded nor normalized;
 - source spans survive desugaring and special expansion;
 - exact-output golden tests cover the representative command/environment/special
-  example;
+  example, and any new golden covers a shape no existing case already covers --
+  goldens are regenerated wholesale, so a redundant one is invisible for ever;
 - no speculative plugin, backend, or TeX-semantic machinery was introduced.

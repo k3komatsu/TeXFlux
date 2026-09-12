@@ -13,8 +13,10 @@ from texflux.synctex import (
     write_synctex_file,
 )
 
+from .support import TempDirTestCase
 
-class SyncTeXCodecTests(unittest.TestCase):
+
+class SyncTeXCodecTests(TempDirTestCase):
     def test_checked_in_fixture_round_trips_all_record_families(self):
         fixture = Path(__file__).with_name("fixtures") / "minimal.synctex"
 
@@ -214,95 +216,91 @@ class SyncTeXCodecTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("pdflatex"), "pdflatex is not installed")
     def test_toolchain_fixture_round_trips_with_tex_live(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "minimal.tex"
-            source.write_text(
-                "\\documentclass{article}\n"
-                "\\begin{document}\n"
-                "Hello SyncTeX.\n"
-                "\\end{document}\n",
-                encoding="utf-8",
-            )
-            result = subprocess.run(
-                [
-                    "pdflatex",
-                    "-interaction=nonstopmode",
-                    "-halt-on-error",
-                    "-synctex=1",
-                    "-output-directory",
-                    str(root),
-                    str(source),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            sync_path = root / "minimal.synctex.gz"
-            original = sync_path.read_bytes()
-            document = parse_synctex(original)
-            self.assertEqual(document.container, "gzip")
-            self.assertGreaterEqual(len(document.inputs), 2)
-            self.assertNotIn(b",=", gzip.decompress(original))
-            rewritten = serialize_synctex(document)
-            self.assertEqual(gzip.decompress(rewritten), gzip.decompress(original))
-            reparsed = parse_synctex(rewritten)
-            self.assertEqual(
-                [record.point for record in document.records if record.point is not None],
-                [record.point for record in reparsed.records if record.point is not None],
-            )
+        source = self.root / "minimal.tex"
+        source.write_text(
+            "\\documentclass{article}\n"
+            "\\begin{document}\n"
+            "Hello SyncTeX.\n"
+            "\\end{document}\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "pdflatex",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                "-synctex=1",
+                "-output-directory",
+                str(self.root),
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        sync_path = self.root / "minimal.synctex.gz"
+        original = sync_path.read_bytes()
+        document = parse_synctex(original)
+        self.assertEqual(document.container, "gzip")
+        self.assertGreaterEqual(len(document.inputs), 2)
+        self.assertNotIn(b",=", gzip.decompress(original))
+        rewritten = serialize_synctex(document)
+        self.assertEqual(gzip.decompress(rewritten), gzip.decompress(original))
+        reparsed = parse_synctex(rewritten)
+        self.assertEqual(
+            [record.point for record in document.records if record.point is not None],
+            [record.point for record in reparsed.records if record.point is not None],
+        )
 
     @unittest.skipUnless(shutil.which("pdflatex"), "pdflatex is not installed")
     def test_toolchain_fixture_models_forms_and_compressed_points(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "form.tex"
-            source.write_text(
-                "\\documentclass{article}\n"
-                "\\begin{document}\n"
-                "\\newbox\\formbox\n"
-                "\\setbox\\formbox=\\hbox{Form text}\n"
-                "\\pdfxform\\formbox\n"
-                "\\pdfrefxform\\pdflastxform\n"
-                "\\par Form output.\n"
-                "\\end{document}\n",
-                encoding="utf-8",
-            )
-            result = subprocess.run(
-                [
-                    "pdflatex",
-                    "-interaction=nonstopmode",
-                    "-halt-on-error",
-                    "-synctex=13",
-                    "-output-directory",
-                    str(root),
-                    str(source),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            document = parse_synctex((root / "form.synctex.gz").read_bytes())
-            self.assertEqual(document.version, 13)
-            self.assertTrue(any(record.kind == b"<" for record in document.records))
-            self.assertTrue(any(record.kind == b">" for record in document.records))
-            self.assertTrue(any(record.kind == b"f" for record in document.records))
-            self.assertTrue(any(record.is_compressed for record in document.records))
-            rewritten = serialize_synctex(document)
-            rewritten_plain = gzip.decompress(rewritten)
-            self.assertNotIn(b",=", rewritten_plain)
-            self.assertEqual(document.count, parse_synctex(rewritten).count)
+        source = self.root / "form.tex"
+        source.write_text(
+            "\\documentclass{article}\n"
+            "\\begin{document}\n"
+            "\\newbox\\formbox\n"
+            "\\setbox\\formbox=\\hbox{Form text}\n"
+            "\\pdfxform\\formbox\n"
+            "\\pdfrefxform\\pdflastxform\n"
+            "\\par Form output.\n"
+            "\\end{document}\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                "pdflatex",
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                "-synctex=13",
+                "-output-directory",
+                str(self.root),
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        document = parse_synctex((self.root / "form.synctex.gz").read_bytes())
+        self.assertEqual(document.version, 13)
+        self.assertTrue(any(record.kind == b"<" for record in document.records))
+        self.assertTrue(any(record.kind == b">" for record in document.records))
+        self.assertTrue(any(record.kind == b"f" for record in document.records))
+        self.assertTrue(any(record.is_compressed for record in document.records))
+        rewritten = serialize_synctex(document)
+        rewritten_plain = gzip.decompress(rewritten)
+        self.assertNotIn(b",=", rewritten_plain)
+        self.assertEqual(document.count, parse_synctex(rewritten).count)
 
-            offset = 0
-            anchor_origin = 0
-            for line in rewritten_plain.splitlines(keepends=True):
-                body = line[:-1] if line.endswith(b"\n") else line
-                if body.startswith(b"!") and body[1:].isdigit():
-                    self.assertEqual(int(body[1:]), offset - anchor_origin)
-                    anchor_origin = offset
-                offset += len(line)
+        offset = 0
+        anchor_origin = 0
+        for line in rewritten_plain.splitlines(keepends=True):
+            body = line[:-1] if line.endswith(b"\n") else line
+            if body.startswith(b"!") and body[1:].isdigit():
+                self.assertEqual(int(body[1:]), offset - anchor_origin)
+                anchor_origin = offset
+            offset += len(line)
 
 
 if __name__ == "__main__":
