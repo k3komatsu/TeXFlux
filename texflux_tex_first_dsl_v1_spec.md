@@ -23,6 +23,10 @@ The fixed suite model is:
 no suffix = one already-closed RHS value
 :         = one block value per '-'; the next sibling '-' is its boundary
 : |       = one multiline block value
+
+A value that starts on the next line renders with its braces on their own
+lines; a value that starts where its marker is renders with braces that hug
+it. ': |' and a bare '-' take the first form, '- value' the second.
 ~~~
 
 ## 1. Lexical model
@@ -497,7 +501,67 @@ special name may reach the renderer. The renderer knows only canonical AST.
 No macro definition, call, parameter reference, or `!each` survives expansion,
 so the renderer knows nothing about macros either.
 
-## 12. Source spans and SyncTeX
+## 12. Argument brace placement
+
+A sequence value's own shape decides where its generated braces go. A value
+confined to one line renders with braces that hug it; a value that needs more
+than one line renders with the braces on their own lines. Nothing is marked:
+the compact case stays compact and the structural case stays readable.
+
+~~~text
+\command:
+    - short
+    - @center: |
+        figure
+~~~
+
+~~~tex
+\command{short}{
+\begin{center}
+figure
+\end{center}
+}
+~~~
+
+An author who wants a different layout writes the braces instead. When a
+value is raw TeX that begins with `{` and ends with the matching `}`, those
+braces are the argument's own and the text is copied verbatim, so each brace
+sits exactly where it was written:
+
+~~~text
+\command:
+    - {fooo
+      bar
+      }
+    - {
+      a
+      c}
+~~~
+
+~~~tex
+\command{fooo
+bar
+}{
+a
+c}
+~~~
+
+The scan only locates the matching brace; it never interprets the contents.
+A value that does not scan as one balanced group keeps a generated pair, so a
+mistake shows up as a visible extra brace rather than as a changed argument
+count. A value that must itself be a TeX group is written over several lines,
+which takes the generated form. The rule reads the value after macro
+expansion, so a macro that expands to one balanced group supplies the
+argument's braces in exactly the same way.
+
+A hugged closing brace is unsafe after a TeX comment, which would swallow it.
+When the value's last rendered line is entirely a comment, the closing brace
+keeps its own line and TeXFlux warns. When that line merely contains an
+unescaped `%`, TeXFlux warns and leaves the brace hugged, because moving it
+would require rewriting the author's TeX. An escaped `\%` is not a comment.
+Warnings name the value's span and never fail the compilation.
+
+## 13. Source spans and SyncTeX
 
 Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
@@ -524,7 +588,7 @@ the call site.
 Rendering records generated spans and source spans. Source-map serialization and
 SyncTeX remapping remain part of v1 and must not be removed or bypassed.
 
-## 13. Errors and non-goals
+## 14. Errors and non-goals
 
 ParseError covers malformed physical structure, headers, groups, suffixes,
 indentation, and sequence markers. ValidationError covers invalid value
@@ -549,7 +613,7 @@ v1 does not include:
 - structural trailing comments
 - block-scalar suffixes other than : |
 
-## 14. Conceptual grammar
+## 15. Conceptual grammar
 
 ~~~text
 document          ::= statement*
@@ -595,7 +659,7 @@ the handwritten parser. A sequence-block continues until the next sibling '-'.
 Its normative distinctions are the explicit '-' block sequence, the single
 : | block, and suffix-less closed values.
 
-## 15. Representative goldens
+## 16. Representative goldens
 
 ~~~text
 \foo:

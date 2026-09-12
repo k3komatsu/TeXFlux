@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
+from .syntax import is_escaped
 from .ast import (
     Argument,
     ArgumentLayout,
@@ -41,9 +42,24 @@ class RenderedFragment:
 
 
 @dataclass(frozen=True, slots=True)
+class RenderWarning:
+    """A rendering hazard the author should look at, not a failure."""
+
+    message: str
+    span: SourceSpan
+
+    def diagnostic(self) -> str:
+        return (
+            f"{self.span.file}:{self.span.start.line}:{self.span.start.column}: "
+            f"warning: {self.message}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RenderedDocument:
     text: str
     fragments: tuple[RenderedFragment, ...]
+    warnings: tuple[RenderWarning, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +74,7 @@ class MappedEmitter:
     def __init__(self) -> None:
         self._parts: list[str] = []
         self._fragments: list[RenderedFragment] = []
+        self._warnings: list[RenderWarning] = []
         self._position = SourcePosition(1, 1)
 
     @property
@@ -106,10 +123,50 @@ class MappedEmitter:
         self.emit(text, source=source, role=role)
         self.newline()
 
+    def mark(self) -> int:
+        """A cursor into the emitted parts, for reading back one span of text."""
+
+        return len(self._parts)
+
+    def text_since(self, mark: int) -> str:
+        """Every character emitted since ``mark``."""
+
+        return "".join(self._parts[mark:])
+
+    def drop_trailing_newline(self) -> None:
+        """Retract one emitted newline so a closing brace can hug its content."""
+
+        if not self._parts or not self._parts[-1].endswith("\n"):
+            return
+        last = self._fragments[-1]
+        self._parts[-1] = self._parts[-1][:-1]
+        if not self._parts[-1]:
+            self._parts.pop()
+        trimmed = last.text[:-1]
+        # A coalesced fragment keeps the text that preceded the newline, so
+        # the cursor belongs after that text rather than at the run's start.
+        self._position = self._advance(last.generated.start, trimmed)
+        if trimmed:
+            self._fragments[-1] = RenderedFragment(
+                trimmed,
+                GeneratedSpan(last.generated.start, self._position),
+                last.source,
+                last.role,
+            )
+        else:
+            self._fragments.pop()
+
     def finish(self) -> RenderedDocument:
         if not self._parts:
             self.newline()
-        return RenderedDocument("".join(self._parts), tuple(self._fragments))
+        return RenderedDocument(
+            "".join(self._parts),
+            tuple(self._fragments),
+            tuple(self._warnings),
+        )
+
+    def warn(self, message: str, span: SourceSpan) -> None:
+        self._warnings.append(RenderWarning(message, span))
 
     @staticmethod
     def _advance(start: SourcePosition, text: str) -> SourcePosition:
@@ -132,6 +189,21 @@ def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
     emitter.emit(opener, source=argument.span, role="open")
     emitter.emit(argument.value, source=argument.span, role="content")
     emitter.emit(closer, source=argument.span, role="close")
+
+
+def _comment_start(line: str) -> bool:
+    """Whether a rendered line is entirely a TeX comment."""
+
+    return line.lstrip().startswith("%")
+
+
+def _comment_index(line: str) -> int:
+    """The offset of the first unescaped ``%``, or ``-1`` when there is none."""
+
+    for index, char in enumerate(line):
+        if char == "%" and not is_escaped(line, index):
+            return index
+    return -1
 
 
 def _blank_line(node: CanonicalNode) -> bool:
@@ -192,14 +264,60 @@ def _render_arguments(
         if argument.layout is ArgumentLayout.INLINE:
             _emit_group(emitter, argument)
             continue
-        if argument.layout is not ArgumentLayout.BLOCK:
+        explicit = argument.layout is ArgumentLayout.EXPLICIT
+        if not explicit and argument.layout not in (
+            ArgumentLayout.BLOCK,
+            ArgumentLayout.HUGGED,
+        ):
             raise TypeError("renderer received an invalid argument layout")
         if not isinstance(argument.value, Block):
             raise TypeError("renderer received an invalid argument value")
-        emitter.emit("{", source=argument.span, role="open")
-        emitter.newline()
+
+        if not explicit:
+            emitter.emit("{", source=argument.span, role="open")
+        if argument.layout is ArgumentLayout.BLOCK:
+            emitter.newline()
+        mark = emitter.mark()
         _render_block(emitter, argument.value, source_comments)
-        emitter.emit("}", source=argument.span, role="close")
+        if argument.layout is not ArgumentLayout.BLOCK:
+            _close_hugged(emitter, argument, mark)
+        if not explicit:
+            emitter.emit("}", source=argument.span, role="close")
+
+
+def _close_hugged(
+    emitter: MappedEmitter,
+    argument: Argument,
+    mark: int,
+) -> None:
+    """Pull what follows onto the value's last line, when that is safe.
+
+    A ``%`` on that line would comment out whatever is pulled up, so a fully
+    commented line keeps its newline. A trailing comment after real content
+    cannot be rescued without rewriting the author's TeX, so it only earns a
+    warning. Author-written braces take the same path: identical output has
+    to produce an identical diagnostic.
+    """
+
+    # Only the value's own text can carry a comment, so read back exactly
+    # what it emitted rather than the whole output line.
+    text = emitter.text_since(mark)
+    line = text[:-1] if text.endswith("\n") else text
+    line = line.rsplit("\n", 1)[-1]
+    if _comment_start(line):
+        emitter.warn(
+            "value ends with a comment line, so what follows it stays on "
+            "its own line",
+            argument.span,
+        )
+        return
+    if _comment_index(line) >= 0:
+        emitter.warn(
+            "value ends with a line containing '%', so the closing brace and "
+            "whatever follows are commented out",
+            argument.span,
+        )
+    emitter.drop_trailing_newline()
 
 
 def _render_invocation(
@@ -274,6 +392,7 @@ __all__ = [
     "RenderRole",
     "GeneratedSpan",
     "MappedEmitter",
+    "RenderWarning",
     "RenderedDocument",
     "RenderedFragment",
     "render",

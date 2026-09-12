@@ -99,7 +99,7 @@ class MacroBindingTests(unittest.TestCase):
 """
         self.assertEqual(
             compile_text(source),
-            "\\begin{infobox}{\nResult\n}\nLong\nbody\n\\end{infobox}\n",
+            "\\begin{infobox}{Result}\nLong\nbody\n\\end{infobox}\n",
         )
 
     def test_sequence_values_bind_one_block_per_marker(self):
@@ -116,18 +116,18 @@ class MacroBindingTests(unittest.TestCase):
 """
         self.assertEqual(
             compile_text(source),
-            "\\doublecolumn{\n"
-            "\\begin{center}\nLeft line 1\nLeft line 2\n\\end{center}\n"
-            "}{\n"
-            "\\begin{center}\nRight line 1\nRight line 2\n\\end{center}\n"
-            "}\n",
+            "\\doublecolumn{\\begin{center}\n"
+            "Left line 1\nLeft line 2\n"
+            "\\end{center}}{\\begin{center}\n"
+            "Right line 1\nRight line 2\n"
+            "\\end{center}}\n",
         )
 
     def test_bare_pipe_sequence_entry_stays_raw_tex(self):
         # '- |' is not a block-scalar marker; the payload is ordinary TeX.
         self.assertEqual(
             compile_text("\\foo:\n    - |\n"),
-            "\\foo{\n|\n}\n",
+            "\\foo{|}\n",
         )
 
     def test_a_macro_call_is_one_value_inside_a_stack(self):

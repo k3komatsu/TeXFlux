@@ -52,8 +52,12 @@ GROUP_OPENERS: Final = "".join(_GROUP_OPENERS)
 
 
 class ArgumentLayout(StrEnum):
+    """Where an argument's braces sit relative to its content."""
+
     INLINE = "inline"
     BLOCK = "block"
+    HUGGED = "hugged"
+    EXPLICIT = "explicit"
 
 
 class InvocationKind(StrEnum):
@@ -116,6 +120,8 @@ class SequenceEntry:
     value: Block
     marker_span: SourceSpan
     span: SourceSpan
+    #: A value confined to the marker line renders with braces that hug it.
+    spans_one_line: bool = False
 
 
 @dataclass(frozen=True, slots=True)

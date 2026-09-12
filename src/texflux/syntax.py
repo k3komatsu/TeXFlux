@@ -24,6 +24,17 @@ from .ast import (
 from .errors import ValidationError
 
 
+def is_escaped(text: str, index: int) -> bool:
+    """Whether the character at ``index`` is escaped by an odd backslash run."""
+
+    backslashes = 0
+    index -= 1
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
 def _blank(node: Node) -> bool:
     """Whether a node is a blank source line rather than content."""
 
@@ -81,4 +92,4 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
     return entries
 
 
-__all__ = ["required_text", "sequence_entries", "walk"]
+__all__ = ["is_escaped", "required_text", "sequence_entries", "walk"]

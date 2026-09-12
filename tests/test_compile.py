@@ -1,6 +1,6 @@
 import unittest
 
-from texflux import compile_text
+from texflux import compile_text, compile_with_map
 from texflux.ast import (
     Argument,
     Block,
@@ -30,7 +30,7 @@ class CompileTests(unittest.TestCase):
     def test_command_sequence_consumes_all_values(self):
         self.assertEqual(
             compile_text("\\foo{COMPACT}:\n    - A\n    - B\n"),
-            "\\foo{COMPACT}{\nA\n}{\nB\n}\n",
+            "\\foo{COMPACT}{A}{B}\n",
         )
 
     def test_command_block_is_one_long_argument(self):
@@ -52,6 +52,85 @@ class CompileTests(unittest.TestCase):
             "\\foo{\nshort\ncontinuation\n}{\nlong line 1\nlong line 2\n}\n",
         )
 
+    def test_line_count_places_the_argument_braces(self):
+        # A value confined to one line keeps its braces tight; a multi-line
+        # value gets them on their own lines.
+        self.assertEqual(compile_text("\\foo:\n    - a\n    - b\n"), "\\foo{a}{b}\n")
+        self.assertEqual(
+            compile_text("\\foo:\n    - a\n      b\n"),
+            "\\foo{\na\nb\n}\n",
+        )
+        self.assertEqual(
+            compile_text("\\foo:\n    - @center: |\n        x\n"),
+            "\\foo{\n\\begin{center}\nx\n\\end{center}\n}\n",
+        )
+
+    def test_author_written_braces_are_copied_verbatim(self):
+        # '{' first and a matching '}' last means the author placed both
+        # braces, so TeXFlux reproduces their exact layout.
+        self.assertEqual(
+            compile_text(
+                "\\foo:\n    - {a\n      b\n      }\n    - {\n      c\n      d}\n"
+            ),
+            "\\foo{a\nb\n}{\nc\nd}\n",
+        )
+        for text in ("{a\\} b}", "{50\\% off}", "{a{b}c}"):
+            with self.subTest(text=text):
+                rendered = compile_text(f"\\foo:\n    - {text}\n").rstrip("\n")
+                self.assertEqual(rendered, f"\\foo{text}")
+
+    def test_unbalanced_braces_fall_back_to_a_generated_pair(self):
+        # Visible extra braces beat silently changing the argument count.
+        self.assertEqual(compile_text("\\foo:\n    - {a} {b}\n"), "\\foo{{a} {b}}\n")
+
+    def test_a_trailing_comment_keeps_the_closing_brace_safe(self):
+        # A fully commented last line would swallow a hugged brace.
+        result = compile_with_map("\\foo:\n    - % commented\n", filename="c.tfx")
+
+        self.assertEqual(result.text, "\\foo{% commented\n}\n")
+        self.assertEqual(len(result.rendered.warnings), 1)
+        self.assertIn("comment line", result.rendered.warnings[0].message)
+
+    def test_an_inline_comment_only_warns(self):
+        result = compile_with_map("\\foo:\n    - a % trailing\n", filename="c.tfx")
+
+        self.assertEqual(result.text, "\\foo{a % trailing}\n")
+        self.assertEqual(len(result.rendered.warnings), 1)
+        self.assertIn("commented out", result.rendered.warnings[0].message)
+
+    def test_author_written_braces_warn_like_generated_ones(self):
+        # Identical output has to produce an identical diagnostic.
+        generated = compile_with_map("\\cmd:\n    - a % b\n    - t\n", filename="c.tfx")
+        explicit = compile_with_map(
+            "\\cmd:\n    - {a % b}\n    - t\n",
+            filename="c.tfx",
+        )
+
+        self.assertEqual(generated.text, explicit.text)
+        self.assertEqual(
+            [w.message for w in generated.rendered.warnings],
+            [w.message for w in explicit.rendered.warnings],
+        )
+
+    def test_a_comment_holding_an_author_brace_still_protects_what_follows(self):
+        # scan_group does not know about comments, so this is EXPLICIT even
+        # though the author's '}' sits inside one. The group is broken either
+        # way, but the next argument must not be commented out too.
+        result = compile_with_map(
+            "\\cmd:\n    - {a\n      % foo}\n    - tail\n",
+            filename="c.tfx",
+        )
+
+        self.assertEqual(result.text, "\\cmd{a\n% foo}\n{tail}\n")
+        self.assertEqual(len(result.rendered.warnings), 1)
+        self.assertIn("comment line", result.rendered.warnings[0].message)
+
+    def test_an_escaped_percent_is_not_a_comment(self):
+        result = compile_with_map("\\foo:\n    - 50\\% off\n", filename="c.tfx")
+
+        self.assertEqual(result.text, "\\foo{50\\% off}\n")
+        self.assertEqual(result.rendered.warnings, ())
+
     def test_environment_sequence_uses_last_value_as_body(self):
         self.assertEqual(
             compile_text(
@@ -62,7 +141,7 @@ class CompileTests(unittest.TestCase):
                 "        BODY1\n"
                 "        BODY2\n"
             ),
-            "\\begin{myenv}{\nARG1\n}{\nARG2\n}\n"
+            "\\begin{myenv}{ARG1}{ARG2}\n"
             "BODY1\n"
             "BODY2\n"
             "\\end{myenv}\n",
@@ -76,7 +155,7 @@ class CompileTests(unittest.TestCase):
                 "    - @center: |\n"
                 "        BODY\n"
             ),
-            "\\begin{myenv}{\nARG\n}\n"
+            "\\begin{myenv}{ARG}\n"
             "\\begin{center}\n"
             "BODY\n"
             "\\end{center}\n"
@@ -179,13 +258,13 @@ class CompileTests(unittest.TestCase):
                 "    - A\n"
                 "    - B\n"
             ),
-            "\\outer{\n\\inner{\nA\n}{\nB\n}\n}\n",
+            "\\outer{\n\\inner{A}{B}\n}\n",
         )
 
     def test_blank_line_semantics(self):
         self.assertEqual(
             compile_text("\\foo:\n    - A\n\n    - B\n"),
-            "\\foo{\nA\n}{\nB\n}\n",
+            "\\foo{A}{B}\n",
         )
         self.assertEqual(
             compile_text("\\foo: |\n    A\n\n    B\n"),
@@ -320,7 +399,7 @@ class CompileTests(unittest.TestCase):
     def test_compact_groups_remain_before_sequence_values(self):
         self.assertEqual(
             compile_text("\\doublecolumn[0.48]:\n    - A\n    - B\n"),
-            "\\doublecolumn[0.48]{\nA\n}{\nB\n}\n",
+            "\\doublecolumn[0.48]{A}{B}\n",
         )
 
 

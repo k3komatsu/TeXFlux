@@ -27,7 +27,7 @@ from .ast import (
     Stack,
     SuiteMode,
 )
-from .errors import DirectiveError, ValidationError
+from .errors import DirectiveError, ParseError, ValidationError
 from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
 from .syntax import required_text, sequence_entries
@@ -220,7 +220,41 @@ def _argument_from_entry(
     context: TransformContext,
 ) -> Argument:
     value = _normalize_block(entry.value, context)
-    return Argument(GroupKind.REQUIRED, value, ArgumentLayout.BLOCK, entry.span)
+    if _writes_own_braces(value):
+        # The author placed both braces, so TeXFlux emits the text verbatim.
+        return Argument(GroupKind.REQUIRED, value, ArgumentLayout.EXPLICIT, entry.span)
+    layout = (
+        ArgumentLayout.HUGGED
+        if entry.spans_one_line
+        else ArgumentLayout.BLOCK
+    )
+    return Argument(GroupKind.REQUIRED, value, layout, entry.span)
+
+
+def _writes_own_braces(value: Block) -> bool:
+    """Whether a value is raw TeX already wrapped in its own balanced braces.
+
+    The author then controls exactly where each brace sits, so the text is
+    emitted verbatim instead of being wrapped in a generated pair. Anything
+    that does not scan as one balanced group falls back to a generated pair,
+    which shows up as a visible extra brace rather than as broken TeX.
+    """
+
+    nodes = [
+        node
+        for node in value.nodes
+        if not (isinstance(node, RawTex) and not node.text)
+    ]
+    if not nodes or not all(isinstance(node, RawTex) for node in nodes):
+        return False
+    text = "\n".join(node.text for node in nodes).strip()
+    if not text.startswith("{"):
+        return False
+    try:
+        end, _ = scan_group(text, 0, span=value.span)
+    except ParseError:
+        return False
+    return end == len(text)
 
 
 def _sequence_body(suite: Block, context: TransformContext) -> Block:

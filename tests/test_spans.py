@@ -137,6 +137,40 @@ class SpanTests(unittest.TestCase):
         canonical = normalize(document)
         self.assertEqual(render(canonical), compile_with_map("@center: |\n    BODY\n").text)
 
+    def test_retracting_a_newline_leaves_the_cursor_after_the_kept_text(self):
+        # A coalesced fragment keeps the text before the newline, so the
+        # cursor must not rewind to the start of the whole run.
+        span = SourceSpan("input.tfx", SourcePosition(1, 1), SourcePosition(1, 2))
+        emitter = MappedEmitter()
+        emitter.emit("abc", source=span, role="content")
+        emitter.emit("\n", source=span, role="content")
+        emitter.drop_trailing_newline()
+
+        self.assertEqual(emitter.position, SourcePosition(1, 4))
+
+    def test_a_value_ending_in_blank_lines_keeps_a_sorted_map(self):
+        source = (
+            "!defmacro{nothing}: |\n"
+            "!defmacro{m}: |\n"
+            "    plain\n\n\n"
+            "    !nothing\n"
+            "\\cmd:\n"
+            "    - !m\n"
+        )
+        result = compile_with_map(source, filename="input.tfx")
+
+        self.assertEqual(result.text, "\\cmd{plain\n\n}\n")
+        previous = None
+        for fragment in result.rendered.fragments:
+            self.assertLess(fragment.generated.start, fragment.generated.end)
+            if previous is not None:
+                self.assertGreaterEqual(fragment.generated.start, previous)
+            previous = fragment.generated.end
+        self.assertEqual(
+            "".join(fragment.text for fragment in result.rendered.fragments),
+            result.text,
+        )
+
     def test_renderer_rejects_syntax_only_nodes(self):
         with self.assertRaises(TypeError):
             render(parse("\\foo: |\n    BODY\n", "input.tfx"))

@@ -73,6 +73,8 @@ def _compile(args: argparse.Namespace) -> int:
             source_bytes=source_bytes,
             generated_bytes=output_bytes,
         )
+        for warning in result.rendered.warnings:
+            print(warning.diagnostic(), file=sys.stderr)
         output_path.write_bytes(output_bytes)
         map_path.write_text(map_text, encoding="utf-8", newline="\n")
     except TeXFluxError as error:

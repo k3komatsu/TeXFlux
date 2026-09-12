@@ -25,6 +25,7 @@ from .ast import (
     SuiteMode,
 )
 from .errors import ParseError
+from .syntax import is_escaped
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,15 +71,6 @@ _NAME_START: Final = frozenset(string.ascii_letters)
 _NAME_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_")
 
 
-def _is_escaped(text: str, index: int) -> bool:
-    backslashes = 0
-    index -= 1
-    while index >= 0 and text[index] == "\\":
-        backslashes += 1
-        index -= 1
-    return backslashes % 2 == 1
-
-
 def scan_group(
     text: str,
     start: int,
@@ -92,7 +84,7 @@ def scan_group(
             # An overlay group does not nest.
             index = start + 1
             while index < len(text):
-                if text[index] == ">" and not _is_escaped(text, index):
+                if text[index] == ">" and not is_escaped(text, index):
                     return index + 1, text[start + 1 : index]
                 index += 1
             raise ParseError("unclosed overlay group", span)
@@ -102,7 +94,7 @@ def scan_group(
             index = start + 1
             while index < len(text):
                 char = text[index]
-                if not _is_escaped(text, index):
+                if not is_escaped(text, index):
                     if char == "{":
                         depth += 1
                     elif char == "}":
@@ -119,7 +111,7 @@ def scan_group(
             index = start + 1
             while index < len(text):
                 char = text[index]
-                if not _is_escaped(text, index):
+                if not is_escaped(text, index):
                     if char == "{":
                         brace_depth += 1
                     elif char == "}":
@@ -765,7 +757,10 @@ class _Parser:
                 value_end = max(value_end, node.suite.span.end)
         value_span = SourceSpan(entry_span.file, entry_span.start, value_end)
         value = Block(tuple(nodes), value_span)
-        return SequenceEntry(value, marker_span, value_span)
+        # A value that never leaves its marker line is the compact case; a
+        # suite or a continuation line makes it a multi-line value.
+        spans_one_line = bool(payload) and value_end.line == entry_span.start.line
+        return SequenceEntry(value, marker_span, value_span, spans_one_line)
 
     def _sequence_continuation(
         self,

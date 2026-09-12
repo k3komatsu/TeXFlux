@@ -55,6 +55,7 @@ from .remap import (
 from .render import (
     CompilationResult,
     GeneratedSpan,
+    RenderWarning,
     RenderedDocument,
     RenderedFragment,
     render,
@@ -127,6 +128,7 @@ __all__ = [
     "ParsedInvocation",
     "RawTex",
     "SequenceEntry",
+    "RenderWarning",
     "RenderedDocument",
     "RenderedFragment",
     "RemapError",
