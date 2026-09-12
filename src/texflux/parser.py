@@ -52,21 +52,9 @@ class _PhysicalLine:
         return not self.text.strip(" ")
 
 
-def _source_end(source: str) -> SourcePosition:
-    if not source:
-        return SourcePosition(1, 1)
-    lines = source.split("\n")
-    if lines[-1] == "":
-        return SourcePosition(len(lines), 1)
-    return SourcePosition(len(lines), len(lines[-1]) + 1)
-
-
-def _block_span(boundary: SourceSpan, nodes: list) -> SourceSpan:
-    end = boundary.end
-    for node in nodes:
-        if node.span.end > end:
-            end = node.span.end
-    return SourceSpan(boundary.file, boundary.start, end)
+def _block_span(boundary: SourceSpan, nodes: list[Node]) -> SourceSpan:
+    end = max((node.span.end for node in nodes), default=boundary.end)
+    return SourceSpan(boundary.file, boundary.start, max(boundary.end, end))
 
 
 #: TeXFlux names are ASCII-only, independent of the host locale.
@@ -392,7 +380,7 @@ class _Parser:
         self.document_span = SourceSpan(
             filename,
             SourcePosition(1, 1),
-            _source_end(source),
+            SourcePosition(1, 1).advance(source),
         )
         self.lines = tuple(
             _PhysicalLine(text, number)

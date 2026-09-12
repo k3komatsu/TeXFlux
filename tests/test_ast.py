@@ -15,6 +15,17 @@ from texflux.ast import (
 
 
 class AstTests(unittest.TestCase):
+    def test_positions_advance_by_unicode_characters_and_lf(self):
+        start = SourcePosition(3, 5)
+        for text, expected in (
+            ("", SourcePosition(3, 5)),
+            ("日本語", SourcePosition(3, 8)),
+            ("A\n", SourcePosition(4, 1)),
+            ("\n日本\n語", SourcePosition(5, 2)),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(start.advance(text), expected)
+
     def test_nodes_are_frozen_and_keep_spans(self):
         span = SourceSpan(
             "slides.tfx",

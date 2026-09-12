@@ -17,6 +17,22 @@ from .support import TempDirTestCase
 
 
 class SyncTeXCodecTests(TempDirTestCase):
+    def test_mixed_newlines_preserve_blank_lines_and_other_control_bytes(self):
+        data = (
+            b"SyncTeX Version:1\r\n\r\n\n\r"
+            b"Input:1:C:/source:\xff.tex\r"
+            b"Content:\n"
+            b"z\x0b\x0c\x1c\x1d\x1e\x85\r\n"
+            b"zlast"
+        )
+        document = parse_synctex(data)
+        self.assertEqual(serialize_synctex(document), data)
+        self.assertEqual(document.inputs[0].path, b"C:/source:\xff.tex")
+        self.assertEqual(
+            [line.newline for line in document.lines],
+            [b"\r\n", b"\r\n", b"\n", b"\r", b"\r", b"\n", b"\r\n", b""],
+        )
+
     def test_checked_in_fixture_round_trips_all_record_families(self):
         fixture = Path(__file__).with_name("fixtures") / "minimal.synctex"
 

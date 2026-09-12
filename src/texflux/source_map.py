@@ -54,9 +54,10 @@ def serialize_source_map(
     ``result.text``.
     """
 
+    encoded = result.text.encode("utf-8")
     if generated_bytes is None:
-        generated_bytes = result.text.encode("utf-8")
-    elif generated_bytes != result.text.encode("utf-8"):
+        generated_bytes = encoded
+    elif generated_bytes != encoded:
         raise ValueError("generated_bytes must be the UTF-8 bytes of result.text")
     _validate_generated_fragments(result.rendered.fragments)
 
@@ -65,8 +66,9 @@ def serialize_source_map(
         for fragment in result.rendered.fragments
         if fragment.source is not None
     }
+    source_identity = normalized_path(source_path)
     if any(
-        normalized_path(source_file) != normalized_path(source_path)
+        normalized_path(source_file) != source_identity
         for source_file in source_files
     ):
         raise ValueError("source span file does not match source_path")

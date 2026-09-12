@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -356,7 +357,7 @@ def _allocate_targets(
         target_tags.update(generated_tags)
         matched_tags.append((source_map, generated_tags))
 
-    next_tag = max([tag for tag in input_tags if tag > 0] or [0]) + 1
+    next_tag = max((tag for tag in input_tags if tag > 0), default=0) + 1
     allocated_by_path: dict[str, int] = {}
     new_inputs: dict[int, bytes] = {}
     for source_map, generated_tags in matched_tags:
@@ -541,10 +542,8 @@ def _atomic_write(
         raise RemapError(f"cannot replace {path}: {error}") from error
     finally:
         if temporary_path is not None:
-            try:
+            with suppress(OSError):
                 temporary_path.unlink()
-            except OSError:
-                pass
 
 
 def remap_synctex_file(

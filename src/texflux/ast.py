@@ -14,6 +14,17 @@ class SourcePosition:
     line: int
     column: int
 
+    def advance(self, text: str) -> SourcePosition:
+        """Return the position after text whose line endings are normalized to LF."""
+
+        lines = text.count("\n")
+        column = (
+            len(text.rpartition("\n")[2]) + 1
+            if lines
+            else self.column + len(text)
+        )
+        return SourcePosition(self.line + lines, column)
+
 
 @dataclass(frozen=True, slots=True)
 class SourceSpan:

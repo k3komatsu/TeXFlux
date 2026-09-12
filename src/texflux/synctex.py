@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 import gzip
-import os
 from pathlib import Path
 import re
 from typing import Final, Literal, TypeAlias
 import zlib
 
+from .paths import PathLike
 
-PathLike: TypeAlias = str | os.PathLike[str]
+
 Container: TypeAlias = Literal["plain", "gzip"]
 
 
@@ -163,26 +163,11 @@ _TAG_RE: Final = re.compile(rb"-?\d+")
 
 
 def _split_lines(data: bytes) -> list[tuple[bytes, bytes]]:
-    lines: list[tuple[bytes, bytes]] = []
-    start = 0
-    index = 0
-    while index < len(data):
-        byte = data[index]
-        if byte == 0x0D:
-            end = index
-            if index + 1 < len(data) and data[index + 1] == 0x0A:
-                newline = b"\r\n"
-                index += 1
-            else:
-                newline = b"\r"
-            lines.append((data[start:end], newline))
-            start = index + 1
-        elif byte == 0x0A:
-            lines.append((data[start:index], b"\n"))
-            start = index + 1
-        index += 1
-    if start < len(data) or not lines:
-        lines.append((data[start:], b""))
+    # bytes.splitlines recognizes CR/LF only; other control bytes stay opaque.
+    lines = []
+    for line in data.splitlines(keepends=True) or [b""]:
+        body = line.rstrip(b"\r\n")
+        lines.append((body, line[len(body) :]))
     return lines
 
 
@@ -194,12 +179,10 @@ def _integer(value: bytes, description: str) -> int:
 
 
 def _parse_input(body: bytes) -> SyncTeXInput:
-    rest = body[len(_INPUT_PREFIX) :]
-    separator = rest.find(b":")
-    if separator <= 0:
+    tag, separator, path = body[len(_INPUT_PREFIX) :].partition(b":")
+    if not tag or not separator:
         raise SyncTeXError(f"invalid Input record: {body!r}")
-    tag = _integer(rest[:separator], "Input tag")
-    return SyncTeXInput(tag, rest[separator + 1 :])
+    return SyncTeXInput(_integer(tag, "Input tag"), path)
 
 
 def _parse_point(
@@ -227,12 +210,6 @@ def _parse_point(
     )
 
 
-def _opaque(body: bytes, kind: bytes) -> SyncTeXRecord:
-    """Model a record whose payload TeXFlux deliberately does not interpret."""
-
-    return SyncTeXRecord(body, kind)
-
-
 def _single_tag(body: bytes, description: str) -> int | None:
     """Read the single integer tag after the kind byte, if it is well formed."""
 
@@ -250,22 +227,19 @@ def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | Non
 
     kind = body[:1]
     match kind:
-        case b"%":
-            return _opaque(body, kind)
-
         case b"!":
             if (anchor := _single_tag(body, "anchor offset")) is None:
-                return _opaque(body, kind)
+                return SyncTeXRecord(body, kind)
             return SyncTeXRecord(body, kind, counted=True, anchor_offset=anchor)
 
         case b"{" | b"}":
             if (tag := _single_tag(body, "sheet tag")) is None:
-                return _opaque(body, kind)
+                return SyncTeXRecord(body, kind)
             return SyncTeXRecord(body, kind, counted=True, tag=tag)
 
         case b"<":
             if (form_tag := _single_tag(body, "form tag")) is None:
-                return _opaque(body, kind)
+                return SyncTeXRecord(body, kind)
             return SyncTeXRecord(body, kind, counted=True, form_tag=form_tag)
 
         case b">" | b"]" | b")":
@@ -273,7 +247,7 @@ def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | Non
 
         case b"f":
             if (form := _FORM_RE.match(body, 1)) is None:
-                return _opaque(body, kind)
+                return SyncTeXRecord(body, kind)
             point, point_span = _parse_point(body, form.end(), last_vertical)
             return SyncTeXRecord(
                 body,
@@ -286,7 +260,7 @@ def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | Non
 
         case _ if kind in _LINK_KINDS:
             if (link := _LINK_RE.match(body, 1)) is None:
-                return _opaque(body, kind)
+                return SyncTeXRecord(body, kind)
             point, point_span = _parse_point(body, link.end(), last_vertical)
             return SyncTeXRecord(
                 body,
@@ -317,7 +291,7 @@ def _parse_record(body: bytes, last_vertical: int | None) -> SyncTeXRecord | Non
             )
 
         case _:
-            return _opaque(body, kind)
+            return SyncTeXRecord(body, kind)
 
 
 def _decode_payload(data: bytes) -> tuple[bytes, Container]:

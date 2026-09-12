@@ -88,21 +88,16 @@ class MappedEmitter:
         if not text:
             return
         start = self._position
-        self._position = self._advance(start, text)
+        self._position = start.advance(text)
         generated = GeneratedSpan(start, self._position)
-        if self._fragments:
-            previous = self._fragments[-1]
-            if previous.source == source and previous.role == role:
-                self._fragments[-1] = RenderedFragment(
-                    previous.text + text,
-                    GeneratedSpan(previous.generated.start, generated.end),
-                    source,
-                    role,
-                )
-            else:
-                self._fragments.append(
-                    RenderedFragment(text, generated, source, role)
-                )
+        previous = self._fragments[-1] if self._fragments else None
+        if previous is not None and previous.source == source and previous.role == role:
+            self._fragments[-1] = RenderedFragment(
+                previous.text + text,
+                GeneratedSpan(previous.generated.start, generated.end),
+                source,
+                role,
+            )
         else:
             self._fragments.append(RenderedFragment(text, generated, source, role))
         self._parts.append(text)
@@ -142,7 +137,7 @@ class MappedEmitter:
         trimmed = last.text[:-1]
         # A coalesced fragment keeps the text that preceded the newline, so
         # the cursor belongs after that text rather than at the run's start.
-        self._position = self._advance(last.generated.start, trimmed)
+        self._position = last.generated.start.advance(trimmed)
         if trimmed:
             self._fragments[-1] = RenderedFragment(
                 trimmed,
@@ -164,16 +159,6 @@ class MappedEmitter:
 
     def warn(self, message: str, span: SourceSpan) -> None:
         self._warnings.append(RenderWarning(message, span))
-
-    @staticmethod
-    def _advance(start: SourcePosition, text: str) -> SourcePosition:
-        lines = text.split("\n")
-        if len(lines) == 1:
-            return SourcePosition(start.line, start.column + len(text))
-        return SourcePosition(
-            start.line + len(lines) - 1,
-            len(lines[-1]) + 1,
-        )
 
 
 def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
@@ -293,8 +278,7 @@ def _close_hugged(
     # Only the value's own text can carry a comment, so read back exactly
     # what it emitted rather than the whole output line.
     text = emitter.text_since(mark)
-    line = text[:-1] if text.endswith("\n") else text
-    line = line.rsplit("\n", 1)[-1]
+    line = text.removesuffix("\n").rpartition("\n")[2]
     if _comment_start(line):
         emitter.warn(
             "value ends with a comment line, so what follows it stays on "
@@ -316,25 +300,16 @@ def _render_invocation(
     node: GenericInvocation,
     source_comments: bool,
 ) -> None:
-    if node.body is None:
-        _render_arguments(
-            emitter,
-            f"\\{node.name}",
-            node.arguments,
-            node.span,
-            source_comments,
-        )
-        emitter.newline()
-        return
-
     _render_arguments(
         emitter,
-        f"\\begin{{{node.name}}}",
+        f"\\{node.name}" if node.body is None else f"\\begin{{{node.name}}}",
         node.arguments,
         node.span,
         source_comments,
     )
     emitter.newline()
+    if node.body is None:
+        return
     _render_block(emitter, node.body, source_comments)
     emitter.line(
         f"\\end{{{node.name}}}",

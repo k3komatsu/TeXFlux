@@ -23,10 +23,6 @@ The fixed suite model is:
 no suffix = one already-closed RHS value
 :         = one block value per '-'; the next sibling '-' is its boundary
 : |       = one multiline block value
-
-A value that starts on the next line renders with its braces on their own
-lines; a value that starts where its marker is renders with braces that hug
-it. ': |' and a bare '-' take the first form, '- value' the second.
 ~~~
 
 ## 1. Lexical model
@@ -852,52 +848,8 @@ the handwritten parser. A sequence-block continues until the next sibling '-'.
 Its normative distinctions are the explicit '-' block sequence, the single
 : | block, and suffix-less closed values.
 
-## 17. Representative goldens
+## 17. Executable examples
 
-~~~text
-\foo:
-    - A
-    - B
-~~~
-
-~~~tex
-\foo{A}{B}
-~~~
-
-~~~text
-\foo: |
-    A
-
-    B
-~~~
-
-~~~tex
-\foo{
-A
-
-B
-}
-~~~
-
-~~~text
-@myenv:
-    - ARG1
-    - ARG2
-    - @: |
-        BODY1
-        BODY2
-~~~
-
-~~~tex
-\begin{myenv}{ARG1}{ARG2}
-BODY1
-BODY2
-\end{myenv}
-~~~
-
-~~~text
-@frame{Title} >> @center >> @{\small}: |
-    BODY
-~~~
-
-The generated structure is frame -> center -> literal brace group -> BODY.
+Exact-output examples live in [tests/golden](tests/golden) and
+[examples](examples). [tests/test_golden.py](tests/test_golden.py) checks their
+output byte for byte. Argument-brace layout is defined in section 13.

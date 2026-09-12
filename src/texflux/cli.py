@@ -114,11 +114,7 @@ def _compile(args: argparse.Namespace) -> int:
     except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
-    except FlagError as error:
-        return _fail(str(error))
-    except ValueError as error:
-        return _fail(str(error))
-    except (OSError, UnicodeError) as error:
+    except (FlagError, ValueError, OSError) as error:
         return _fail(str(error))
     except RecursionError:
         # Deeply nested composition or macro expansion exhausts the

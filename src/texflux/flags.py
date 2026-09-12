@@ -27,7 +27,6 @@ from .ast import (
     Node,
     SourceSpan,
     SpecialInvocation,
-    Stack,
 )
 from .errors import FlagError, ValidationError
 from .syntax import demand_text, optional_text, stacks, walk

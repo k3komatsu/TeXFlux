@@ -910,65 +910,8 @@ conditional       ::= ("!when" | "!unless") combinator? "{" flag-name "}"+
 
 実際の実装におけるパーサーは、リスト項目のメタデータ、括弧の対応関係、ソースコード上の位置情報（source span）、および生の TeX 行のインデントなどを別途管理している。`sequence-block` は、同じインデント階層に次の `-` が現れるまで継続する。この文法の要点は、**コロンのみ（`:`）が「`-` ごとに1つのブロック値」を意味し、コロンとパイプ（`: |`）が「全体で1つのブロック値」を意味し、suffix なしが「すでに完結した値」を意味する**という点にある。
 
-## 20. 受け入れテスト例（Acceptance examples）
+## 20. 実行可能な変換例
 
-以下の変換結果は、v1 における標準的な期待動作（ゴールデンビヘイビア）を示している。
-
-### 例1: 複数引数を持つコマンド
-~~~text
-\foo:
-    - A
-    - B
-~~~
-
-展開後:
-~~~tex
-\foo{A}{B}
-~~~
-
-### 例2: 引数と本文を持つ環境
-~~~text
-@myenv:
-    - ARG1
-    - ARG2
-    - @: |
-        BODY1
-        BODY2
-~~~
-
-展開後:
-~~~tex
-\begin{myenv}{ARG1}{ARG2}
-BODY1
-BODY2
-\end{myenv}
-~~~
-
-### 例3: スタック合成（>>）
-~~~text
-@center >> \includegraphics{fig.pdf}
-~~~
-
-展開後:
-~~~tex
-\begin{center}
-\includegraphics{fig.pdf}
-\end{center}
-~~~
-
-### 例4: 空行を含むブロック引数
-~~~text
-\foo: |
-    A
-
-    B
-~~~
-
-展開後:
-~~~tex
-\foo{
-A
-
-B
-}
-~~~
+変換例と期待する TeX 出力は [tests/golden](../tests/golden) と
+[examples](../examples) に置く。[tests/test_golden.py](../tests/test_golden.py)
+が出力をバイト単位で検証する。引数の中括弧の配置は14章で定義する。
