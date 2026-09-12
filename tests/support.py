@@ -55,10 +55,8 @@ class TempDirTestCase(unittest.TestCase):
         map_path.write_text(
             serialize_source_map(
                 result,
-                source_path=source_path,
                 generated_path=generated_path,
                 map_path=map_path,
-                source_bytes=source_path.read_bytes(),
                 generated_bytes=generated,
             ),
             encoding="utf-8",

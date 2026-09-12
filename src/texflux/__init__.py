@@ -25,18 +25,33 @@ from .errors import (
     DirectiveError,
     FlagError,
     MacroExpansionError,
+    ModuleError,
     ParseError,
     TeXFluxError,
     ValidationError,
 )
-from .flags import FLAG_VALUES, Flags, collect_flags
+from .flags import FLAG_VALUES, Flags, collect_flags, declared_flags_hint
 from .macros import (
     MacroDefinition,
     MacroParameter,
     collect_macros,
     expand_macros,
 )
-from .normalize import BUILTIN_DIRECTIVES, DirectiveRegistry, desugar, normalize
+from .modules import (
+    CompilationSession,
+    FlagBinding,
+    MacroEnvironment,
+    MacroImport,
+    ModuleKind,
+    ModuleSource,
+)
+from .normalize import (
+    BUILTIN_DIRECTIVES,
+    DirectiveRegistry,
+    canonicalize,
+    desugar,
+    normalize,
+)
 from .parser import HeaderScanner, parse
 from .remap import (
     RemapError,
@@ -51,6 +66,7 @@ from .remap import (
 from .render import (
     CompilationResult,
     GeneratedSpan,
+    LoadedSource,
     RenderWarning,
     RenderedDocument,
     RenderedFragment,
@@ -95,13 +111,28 @@ def compile_with_map(
     filename: str = "<string>",
     source_comments: bool = False,
     flags: Flags | None = None,
+    source_bytes: bytes | None = None,
 ) -> CompilationResult:
-    document = normalize(parse(source, filename=filename), flags=flags)
+    """Compile one document, resolving its imports against ``filename``.
+
+    ``flags`` overrides the root module's declared defaults; an imported
+    module receives nothing but the bindings its own ``!import`` writes.
+    ``source_bytes`` supplies the root's file bytes, so a source map digests
+    what is on disk rather than a re-encoding of ``source``.
+    """
+
+    session = CompilationSession()
+    document = session.compile_root(
+        source,
+        filename=filename,
+        data=source.encode("utf-8") if source_bytes is None else source_bytes,
+        flags=flags,
+    )
     rendered = render_with_provenance(
         document,
         source_comments=source_comments,
     )
-    return CompilationResult(rendered.text, rendered)
+    return CompilationResult(rendered.text, rendered, session.loaded())
 
 
 __all__ = [
@@ -111,10 +142,12 @@ __all__ = [
     "Block",
     "BraceGroup",
     "CompilationResult",
+    "CompilationSession",
     "DirectiveError",
     "DirectiveRegistry",
     "Document",
     "FLAG_VALUES",
+    "FlagBinding",
     "FlagError",
     "Flags",
     "GeneratedSpan",
@@ -123,9 +156,15 @@ __all__ = [
     "HeaderScanner",
     "InvocationKind",
     "Item",
+    "LoadedSource",
     "MacroDefinition",
+    "MacroEnvironment",
     "MacroExpansionError",
+    "MacroImport",
     "MacroParameter",
+    "ModuleError",
+    "ModuleKind",
+    "ModuleSource",
     "ParseError",
     "ParsedInvocation",
     "RawTex",
@@ -153,10 +192,12 @@ __all__ = [
     "TeXFluxError",
     "ValidationError",
     "__version__",
+    "canonicalize",
     "collect_flags",
     "collect_macros",
     "compile_text",
     "compile_with_map",
+    "declared_flags_hint",
     "desugar",
     "expand_macros",
     "load_source_map",

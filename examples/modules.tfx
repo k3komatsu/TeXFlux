@@ -1,0 +1,21 @@
+% マルチソース構成のサンプル。
+% 1 ファイル = 1 モジュールで、古いスライドは古いマクロライブラリのまま、
+% 新しいスライドは新しいライブラリのまま、1 つの文書に共存する。
+
+!flag{appendix}{on}
+
+\title{レイテンシ改善の記録}
+\maketitle
+
+% 呼び出し先の既定値のまま取り込む。
+!import{modules/archive-2023.tfx}
+
+% 呼び出し先のフラグをリテラルで上書きする。
+!import{modules/current.tfx}(detail=on)
+
+% 呼び出し側のフラグを明示的に転送する。同名でも暗黙には継承されない。
+!import{modules/archive-2023.tfx}(detail=$appendix)
+
+% 条件が false なら、そのファイルは開かれもしない。
+!unless{appendix}: |
+    !import{modules/never-compiled.tfx}

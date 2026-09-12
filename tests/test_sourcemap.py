@@ -1,3 +1,4 @@
+from dataclasses import replace
 import hashlib
 import json
 import unittest
@@ -12,6 +13,7 @@ from texflux import (
     __version__,
     compile_with_map,
 )
+from texflux.render import LoadedSource
 from texflux.source_map import serialize_source_map
 
 from .support import TempDirTestCase
@@ -26,18 +28,14 @@ class SourceMapTests(TempDirTestCase):
         generated_bytes = result.text.encode("utf-8")
         serialized = serialize_source_map(
             result,
-            source_path=self.root / "input.tfx",
             generated_path=self.root / "out.tex",
             map_path=self.root / "out.tex.tfxmap",
-            source_bytes=source_bytes,
             generated_bytes=generated_bytes,
         )
         serialized_again = serialize_source_map(
             compile_with_map(source, filename=str(self.root / "input.tfx")),
-            source_path=self.root / "input.tfx",
             generated_path=self.root / "out.tex",
             map_path=self.root / "out.tex.tfxmap",
-            source_bytes=source_bytes,
             generated_bytes=generated_bytes,
         )
 
@@ -111,10 +109,8 @@ class SourceMapTests(TempDirTestCase):
         payload = json.loads(
             serialize_source_map(
                 result,
-                source_path=self.root / "input.tfx",
                 generated_path=self.root / "out.tex",
                 map_path=self.root / "out.tex.tfxmap",
-                source_bytes=source.encode("utf-8"),
             )
         )
 
@@ -142,24 +138,75 @@ class SourceMapTests(TempDirTestCase):
         payload = json.loads(
             serialize_source_map(
                 result,
-                source_path=source_path,
                 generated_path=self.root / "tex" / "out.tex",
                 map_path=map_dir / "out.tex.tfxmap",
-                source_bytes=b"raw\n",
             )
         )
 
         self.assertEqual(payload["generated"]["path"], "../tex/out.tex")
         self.assertEqual(payload["sources"][0]["path"], "../sources/input.tfx")
 
-    def test_serializer_rejects_mismatched_source_or_generated_bytes(self):
+    def test_a_document_without_imports_keeps_one_source_at_id_zero(self):
+        result = compile_with_map(
+            "raw\n@center: |\n    BODY\n",
+            filename=str(self.root / "input.tfx"),
+        )
+        payload = json.loads(
+            serialize_source_map(
+                result,
+                generated_path=self.root / "out.tex",
+                map_path=self.root / "out.tex.tfxmap",
+            )
+        )
+
+        self.assertEqual([source["id"] for source in payload["sources"]], [0])
+        self.assertEqual(
+            {mapping["source"]["id"] for mapping in payload["mappings"]},
+            {0},
+        )
+
+    def test_imported_content_maps_to_the_file_that_wrote_it(self):
+        self.write("part.tfx", "\\imported{x}\n")
+        self.write("style.tfxm", "!defmacro{m}: |\n    M\n")
+        source_path = self.write(
+            "input.tfx",
+            "!macroimport{style.tfxm}\n\\root{y}\n!import{part.tfx}\n",
+        )
+        result = compile_with_map(
+            source_path.read_text(encoding="utf-8"),
+            filename=str(source_path),
+        )
+        payload = json.loads(
+            serialize_source_map(
+                result,
+                generated_path=self.root / "out.tex",
+                map_path=self.root / "out.tex.tfxmap",
+            )
+        )
+
+        names = {
+            source["id"]: source["path"] for source in payload["sources"]
+        }
+        # The root stays id 0; the .tfxm contributed no fragment, so it is
+        # not listed, because every listed source becomes a SyncTeX input.
+        self.assertEqual(names[0], "input.tfx")
+        self.assertEqual(sorted(names.values()), ["input.tfx", "part.tfx"])
+
+        by_line = {
+            mapping["generated"]["start"]["line"]: names[mapping["source"]["id"]]
+            for mapping in payload["mappings"]
+        }
+        # The stripped !macroimport emits nothing, so the root's own line is
+        # generated line 1 and the imported line follows it.
+        self.assertEqual(by_line[1], "input.tfx")
+        self.assertEqual(by_line[2], "part.tfx")
+
+    def test_serializer_rejects_mismatched_generated_bytes_or_sources(self):
         source_path = self.root / "input.tfx"
         result = compile_with_map("raw\n", filename=str(source_path))
         kwargs = {
-            "source_path": source_path,
             "generated_path": self.root / "out.tex",
             "map_path": self.root / "out.tex.tfxmap",
-            "source_bytes": b"raw\n",
         }
         with self.assertRaisesRegex(ValueError, "generated_bytes"):
             serialize_source_map(
@@ -167,11 +214,15 @@ class SourceMapTests(TempDirTestCase):
                 **kwargs,
                 generated_bytes=b"different\n",
             )
-        with self.assertRaisesRegex(ValueError, "source span file"):
-            serialize_source_map(
-                result,
-                **(kwargs | {"source_path": self.root / "other.tfx"}),
-            )
+        with self.assertRaisesRegex(ValueError, "at least the root source"):
+            serialize_source_map(replace(result, sources=()), **kwargs)
+        other = LoadedSource(
+            str(self.root / "other.tfx"),
+            str(self.root / "other.tfx"),
+            b"raw\n",
+        )
+        with self.assertRaisesRegex(ValueError, "was not loaded"):
+            serialize_source_map(replace(result, sources=(other,)), **kwargs)
 
     def test_serializer_rejects_invalid_generated_ranges(self):
         span = SourceSpan(
@@ -220,10 +271,8 @@ class SourceMapTests(TempDirTestCase):
                 with self.assertRaisesRegex(ValueError, "generated fragments"):
                     serialize_source_map(
                         result,
-                        source_path="input.tfx",
                         generated_path="out.tex",
                         map_path="out.tex.tfxmap",
-                        source_bytes=b"input",
                     )
 
     def test_representative_constructs_produce_source_mappings(self):
@@ -241,10 +290,8 @@ class SourceMapTests(TempDirTestCase):
                 payload = json.loads(
                     serialize_source_map(
                         result,
-                        source_path=input_path,
                         generated_path=self.root / f"out{index}.tex",
                         map_path=self.root / f"out{index}.tex.tfxmap",
-                        source_bytes=source.encode("utf-8"),
                     )
                 )
                 self.assertGreater(len(payload["mappings"]), 0)
@@ -315,10 +362,8 @@ class SourceMapTests(TempDirTestCase):
                 payload = json.loads(
                     serialize_source_map(
                         result,
-                        source_path=input_path,
                         generated_path=self.root / f"out{index}.tex",
                         map_path=self.root / f"out{index}.tex.tfxmap",
-                        source_bytes=source.encode("utf-8"),
                     )
                 )
                 actual = []

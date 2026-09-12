@@ -96,15 +96,16 @@ def _compile(args: argparse.Namespace) -> int:
             source_bytes.decode("utf-8"),
             filename=str(input_path),
             source_comments=args.source_comments,
+            # An override configures this build, so it reaches the root module
+            # only; an imported module is configured by its own binding list.
             flags=_flags(args.flags),
+            source_bytes=source_bytes,
         )
         output_bytes = result.text.encode("utf-8")
         map_text = serialize_source_map(
             result,
-            source_path=input_path,
             generated_path=output_path,
             map_path=map_path,
-            source_bytes=source_bytes,
             generated_bytes=output_bytes,
         )
         for warning in result.rendered.warnings:

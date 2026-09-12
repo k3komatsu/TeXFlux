@@ -17,6 +17,8 @@ class GoldenTests(unittest.TestCase):
                 "macro-each",
                 "macro-variadic",
                 "macro-wrapper",
+                "module-import",
+                "module-macros",
                 "nested-environments",
                 "off-drop",
                 "real-slide",
@@ -34,10 +36,18 @@ class GoldenTests(unittest.TestCase):
         for input_path in input_paths:
             with self.subTest(case=input_path.parent.name):
                 expected = input_path.with_name("expected.tex").read_bytes()
+                comments = input_path.parent.name == "source-comments"
+                # A filename decides where imports resolve from, so it has to
+                # be the real path. Only the source-comments case writes its
+                # filename into the output, so only it needs a fixed spelling.
                 actual = compile_text(
                     input_path.read_text(encoding="utf-8"),
-                    filename=input_path.relative_to(root.parent.parent).as_posix(),
-                    source_comments=input_path.parent.name == "source-comments",
+                    filename=(
+                        input_path.relative_to(root.parent.parent).as_posix()
+                        if comments
+                        else str(input_path)
+                    ),
+                    source_comments=comments,
                 ).encode("utf-8")
                 self.assertEqual(actual, expected)
 
@@ -63,6 +73,17 @@ class GoldenTests(unittest.TestCase):
                 )
                 expected = (root / f"{stem}.tex").read_text(encoding="utf-8")
                 self.assertEqual(actual, expected)
+
+    def test_multi_source_example_matches_its_golden(self):
+        # This one imports, so it needs its real path rather than the
+        # repository relative label the other examples can use.
+        path = Path(__file__).parents[1] / "examples" / "modules.tfx"
+        actual = compile_text(
+            path.read_text(encoding="utf-8"),
+            filename=str(path),
+        )
+        expected = path.with_suffix(".tex").read_text(encoding="utf-8")
+        self.assertEqual(actual, expected)
 
     def test_converted_content_example_compiles(self):
         root = Path(__file__).parents[1] / "examples"

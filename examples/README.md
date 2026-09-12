@@ -15,6 +15,7 @@
 | [stacked-items.tfx](stacked-items.tfx) | [stacked-items.tex](stacked-items.tex) | **パイプライン合成とネスト**: `>>` による1行の環境連結と、多重にネストした箇条書きリスト |
 | [macros.tfx](macros.tfx) | [macros.tex](macros.tex) | **構造マクロ (`!defmacro`)**: ラッパーマクロ、2引数マクロ、可変長引数（`!each`）マクロの実例 |
 | [content.tfx](content.tfx) | [content.tex](content.tex) | **学術発表の実践コード**: 実際の Beamer スライド（1000行超）を TeXFlux に移植した実践サンプル |
+| [modules.tfx](modules.tfx) | [modules.tex](modules.tex) | **マルチソース構成 (`!import` / `!macroimport`)**: 1ファイル=1モジュール、フラグ束縛（リテラル・`$転送`）、そして古いスライドと新しいスライドが**別バージョンのマクロライブラリのまま共存**する実例 |
 
 ---
 
@@ -26,6 +27,15 @@
 ```bash
 PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
 diff -u examples/basic.tex /tmp/basic.tex
+```
+
+### マルチソースサンプルのコンパイル
+`modules.tfx` は `modules/` 以下の `.tfx` / `.tfxm` を取り込みます。import のパスは
+**それを書いたファイルからの相対**で解決されるため、`modules/` ごと別の場所へ持ち運べます。
+
+```bash
+PYTHONPATH=src python3 -m texflux compile examples/modules.tfx -o /tmp/modules.tex
+diff -u examples/modules.tex /tmp/modules.tex
 ```
 
 ### 実践スライドサンプルのコンパイル

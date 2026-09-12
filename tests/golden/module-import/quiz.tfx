@@ -1,0 +1,7 @@
+!flag{answers}{off}
+
+@block{Question}: |
+    What is the tail latency budget?
+
+    !when{answers}: |
+        \textbf{Answer:} 150 ms at p99.

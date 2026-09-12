@@ -63,6 +63,12 @@ def optional_text(argument: Argument) -> str | None:
     return _inline_text(argument, GroupKind.OPTIONAL)
 
 
+def binding_text(argument: Argument) -> str | None:
+    """The raw text of one trailing ``(...)`` list, or ``None`` if it is not one."""
+
+    return _inline_text(argument, GroupKind.BINDING)
+
+
 def demand_text(argument: Argument, label: str) -> str:
     """Read one required inline group, or reject it at its own span.
 
@@ -126,6 +132,7 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
 
 
 __all__ = [
+    "binding_text",
     "blank",
     "demand_text",
     "is_escaped",

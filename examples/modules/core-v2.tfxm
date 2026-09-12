@@ -1,0 +1,2 @@
+!defmacro{emphasis}{body}: |
+    @{\color{orange!80!black}\bfseries} >> !param{body}

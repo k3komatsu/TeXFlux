@@ -8,7 +8,7 @@ import os
 
 from . import __version__
 from .ast import SourcePosition
-from .paths import PathLike, normalized_path
+from .paths import PathLike
 from .render import CompilationResult, RenderedFragment
 
 
@@ -38,20 +38,45 @@ def _validate_generated_fragments(fragments: tuple[RenderedFragment, ...]) -> No
         previous_end = end
 
 
+def _source_ids(result: CompilationResult) -> dict[str, int]:
+    """Number the source files this result's fragments actually name.
+
+    The root is always id 0, so a document with no imports keeps writing the
+    map it always did. Every other file follows in order of first appearance,
+    which the document's own order decides. A module that contributed no
+    fragment -- a ``.tfxm``, or a ``.tfx`` whose content was all dropped --
+    is left out, because every listed source becomes a SyncTeX input.
+    """
+
+    if not result.sources:
+        raise ValueError("a source map needs at least the root source")
+    order = [result.sources[0].file]
+    known = {source.file for source in result.sources}
+    for fragment in result.rendered.fragments:
+        if fragment.source is None:
+            continue
+        name = fragment.source.file
+        if name not in known:
+            raise ValueError(
+                f"source span names a file that was not loaded: {name}"
+            )
+        if name not in order:
+            order.append(name)
+    return {name: index for index, name in enumerate(order)}
+
+
 def serialize_source_map(
     result: CompilationResult,
     *,
-    source_path: PathLike,
     generated_path: PathLike,
     map_path: PathLike,
-    source_bytes: bytes,
     generated_bytes: bytes | None = None,
 ) -> str:
     """Serialize one result as deterministic UTF-8 JSON.
 
-    ``source_path`` must identify the file named by every source span in the
-    result. When supplied, ``generated_bytes`` must be the UTF-8 bytes of
-    ``result.text``.
+    The sources come from ``result.sources``, so one map can describe a
+    document assembled from several ``.tfx`` files. When supplied,
+    ``generated_bytes`` must be the UTF-8 bytes of ``result.text``.
     """
 
     encoded = result.text.encode("utf-8")
@@ -61,17 +86,8 @@ def serialize_source_map(
         raise ValueError("generated_bytes must be the UTF-8 bytes of result.text")
     _validate_generated_fragments(result.rendered.fragments)
 
-    source_files = {
-        fragment.source.file
-        for fragment in result.rendered.fragments
-        if fragment.source is not None
-    }
-    source_identity = normalized_path(source_path)
-    if any(
-        normalized_path(source_file) != source_identity
-        for source_file in source_files
-    ):
-        raise ValueError("source span file does not match source_path")
+    ids = _source_ids(result)
+    by_file = {source.file: source for source in result.sources}
 
     mappings = []
     for fragment in result.rendered.fragments:
@@ -84,7 +100,7 @@ def serialize_source_map(
                     "end": _position(fragment.generated.end),
                 },
                 "source": {
-                    "id": 0,
+                    "id": ids[fragment.source.file],
                     "start": _position(fragment.source.start),
                     "end": _position(fragment.source.end),
                 },
@@ -102,10 +118,11 @@ def serialize_source_map(
         },
         "sources": [
             {
-                "id": 0,
-                "path": _stored_path(source_path, map_path),
-                "sha256": hashlib.sha256(source_bytes).hexdigest(),
+                "id": identifier,
+                "path": _stored_path(by_file[name].path, map_path),
+                "sha256": hashlib.sha256(by_file[name].data).hexdigest(),
             }
+            for name, identifier in ids.items()
         ],
         "mappings": mappings,
     }

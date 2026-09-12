@@ -34,6 +34,17 @@ class MacroExpansionError(TeXFluxError):
     error_kind = "macro error"
 
 
+class ModuleError(TeXFluxError):
+    """A module boundary this compilation cannot cross.
+
+    Covers import forms, path resolution, content import cycles, the purity
+    of a ``.tfxm`` macro module, macro name conflicts between modules, and
+    ``!import`` flag bindings.
+    """
+
+    error_kind = "module error"
+
+
 class FlagError(Exception):
     """A build-flag override that no declaration matches or that is not a bool.
 
@@ -48,6 +59,7 @@ __all__ = [
     "DirectiveError",
     "FlagError",
     "MacroExpansionError",
+    "ModuleError",
     "ParseError",
     "TeXFluxError",
     "ValidationError",

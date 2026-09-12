@@ -45,6 +45,7 @@ class GroupKind(StrEnum):
     REQUIRED = "required"
     OPTIONAL = "optional"
     OVERLAY = "overlay"
+    BINDING = "binding"
 
     @property
     def delimiters(self) -> tuple[str, str]:
@@ -59,13 +60,28 @@ _GROUP_DELIMITERS: Final = {
     GroupKind.REQUIRED: ("{", "}"),
     GroupKind.OPTIONAL: ("[", "]"),
     GroupKind.OVERLAY: ("<", ">"),
+    GroupKind.BINDING: ("(", ")"),
 }
 _GROUP_OPENERS: Final = {
     opener: kind for kind, (opener, _) in _GROUP_DELIMITERS.items()
 }
 
+#: The group kinds a structural header scans after a name, in order.
+_INLINE_KINDS: Final = (
+    GroupKind.REQUIRED,
+    GroupKind.OPTIONAL,
+    GroupKind.OVERLAY,
+)
+
 #: Every character that can open an inline group, in declaration order.
-GROUP_OPENERS: Final = "".join(_GROUP_OPENERS)
+#: BINDING is deliberately absent: '(' is a trailing list on a '!' segment
+#: rather than a general inline group, so the header loop must not scan it.
+GROUP_OPENERS: Final = "".join(
+    _GROUP_DELIMITERS[kind][0] for kind in _INLINE_KINDS
+)
+
+#: The opener of the trailing '(...)' binding list a '!' segment may carry.
+BINDING_OPENER: Final = _GROUP_DELIMITERS[GroupKind.BINDING][0]
 
 
 class ArgumentLayout(StrEnum):
@@ -187,6 +203,7 @@ Node = SyntaxNode | CanonicalNode
 
 __all__ = [
     "Argument",
+    "BINDING_OPENER",
     "ArgumentLayout",
     "Block",
     "BraceGroup",

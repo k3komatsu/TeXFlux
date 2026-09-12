@@ -1,0 +1,10 @@
+!macroimport{style-v2.tfxm}
+
+!flag{detail}{off}
+
+@frame{現在の測定結果}: |
+    !highlight: |
+        いまのベースラインは p99 で 150 ms です。
+
+    !when{detail}: |
+        測定環境: 8 vCPU / 16 GiB、同時実行数 64。

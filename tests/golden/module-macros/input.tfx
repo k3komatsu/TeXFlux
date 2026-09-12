@@ -1,0 +1,8 @@
+!macroimport{style-v2.tfxm}
+
+!import{old-slide.tfx}
+!import{new-slide.tfx}
+
+@frame{Caller}: |
+    !note: |
+        The caller sees !note but never !shell.

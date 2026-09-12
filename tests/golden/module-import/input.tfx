@@ -1,0 +1,16 @@
+!flag{handout}{on}
+
+@frame{Quiz}: |
+    !import{quiz.tfx}
+
+@frame{Quiz with answers}: |
+    !import{quiz.tfx}(answers=on)
+
+@frame{Quiz for the handout}: |
+    !import{quiz.tfx}(answers=$handout)
+
+@frame{Grouped}: |
+    @{\small} >> !import{quiz.tfx}
+
+!when{handout}: |
+    !import{quiz.tfx}(answers=off)

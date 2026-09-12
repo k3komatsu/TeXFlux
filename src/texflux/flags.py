@@ -55,8 +55,10 @@ CONDITIONAL_NAMES: Final = frozenset(Conditional)
 _COMBINATORS: Final = frozenset(Combinator)
 
 # A flag is written in a group and on a command line, so it stays identifier
-# shaped with the hyphen a command line tends to want.
-_FLAG_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+# shaped with the hyphen a command line tends to want. Import bindings name
+# flags too, so the shape is published rather than spelled twice.
+FLAG_NAME_PATTERN: Final = r"[A-Za-z][A-Za-z0-9_-]*"
+_FLAG_NAME_RE: Final = re.compile(FLAG_NAME_PATTERN)
 
 #: The only two spellings a declaration or an override accepts.
 FLAG_VALUES: Final = {"on": True, "off": False}
@@ -65,7 +67,7 @@ FLAG_VALUES: Final = {"on": True, "off": False}
 Flags: TypeAlias = Mapping[str, bool]
 
 
-def _declared_flags(flags: Flags) -> str:
+def declared_flags_hint(flags: Flags) -> str:
     """Name the flags a document declares, for an 'unknown flag' diagnostic."""
 
     if not flags:
@@ -110,7 +112,7 @@ def _flag_names(
         name = demand_text(group, f"!{node.name} flag")
         if name not in flags:
             raise ValidationError(
-                f"unknown build flag '{name}'; {_declared_flags(flags)}",
+                f"unknown build flag '{name}'; {declared_flags_hint(flags)}",
                 group.span,
             )
         if name in names:
@@ -253,7 +255,7 @@ def collect_flags(
     for name, value in (overrides or {}).items():
         if name not in flags:
             raise FlagError(
-                f"unknown build flag '{name}'; {_declared_flags(flags)}"
+                f"unknown build flag '{name}'; {declared_flags_hint(flags)}"
             )
         if not isinstance(value, bool):
             # 'off' and 0 are both truthy-adjacent enough to silently build
@@ -268,11 +270,13 @@ def collect_flags(
 
 __all__ = [
     "CONDITIONAL_NAMES",
+    "FLAG_NAME_PATTERN",
     "Combinator",
     "Conditional",
     "FLAG_VALUES",
     "Flags",
     "collect_flags",
+    "declared_flags_hint",
     "evaluate_conditional",
     "validate_flag_forms",
 ]

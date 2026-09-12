@@ -1,0 +1,2 @@
+!defmacro{shell}{body}: |
+    @{\footnotesize\color{gray}} >> !param{body}

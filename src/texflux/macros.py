@@ -54,6 +54,10 @@ class Reserved(StrEnum):
 #: Reserved names may be neither redefined nor used as macro names.
 _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
 
+#: The module constructs, which a template may not contain. They are spelled
+#: here rather than imported, because ``modules`` builds on this module.
+_MODULE_NAMES: Final = frozenset({"import", "macroimport"})
+
 # A macro must be callable as '!name', so it uses the special-name grammar.
 _MACRO_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _PARAM_NAME_RE: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -76,6 +80,9 @@ class MacroDefinition:
     parameters: tuple[MacroParameter, ...]
     template: Block
     span: SourceSpan
+    #: Canonical path of the module that defines this macro. Its template's
+    #: names resolve in that module's environment, never in a caller's.
+    module: str = ""
 
     @property
     def rest(self) -> MacroParameter | None:
@@ -133,6 +140,7 @@ def _definition(
     node: SpecialInvocation,
     builtins: Container[str],
     defined: Mapping[str, MacroDefinition],
+    module: str,
 ) -> MacroDefinition:
     if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
         raise ValidationError(
@@ -159,21 +167,28 @@ def _definition(
             f"macro '!{name}' is already defined at {previous}",
             name_group.span,
         )
-    nested = next(
-        (
-            child
-            for child in walk(node.suite)
-            if isinstance(child, SpecialInvocation)
-            and child.name == Reserved.DEFINE
-        ),
-        None,
+    for child in walk(node.suite):
+        if not isinstance(child, SpecialInvocation):
+            continue
+        if child.name == Reserved.DEFINE:
+            raise ValidationError(
+                "!defmacro is only valid at the top level",
+                child.span,
+            )
+        if child.name in _MODULE_NAMES:
+            # Otherwise content dependency discovery would depend on macro
+            # expansion, and an import would become a dynamic one.
+            raise ValidationError(
+                f"!{child.name} is not allowed inside a macro template",
+                child.span,
+            )
+    return MacroDefinition(
+        name,
+        _parameters(node.groups[1:]),
+        node.suite,
+        node.span,
+        module,
     )
-    if nested is not None:
-        raise ValidationError(
-            "!defmacro is only valid at the top level",
-            nested.span,
-        )
-    return MacroDefinition(name, _parameters(node.groups[1:]), node.suite, node.span)
 
 
 def validate_macro_forms(document: Document) -> None:
@@ -212,18 +227,26 @@ def validate_macro_forms(document: Document) -> None:
 def collect_macros(
     document: Document,
     builtins: Container[str],
+    *,
+    imported: Mapping[str, MacroDefinition] = {},
+    module: str = "",
 ) -> tuple[Document, dict[str, MacroDefinition]]:
     """Strip top-level ``!defmacro`` nodes and validate their signatures.
 
     Definitions emit no TeX. Collecting every definition before expanding any
     call is what makes forward references work.
+
+    ``imported`` seeds the table with the macros ``!macroimport`` brought in,
+    so a local definition that shadows one is reported against it and the
+    result is this module's whole macro environment. ``module`` records which
+    module defines the collected macros, for their lexical scope.
     """
 
-    macros: dict[str, MacroDefinition] = {}
+    macros: dict[str, MacroDefinition] = dict(imported)
     nodes: list[Node] = []
     for node in document.body.nodes:
         if isinstance(node, SpecialInvocation) and node.name == Reserved.DEFINE:
-            definition = _definition(node, builtins, macros)
+            definition = _definition(node, builtins, macros, module)
             macros[definition.name] = definition
             continue
         nodes.append(node)
@@ -244,7 +267,7 @@ class _Frame:
     call_span: SourceSpan
     values: Mapping[str, Value]
     sequences: Mapping[str, tuple[Value, ...]]
-    chain: tuple[str, ...]
+    chain: tuple[MacroDefinition, ...]
 
     def bound(self, name: str, value: Value) -> "_Frame":
         """Derive a frame carrying one more single value, for ``!each``."""
@@ -257,8 +280,24 @@ class _Frame:
     def where(self) -> str:
         """Locate this expansion: its chain and the call site it came from."""
 
-        chain = " -> ".join(self.chain)
+        chain = chain_text(self.chain)
         return f"while expanding '{chain}' called at {self.call_span.location}"
+
+
+def chain_text(chain: tuple[MacroDefinition, ...]) -> str:
+    """Spell one expansion chain, disambiguating names only when it has to.
+
+    A chain confined to one module reads as plain macro names. Once two
+    modules are involved, a bare name no longer identifies a macro, so each
+    element names the file that defines it.
+    """
+
+    files = {definition.span.file for definition in chain}
+    if len(files) <= 1:
+        return " -> ".join(definition.name for definition in chain)
+    return " -> ".join(
+        f"{definition.name}@{definition.span.file}" for definition in chain
+    )
 
 
 def _error(
@@ -276,9 +315,33 @@ def _error(
 class _Expander:
     """Rewrite macro calls, conditionals and template constructs away."""
 
-    def __init__(self, macros: Mapping[str, MacroDefinition], flags: Flags):
+    def __init__(
+        self,
+        macros: Mapping[str, MacroDefinition],
+        flags: Flags,
+        environments: Mapping[str, Mapping[str, MacroDefinition]] | None,
+        module: str,
+    ):
         self._macros = macros
         self._flags = flags
+        self._environments = environments
+        self._module = module
+
+    def _env(self, frame: _Frame | None) -> Mapping[str, MacroDefinition]:
+        """The macro names one template, or the document itself, can see."""
+
+        if self._environments is None:
+            return self._macros
+        module = self._module if frame is None else frame.macro.module
+        environment = self._environments.get(module)
+        if environment is None:
+            # A definition whose module was never registered would otherwise
+            # fail only once its template happened to name a special.
+            raise TypeError(
+                f"no macro environment for module {module!r}; every "
+                "definition's module must be registered before expansion"
+            )
+        return environment
 
     def document(self, document: Document) -> Document:
         return replace(document, body=self.block(document.body, None))
@@ -306,8 +369,8 @@ class _Expander:
                 return self._each(node, frame)
             case SpecialInvocation(name=Conditional.WHEN | Conditional.UNLESS):
                 return self._conditional(node, frame)
-            case SpecialInvocation(name=name) if name in self._macros:
-                return self._call(node, self._macros[name], frame)
+            case SpecialInvocation(name=name) if name in self._env(frame):
+                return self._call(node, self._env(frame)[name], frame)
             case ParsedInvocation() | SpecialInvocation():
                 return (self._invocation(node, frame),)
             case SequenceEntry():
@@ -486,10 +549,12 @@ class _Expander:
         frame: _Frame | None,
     ) -> tuple[Node, ...]:
         outer = () if frame is None else frame.chain
-        chain = outer + (macro.name,)
-        if macro.name in outer:
+        chain = outer + (macro,)
+        # Two modules may define the same name, so identity is the pair.
+        key = (macro.module, macro.name)
+        if any((d.module, d.name) == key for d in outer):
             raise _error(
-                "recursive macro expansion detected: " + " -> ".join(chain),
+                "recursive macro expansion detected: " + chain_text(chain),
                 node.span,
                 frame,
             )
@@ -560,21 +625,30 @@ def expand_macros(
     document: Document,
     macros: Mapping[str, MacroDefinition],
     flags: Flags,
+    *,
+    environments: Mapping[str, Mapping[str, MacroDefinition]] | None = None,
+    module: str = "",
 ) -> Document:
     """Expand macro calls and resolve conditionals in one document.
 
     ``document`` must already be desugared, as ``normalize`` arranges: a
     surviving ``>>`` stack would hide the single block value a call binds and
     the single payload a conditional keeps or drops.
+
+    ``environments`` gives each definition's module its own lexical scope, so
+    a template reaches its module's private ``!macroimport``s and nothing
+    else. Without it every definition resolves in ``macros``, which is what a
+    single-file document needs.
     """
 
-    return _Expander(macros, flags).document(document)
+    return _Expander(macros, flags, environments, module).document(document)
 
 
 __all__ = [
     "MacroDefinition",
     "MacroParameter",
     "Reserved",
+    "chain_text",
     "Value",
     "collect_macros",
     "expand_macros",

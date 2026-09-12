@@ -27,7 +27,7 @@ from .ast import (
     Stack,
     SuiteMode,
 )
-from .errors import DirectiveError, ParseError, ValidationError
+from .errors import DirectiveError, ModuleError, ParseError, ValidationError
 from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
@@ -768,9 +768,32 @@ def _parse_item_level(
         )
 
 
+def _module_guard(name: str) -> SpecialHandler:
+    """Reject a module construct that reached the import-free pipeline.
+
+    ``normalize`` has no source file to resolve an import against, so the two
+    module constructs are registered only to name themselves here. Registering
+    them also reserves both names against ``!defmacro``.
+    """
+
+    def handler(
+        node: SpecialInvocation,
+        _registry: DirectiveRegistry,
+    ) -> tuple[CanonicalNode, ...]:
+        raise ModuleError(
+            f"'!{name}' requires module compilation; use "
+            "texflux.compile_with_map or the texflux CLI",
+            node.span,
+        )
+
+    return handler
+
+
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
     "drop": _drop_handler,
+    "import": _module_guard("import"),
     "items": _items_handler,
+    "macroimport": _module_guard("macroimport"),
     "off": _off_handler,
     "vpad": _vpad_handler,
 }
@@ -819,6 +842,19 @@ def normalize(
     document, macros = collect_macros(document, registry)
     document = expand_macros(document, macros, resolved)
 
+    return canonicalize(document, registry)
+
+
+def canonicalize(
+    document: Document,
+    registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
+) -> Document:
+    """Turn one expanded syntax AST into validated canonical AST.
+
+    This is the tail ``normalize`` shares with the module pipeline, which
+    splices imported canonical AST in between expansion and this pass.
+    """
+
     normalized = Document(_normalize_block(document.body, registry), document.span)
     _assert_canonical_block(normalized.body)
     return normalized
@@ -828,6 +864,7 @@ __all__ = [
     "BUILTIN_DIRECTIVES",
     "DirectiveRegistry",
     "SpecialHandler",
+    "canonicalize",
     "desugar",
     "normalize",
 ]

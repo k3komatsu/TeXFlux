@@ -2,6 +2,7 @@ import unittest
 
 from texflux.ast import (
     Block,
+    GroupKind,
     InvocationKind,
     ParsedInvocation,
     RawTex,
@@ -204,6 +205,60 @@ class ParserTests(unittest.TestCase):
             parse("@: |\n", "x.tfx").body.nodes[0].suite.nodes,
             (),
         )
+
+    def test_special_segments_accept_one_trailing_binding_list(self):
+        node = parse("!import{a.tfx}(answers=on, memo=$memo)\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(node, SpecialInvocation)
+        self.assertEqual(
+            [group.kind for group in node.groups],
+            [GroupKind.REQUIRED, GroupKind.BINDING],
+        )
+        self.assertEqual(node.groups[1].value, "answers=on, memo=$memo")
+        self.assertEqual(node.groups[1].span.start.column, 15)
+        self.assertEqual(node.groups[1].span.end.column, 39)
+
+    def test_binding_list_composes_with_stacks_and_suites(self):
+        stack = parse("@center >> !import{a.tfx}(x=on)\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(stack, Stack)
+        self.assertEqual(stack.segments[1].groups[1].kind, GroupKind.BINDING)
+        entry = parse("\\foo:\n    - !import{a.tfx}(x=off)\n", "x.tfx").body.nodes[0]
+        inner = entry.suite.nodes[0].value.nodes[0]
+        self.assertEqual(inner.groups[1].value, "x=off")
+
+    def test_binding_list_contents_stay_opaque(self):
+        node = parse("!import{a.tfx}(a=(b), c={d,e}, f=\\))\n", "x.tfx").body.nodes[0]
+        self.assertEqual(node.groups[1].value, "a=(b), c={d,e}, f=\\)")
+
+    def test_binding_list_is_rejected_outside_special_segments(self):
+        for source in ("\\foo(x): |\n    B\n", "@foo(x): |\n    B\n"):
+            with self.subTest(source=source):
+                node = parse(source, "x.tfx").body.nodes[0]
+                self.assertIsInstance(node, (RawTex, ParsedInvocation))
+                if isinstance(node, ParsedInvocation):
+                    # An environment name still swallows the parentheses.
+                    self.assertEqual(node.name, "foo(x)")
+
+    def test_only_a_special_reports_a_binding_list_diagnostic(self):
+        # A command or environment can never carry a binding list, so '(' in
+        # its header stays the ordinary unexpected token it always was.
+        for source in ("\\vspace{1em}(x):\n", "@tabular{c}(x): |\n    A\n"):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ParseError,
+                    "unexpected token after structural name or group",
+                ):
+                    parse(source, "x.tfx")
+
+    def test_binding_list_errors_are_specific(self):
+        for source, message in (
+            ("!a{b}(x=on\n", "unclosed binding list"),
+            ("!a{b}(x=}\n", "mismatched group delimiter"),
+            ("!a(x=on){b}\n", r"must follow its groups"),
+            ("!a{b}(x=on)(y=on)\n", r"at most one '\(\.\.\.\)' list"),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ParseError, message):
+                    parse(source, "x.tfx")
 
     def test_indentation_and_tabs_keep_diagnostics(self):
         with self.assertRaisesRegex(ParseError, r"x\.tfx:2:7: parse error"):

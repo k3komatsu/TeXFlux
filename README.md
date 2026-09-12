@@ -142,9 +142,40 @@ TeXFlux なら、ソースコード内にフラグを宣言し、コンパイル
 ```
 - コマンドラインから `--flag handout` や `--flag memo` を渡すだけで切り替え可能。
 - 宣言されていないフラグ名を指定するとエラーになるため、**タイポで内容が黙って消える事故を防止**します。
-- **条件によって捨てられた本文は展開も正規化もされません**。ただし、構文解析、`!flag` のトップレベル制約、`!defmacro` / `!each` のスタック形式の検査は行われます（[詳細](doc/dsl.md#135-解決とその範囲)）。
+- **条件によって捨てられた本文は展開も正規化もされません**。ただし、構文解析、`!flag` と `!macroimport` のトップレベル制約、`!defmacro` / `!each` / テンプレート内容の検査は行われます。いずれも「その行をどこに書いたか」の検査だけで、ファイルは開かれません（[詳細](doc/dsl.md#135-解決とその範囲)）。
 
-### 5. 🪶 外部依存ゼロ（Zero Dependencies）
+### 5. 📦 モジュールシステム（`!import` / `!macroimport`）
+スライドは資産です。しかし「3年前のスライドを再利用したら、当時のマクロと今のマクロが衝突して壊れた」——これは長生きした Beamer ライブラリの宿命でした。
+
+TeXFlux では **1 ファイル = 1 モジュール**です。
+
+```text
+% quiz.tfx — 独立したコンテンツモジュール
+!macroimport{style-v2.tfxm}
+!flag{answers}{off}
+
+@block{問題}: |
+    テールレイテンシの目標値は？
+    !when{answers}: |
+        \textbf{答え:} p99 で 150 ms
+```
+
+```text
+% main.tfx — 取り込む側
+!flag{handout}{on}
+
+!import{quiz.tfx}                      % 呼び出し先の既定値のまま
+!import{quiz.tfx}(answers=on)          % フラグを明示的に上書き
+!import{quiz.tfx}(answers=$handout)    % 呼び出し側のフラグを転送
+```
+
+- **`.tfx`（コンテンツモジュール）** は、自分のフラグとマクロを解決し終えてから本文が挿入されます。ローカルなフラグ名・マクロ名は呼び出し側に一切漏れません。
+- **`.tfxm`（マクロモジュール）** は `!defmacro` だけを集めた純粋な定義ファイルです。`!macroimport` は**私的かつ非推移的**——`A.tfxm` が内部で使っているマクロは、`A.tfxm` を取り込んだ側からは見えません。
+- この 2 つの性質により、**古いスライドは古いマクロライブラリのまま、新しいスライドは新しいライブラリのまま、1 つの文書に共存できます**。
+- パスは常に**それを書いたファイルからの相対**で解決されるため、ディレクトリごと持ち運べます。
+- SyncTeX / `.tfxmap` は複数ソースに対応しており、生成された行は**それを実際に書いたファイル**に対応づきます。
+
+### 6. 🪶 外部依存ゼロ（Zero Dependencies）
 Python 3.11 以上の標準ライブラリのみで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
 
 ---
@@ -216,7 +247,7 @@ TeXFlux の文法は極めてシンプルです。**「3つの接頭辞」** と
 | :---: | :--- | :--- |
 | `\` | **TeX コマンド** | `\section{...}`, `\textbf{...}`, `\input{...}` などの TeX コマンド |
 | `@` | **構造コンテナ / 環境** | `@frame`, `@columns`, `@center`, `@{...}`（中括弧グループ） |
-| `!` | **TeXFlux 特殊機能** | `!items:`, `!when`, `!unless`, `!flag`, `!defmacro`, `!vpad`, `!off`, `!drop` |
+| `!` | **TeXFlux 特殊機能** | `!items:`, `!when`, `!unless`, `!flag`, `!defmacro`, `!import`, `!macroimport`, `!vpad`, `!off`, `!drop` |
 
 ※ 接頭辞のない行や数式行（`$ ... $`）は、**生の TeX（raw TeX）** としてそのまま透過されます。
 
@@ -394,6 +425,7 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 - [structured.tfx](examples/structured.tfx) : 複数引数（シーケンス）とリテラル中括弧グループ
 - [stacked-items.tfx](examples/stacked-items.tfx) : `>>` によるパイプライン合成とネストしたリスト
 - [macros.tfx](examples/macros.tfx) : 引数付きマクロ・可変長引数マクロ
+- [modules.tfx](examples/modules.tfx) : `!import` / `!macroimport` によるマルチソース構成とフラグ束縛
 - [content.tfx](examples/content.tfx) : 実際の学術研究発表スライド（1000行超の実践コード）
 
 ---
@@ -404,6 +436,7 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 
 - [TeXFlux DSL v1 利用者向け言語仕様書 (doc/dsl.md)](doc/dsl.md)（日本語）
 - [TeXFlux Normative Specification (texflux_tex_first_dsl_v1_spec.md)](texflux_tex_first_dsl_v1_spec.md)（規範的仕様書・英語）
+- [モジュールシステム詳細設計書 (doc/module-system.md)](doc/module-system.md)（日本語）
 
 ---
 

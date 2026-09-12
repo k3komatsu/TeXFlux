@@ -7,6 +7,7 @@ import string
 from typing import Final
 
 from .ast import (
+    BINDING_OPENER,
     GROUP_OPENERS,
     Argument,
     ArgumentLayout,
@@ -117,6 +118,30 @@ def scan_group(
                             return index + 1, text[start + 1 : index]
                 index += 1
             raise ParseError("unclosed optional group", span)
+
+        case "(":
+            # A binding list nests like an optional group, but only outside a
+            # balanced brace group, so a '{a,b}' value stays opaque.
+            paren_depth = 1
+            brace_depth = 0
+            index = start + 1
+            while index < len(text):
+                char = text[index]
+                if not is_escaped(text, index):
+                    if char == "{":
+                        brace_depth += 1
+                    elif char == "}":
+                        if brace_depth == 0:
+                            raise ParseError("mismatched group delimiter", span)
+                        brace_depth -= 1
+                    elif brace_depth == 0 and char == "(":
+                        paren_depth += 1
+                    elif brace_depth == 0 and char == ")":
+                        paren_depth -= 1
+                        if paren_depth == 0:
+                            return index + 1, text[start + 1 : index]
+                index += 1
+            raise ParseError("unclosed binding list", span)
 
         case _:
             raise ParseError("invalid group opener", span)
@@ -339,7 +364,28 @@ class HeaderScanner:
             group, position = self._inline_group(position)
             groups.append(group)
 
+        # Only a special carries a binding list, and only after its groups, so
+        # '(' stays ordinary text everywhere a command or environment reads it.
+        binding = None
+        if (
+            prefix == "!"
+            and position < self.end
+            and self.text[position] == BINDING_OPENER
+        ):
+            binding, position = self._inline_group(position)
+            groups.append(binding)
+
         if position < self.end and self.text[position] not in " :>":
+            if binding is not None and self.text[position] in GROUP_OPENERS:
+                raise self._error(
+                    "a special's '(...)' list must follow its groups",
+                    position,
+                )
+            if binding is not None and self.text[position] == BINDING_OPENER:
+                raise self._error(
+                    "a special accepts at most one '(...)' list",
+                    position,
+                )
             raise self._error(
                 "unexpected token after structural name or group",
                 position,

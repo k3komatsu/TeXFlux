@@ -75,6 +75,11 @@ The scanner treats group contents as opaque and balances:
 <...> overlay
 ~~~
 
+A `!` segment, and only a `!` segment, may carry one further group after all
+of these: a trailing `(...)` binding list, which `!import` reads (section 12).
+`(` opens no group anywhere else, so a command header, an environment name and
+raw TeX all read it as ordinary text.
+
 Only depth-zero trailing colon and space-separated >> are structural. Group
 internal colon, pipe, and >> remain raw text. Structural header trailing TeX
 comments are unsupported.
@@ -397,6 +402,10 @@ payload, supplied either by `': |'` or by the rest of a `>>` composition. A
 sequence suite, missing payload, or invalid group shape for either construct is
 a validation error.
 
+`!import` and `!macroimport` are module constructs and are defined in section
+12. They are built-in names, so neither may be redefined by `!defmacro`, and
+both are resolved by the compiler session rather than by a special handler.
+
 The old !block, !arg, and !body constructs are removed and are not aliases.
 
 ## 10. Source macros
@@ -422,7 +431,9 @@ lines, remain ordinary content.
 
 Definitions are collected from the top level only. A `!defmacro` anywhere else,
 including inside another macro's template, is a validation error, so macros
-cannot be defined dynamically. Every definition is collected before any call is
+cannot be defined dynamically. A template may not contain `!import` or
+`!macroimport` either, so content dependency discovery never depends on macro
+expansion. Every definition is collected before any call is
 expanded, which makes forward references valid:
 
 ~~~text
@@ -634,9 +645,14 @@ unreported inside one.
 
 What a dropped payload must still satisfy is every rule checked before
 conditionals are resolved. Its syntax must parse; `!flag` must be a top-level
-statement; and the two stack-form rules of section 10 hold, so `!defmacro` may
-not be a `>>` segment and `!each` must own its `': |'` suite. Those three are
-the complete list.
+statement; `!macroimport` must be one too, and may not be a `>>` segment; and
+the template rules of section 10 hold, so `!defmacro` may not be a `>>`
+segment, `!each` must own its `': |'` suite, and a template may contain
+neither `!import` nor `!macroimport`. Those four are the complete list.
+
+Every one of them is a purely syntactic question about where a line is
+written, and none of them opens a file. Content that no longer compiles, and a
+dependency that no longer exists, can both still be disabled.
 
 A conditional keeps or drops statements, not arguments. A sequence entry whose
 value is dropped remains an entry, and renders as an empty argument:
@@ -651,16 +667,190 @@ renders `\cmd{}{tail}` while `draft` is off. An `!items` entry payload is raw
 item text, so no `!` construct -- a conditional included -- is read inside one;
 a conditional list is written by wrapping the whole `!items`.
 
-## 12. Normalization and renderer boundary
+## 12. Modules
 
-The compiler pipeline is:
+One file is one module. A `.tfx` file is a content module and a `.tfxm` file
+is a macro-definition module. Two different constructs compose them, and they
+are never collapsed into one generic import.
+
+~~~text
+!macroimport{layout.tfxm}   macro namespace dependency; produces no TeX
+!import{slide.tfx}          content dependency; produces canonical AST
+~~~
+
+### 12.1 Content modules
+
+A `.tfx` file may state raw TeX, structural syntax, `!flag`, `!defmacro`,
+`!macroimport`, `!import`, conditionals, and ordinary content. `!import`
+compiles it as one independent module instance and splices the canonical AST
+it produces at the import site. The callee's local flags and macro names never
+enter the caller's tables, so two modules may each declare `draft` or define
+`!box` without colliding.
+
+Parsing is cached by canonical path identity, but every content import is a
+distinct instance, so importing one module twice produces its content twice.
+
+### 12.2 Macro modules
+
+A `.tfxm` file may state only `!defmacro`, `!macroimport`, comment lines and
+blank lines. `!flag`, `!when`, `!unless` and `!import` are errors anywhere in
+one, template interiors included: a macro module declares no flags, so a
+conditional inside one would read the flags of whichever content module
+instantiated it. This purity is what makes macro imports order-insensitive,
+cacheable, and safe in a cyclic graph.
+
+A macro module publicly exposes exactly the macros it defines itself. Macros
+it obtained through `!macroimport` are private implementation dependencies and
+are not re-exported. No `public`, `private` or `export` syntax exists.
+
+A macro module must be self-contained with respect to its own macro-import
+closure: a name used in one of its templates must be a template construct, a
+built-in special, a macro it defines, or a macro it imports. A caller's
+unrelated namespace never makes an otherwise invalid macro module valid.
+
+### 12.3 !macroimport
+
+~~~text
+!macroimport{style-v2.tfxm}
+~~~
+
+It takes exactly one required inline group, no suite, and no binding list. It
+is a top-level declaration and may not be a `>>` segment, for the same reason
+`!flag` may not: a macro namespace that depended on a build flag would defeat
+lexical scope. Importing the same module twice in one file is an error.
+
+Macro definitions have lexical scope. A template's names resolve in the module
+that defines it, never in the caller's. So given `main.tfx` importing `A.tfxm`
+which imports `core.tfxm`, `A.tfxm`'s macros may call `core.tfxm`'s, while
+`main.tfx` sees only what `A.tfxm` defines. Diamond imports are therefore
+isolated by construction, and two content modules may depend on different
+versions of the same macro library in one document.
+
+Because scope is lexical, a macro's identity is its defining module together
+with its name. Recursion detection follows that identity, so a template
+calling a macro that some other module happens to give the same name is not a
+cycle. An expansion chain is spelled with bare names while it stays inside one
+module, and as `name@file` once it crosses one, because a bare name no longer
+identifies a macro there.
+
+Shadowing is not a rule. A duplicate visible macro name is an error, whether
+it arises between two imports, between an import and a local definition, or
+against a reserved or built-in special name. There is no "last import wins".
+
+Cyclic macro imports are allowed while `.tfxm` stays pure. The compiler must
+not traverse such a graph indefinitely.
+
+### 12.4 !import
+
+~~~text
+!import{slide.tfx}
+!import{quiz.tfx}(answers=on)
+!import{quiz.tfx}(answers=$answers, memo=off)
+~~~
+
+It takes exactly one required inline group naming the path, and at most one
+trailing `(...)` binding list. It produces content, so it takes no suite and
+cannot wrap a `>>` payload; `@center >> !import{a.tfx}` and
+`@{} >> !import{a.tfx}` are the ways to put imported content inside a
+container or a TeX group.
+
+`!import` is valid wherever a statement is: at the top level, inside a block
+suite, inside a sequence value, and inside a conditional payload. A dropped
+payload's import is never compiled and its file is never opened, so content
+dependency graphs may be build-configuration dependent.
+
+Writing `!import` inside a macro template is an error, so content dependency
+discovery never depends on macro expansion. An `!import` passed to a macro as
+a value is valid; a template that references that value twice produces two
+module instances.
+
+Content imports may repeat, but a cycle is an error. Detection operates on the
+active content-import stack, not on "has this path ever been seen".
+
+### 12.5 Import flag bindings
+
+A binding list configures the imported module's declared flags:
+
+~~~text
+binding-list  ::= SP* binding (SP* "," SP* binding)* SP*
+binding       ::= flag-name SP* "=" SP* binding-value
+binding-value ::= "on" | "off" | "$" flag-name
+~~~
+
+`$name` forwards the caller's flag of that name. No expression language is
+introduced. An unbound callee flag keeps the callee's own default; there is no
+same-name inheritance, so cross-module configuration is always explicit. A
+`--flag` override configures the build and so reaches the root module only.
+
+An empty binding list, a malformed binding, a callee flag no declaration
+matches, a `$name` the caller does not declare, and the same callee flag bound
+twice are all errors.
+
+### 12.6 Path resolution
+
+Both imports resolve relative to the file that writes them, never to the
+parent that imported that file, which is what makes a reusable component
+portable. Paths are written with `/`, must be relative, and must carry the
+extension their construct requires. A module's identity, for the parse cache,
+the macro-module graph, cycle detection and dependency reporting, is a
+normalized filesystem path.
+
+### 12.7 Compilation order
+
+~~~text
+ 1. macro, flag and macro-import form validation
+ 2. pure >> desugaring
+ 3. build flag collection, then import bindings or --flag overrides
+ 4. macro import resolution and lexical environment construction
+ 5. source macro collection
+ 6. conditional resolution and macro expansion
+ 7. content import resolution, recursively
+ 8. value consumption and special expansion
+ 9. canonical AST validation
+10. renderer
+~~~
+
+Module resolution is a frontend concern. No module construct reaches
+normalization or the renderer, which continues to know only canonical AST.
+
+### 12.8 Diagnostics and provenance
+
+Imported canonical AST keeps the callee's source spans. Generated TeX
+therefore maps back to the file that actually wrote each line, and imported
+content is never retargeted onto the caller's `!import` line. A `.tfxmap`
+accordingly carries several sources; a document without imports still carries
+exactly one.
+
+An error raised inside an imported module keeps its own span, so inverse
+search reaches the line that is broken, and names the import site in its
+message. Nested imports accumulate those sites innermost first.
+
+An error inside a macro module names its `!macroimport` sites the same way,
+because a macro module is shared between documents and which import reached
+it is what locates the problem. Each macro module records the one import that
+first named it, so those records form a tree and the walk up it terminates. A
+level written at the error's own line contributes nothing and is stepped over,
+but does not end the walk: how that file itself entered the build is still
+part of the answer. Where one module is named by several imports, the
+recorded site is the shallowest, which is not necessarily the earliest in
+reading order.
+
+`ModuleError` covers import forms, path resolution, cycles, macro module
+purity and self-containment, macro name conflicts between modules, and flag
+bindings.
+
+## 13. Normalization and renderer boundary
+
+The compiler pipeline is, with the module steps section 12.7 states in full:
 
 ~~~text
 physical lines
  -> syntax AST
  -> pure >> desugaring
  -> build flag collection
+ -> macro import resolution
  -> source macro collection, conditional resolution and expansion
+ -> content import resolution
  -> value consumption and special expansion
  -> canonical AST validation
  -> renderer
@@ -676,7 +866,7 @@ No macro definition, call, parameter reference, `!each`, flag declaration or
 conditional survives expansion, so the renderer knows nothing about macros or
 build flags either.
 
-## 13. Argument brace placement
+## 14. Argument brace placement
 
 A sequence value's own shape decides where its generated braces go. A value
 confined to one line renders with braces that hug it; a value that needs more
@@ -736,7 +926,7 @@ unescaped `%`, TeXFlux warns and leaves the brace hugged, because moving it
 would require rewriting the author's TeX. An escaped `\%` is not a comment.
 Warnings name the value's span and never fail the compilation.
 
-## 14. Source spans and SyncTeX
+## 15. Source spans and SyncTeX
 
 Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
@@ -763,14 +953,22 @@ the call site.
 Rendering records generated spans and source spans. Source-map serialization and
 SyncTeX remapping remain part of v1 and must not be removed or bypassed.
 
-## 15. Errors and non-goals
+A `.tfxmap` records one entry per source file the compilation read: the root
+always, and every imported module that contributed at least one mapping. The
+root is id 0, so a document without imports serializes exactly what it did
+before modules existed.
+
+## 16. Errors and non-goals
 
 ParseError covers malformed physical structure, headers, groups, suffixes,
 indentation, and sequence markers. ValidationError covers invalid value
 consumption, special/container contracts, and macro definition contracts.
 DirectiveError covers unknown specials. MacroExpansionError covers macro
-expansion: arity, unbound or misused parameters, shadowing, and recursion. All
-diagnostics point to the originating span. FlagError is the one exception: it
+expansion: arity, unbound or misused parameters, shadowing, and recursion.
+ModuleError covers the module system: import forms, path resolution, content
+import cycles, macro module purity and self-containment, macro name conflicts
+between modules, and import flag bindings. All diagnostics point to the
+originating span. FlagError is the one exception: it
 covers a command-line override that no declaration matches, which has no span
 in the document to point at.
 
@@ -791,12 +989,17 @@ v1 does not include:
 - optional, default, or keyword macro parameters, and macro recursion
 - YAML/Python embedded authoring
 - implicit extension loading
+- a package registry, version resolution, lockfiles, or remote module fetching
+- public/private/export declarations, qualified macro names, or re-exports
+- module parameters beyond the declared on/off build flags, dynamic import
+  paths, and imports generated from macro templates
+- automatic isolation of raw TeX macros across module boundaries
 - renderer backend frameworks
 - runtime dependencies
 - structural trailing comments
 - block-scalar suffixes other than : |
 
-## 16. Conceptual grammar
+## 17. Conceptual grammar
 
 ~~~text
 document          ::= statement*
@@ -826,7 +1029,7 @@ brace-container-segment
                   ::= "@{" balanced-raw-tex "}"
 transparent-container-segment
                   ::= "@"
-special-segment  ::= "!" special-name group*
+special-segment  ::= "!" special-name group* binding-list?
 
 block-suffix      ::= ":" SP* "|"
 
@@ -834,6 +1037,11 @@ flag-declaration  ::= "!flag" "{" flag-name "}" "{" ("on" | "off") "}"
 combinator        ::= "[" ("and" | "or") "]"
 conditional       ::= ("!when" | "!unless") combinator? "{" flag-name "}"+
                       (block-suffix | SP+ ">>" SP+ segment ...)
+
+macro-import      ::= "!macroimport" "{" module-path "}"
+content-import    ::= "!import" "{" module-path "}" binding-list?
+binding-list      ::= "(" SP* binding (SP* "," SP* binding)* SP* ")"
+binding           ::= flag-name SP* "=" SP* ("on" | "off" | "$" flag-name)
 
 macro-definition  ::= "!defmacro" "{" macro-name "}" parameter* block-suffix
 parameter         ::= "{" ("..." )? parameter-name "}"
@@ -848,8 +1056,8 @@ the handwritten parser. A sequence-block continues until the next sibling '-'.
 Its normative distinctions are the explicit '-' block sequence, the single
 : | block, and suffix-less closed values.
 
-## 17. Executable examples
+## 18. Executable examples
 
 Exact-output examples live in [tests/golden](tests/golden) and
 [examples](examples). [tests/test_golden.py](tests/test_golden.py) checks their
-output byte for byte. Argument-brace layout is defined in section 13.
+output byte for byte. Argument-brace layout is defined in section 14.

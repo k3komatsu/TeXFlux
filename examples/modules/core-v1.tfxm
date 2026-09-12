@@ -1,0 +1,2 @@
+!defmacro{emphasis}{body}: |
+    @{\color{blue}} >> !param{body}

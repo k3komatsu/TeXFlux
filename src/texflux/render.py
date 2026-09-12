@@ -14,6 +14,7 @@ from .ast import (
     CanonicalNode,
     Document,
     GenericInvocation,
+    GroupKind,
     Item,
     RawTex,
     SourcePosition,
@@ -60,9 +61,22 @@ class RenderedDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class LoadedSource:
+    """One source file a compilation read, for the source map to record."""
+
+    #: The spelling every ``SourceSpan`` of this file carries.
+    file: str
+    #: Its absolute filesystem path, which the map stores and digests.
+    path: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class CompilationResult:
     text: str
     rendered: RenderedDocument
+    #: Every module the compilation read, the root first.
+    sources: tuple[LoadedSource, ...] = ()
 
 
 class MappedEmitter:
@@ -162,6 +176,9 @@ class MappedEmitter:
 
 
 def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
+    if argument.kind is GroupKind.BINDING:
+        # A binding list configures an import; it is never TeX to emit.
+        raise TypeError("renderer received a binding list")
     if (
         argument.layout is not ArgumentLayout.INLINE
         or not isinstance(argument.value, str)
@@ -356,6 +373,7 @@ def render(document: Document, *, source_comments: bool = False) -> str:
 __all__ = [
     "CompilationResult",
     "GeneratedSpan",
+    "LoadedSource",
     "MappedEmitter",
     "RenderRole",
     "RenderWarning",
