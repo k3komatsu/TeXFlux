@@ -29,11 +29,7 @@ ITEMS = """!defmacro{items_simple}{...items}: |
 
 
 def collect(source, filename="m.tfx"):
-    document, macros = collect_macros(
-        desugar(parse(source, filename)),
-        lambda name: BUILTIN_DIRECTIVES.lookup(name) is not None,
-    )
-    return document, macros
+    return collect_macros(desugar(parse(source, filename)), BUILTIN_DIRECTIVES)
 
 
 class MacroDefinitionTests(unittest.TestCase):

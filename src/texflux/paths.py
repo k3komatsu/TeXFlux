@@ -23,10 +23,10 @@ def same_path(first: PathLike, second: PathLike) -> bool:
     """Check whether two paths name the same file."""
 
     try:
-        if os.path.exists(first) and os.path.exists(second):
-            if os.path.samefile(first, second):
-                return True
+        if os.path.samefile(first, second):
+            return True
     except OSError:
+        # At least one path does not exist yet, so compare their spellings.
         pass
     return normalized_path(first) == normalized_path(second)
 

@@ -187,11 +187,7 @@ header groups are emitted first.
 renders as:
 
 ~~~tex
-\foo{COMPACT}{
-A
-}{
-B
-}
+\foo{COMPACT}{A}{B}
 ~~~
 
 A block suite produces one long required argument:
@@ -252,11 +248,7 @@ arguments and the final value becomes the body:
 renders as:
 
 ~~~tex
-\begin{myenv}{
-ARG1
-}{
-ARG2
-}
+\begin{myenv}{ARG1}{ARG2}
 BODY
 \end{myenv}
 ~~~
@@ -806,11 +798,7 @@ Its normative distinctions are the explicit '-' block sequence, the single
 ~~~
 
 ~~~tex
-\foo{
-A
-}{
-B
-}
+\foo{A}{B}
 ~~~
 
 ~~~text
@@ -838,11 +826,7 @@ B
 ~~~
 
 ~~~tex
-\begin{myenv}{
-ARG1
-}{
-ARG2
-}
+\begin{myenv}{ARG1}{ARG2}
 BODY1
 BODY2
 \end{myenv}

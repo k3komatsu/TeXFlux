@@ -13,7 +13,7 @@ already carry from the call site.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Container, Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
 import re
@@ -40,7 +40,7 @@ from .flags import (
     Flags,
     evaluate_conditional,
 )
-from .syntax import demand_text, required_text, sequence_entries, walk
+from .syntax import demand_text, required_text, sequence_entries, stacks, walk
 
 
 class Reserved(StrEnum):
@@ -52,7 +52,7 @@ class Reserved(StrEnum):
 
 
 #: Reserved names may be neither redefined nor used as macro names.
-RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
+_RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
 
 # A macro must be callable as '!name', so it uses the special-name grammar.
 _MACRO_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
@@ -61,10 +61,6 @@ _REST_PREFIX: Final = "..."
 
 #: One bound macro value: the syntax nodes it contributes where referenced.
 Value: TypeAlias = tuple[SyntaxNode, ...]
-
-#: Whether a name is already taken by a built-in special.
-IsBuiltin: TypeAlias = Callable[[str], bool]
-
 
 @dataclass(frozen=True, slots=True)
 class MacroParameter:
@@ -85,8 +81,7 @@ class MacroDefinition:
     def rest(self) -> MacroParameter | None:
         """The trailing rest parameter, when this macro is variadic."""
 
-        last = self.parameters[-1] if self.parameters else None
-        return last if last is not None and last.rest else None
+        return next((p for p in self.parameters[-1:] if p.rest), None)
 
     @property
     def required(self) -> int:
@@ -136,7 +131,7 @@ def _parameters(groups: tuple[Argument, ...]) -> tuple[MacroParameter, ...]:
 
 def _definition(
     node: SpecialInvocation,
-    is_builtin: IsBuiltin,
+    builtins: Container[str],
     defined: Mapping[str, MacroDefinition],
 ) -> MacroDefinition:
     if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
@@ -151,9 +146,9 @@ def _definition(
     name = demand_text(name_group, "!defmacro name")
     if _MACRO_NAME_RE.fullmatch(name) is None:
         raise ValidationError(f"invalid macro name '{name}'", name_group.span)
-    if name in RESERVED_NAMES:
+    if name in _RESERVED_NAMES:
         raise ValidationError(f"'!{name}' is reserved by TeXFlux", name_group.span)
-    if is_builtin(name):
+    if name in builtins:
         raise ValidationError(
             f"'!{name}' is a built-in special and cannot be redefined",
             name_group.span,
@@ -191,10 +186,8 @@ def validate_macro_forms(document: Document) -> None:
     real template and stays legal.
     """
 
-    for node in walk(document.body):
-        if not isinstance(node, Stack):
-            continue
-        for index, segment in enumerate(node.segments):
+    for stack in stacks(document.body):
+        for index, segment in enumerate(stack.segments):
             if not isinstance(segment, SpecialInvocation):
                 continue
             if segment.name == Reserved.DEFINE:
@@ -206,8 +199,8 @@ def validate_macro_forms(document: Document) -> None:
                     segment.span,
                 )
             writes_own_suite = (
-                index == len(node.segments) - 1
-                and node.suite_mode is SuiteMode.BLOCK
+                index == len(stack.segments) - 1
+                and stack.suite_mode is SuiteMode.BLOCK
             )
             if segment.name == Reserved.EACH and not writes_own_suite:
                 raise ValidationError(
@@ -218,7 +211,7 @@ def validate_macro_forms(document: Document) -> None:
 
 def collect_macros(
     document: Document,
-    is_builtin: IsBuiltin,
+    builtins: Container[str],
 ) -> tuple[Document, dict[str, MacroDefinition]]:
     """Strip top-level ``!defmacro`` nodes and validate their signatures.
 
@@ -230,7 +223,7 @@ def collect_macros(
     nodes: list[Node] = []
     for node in document.body.nodes:
         if isinstance(node, SpecialInvocation) and node.name == Reserved.DEFINE:
-            definition = _definition(node, is_builtin, macros)
+            definition = _definition(node, builtins, macros)
             macros[definition.name] = definition
             continue
         nodes.append(node)
@@ -381,16 +374,26 @@ class _Expander:
             demand_text(group, f"{label} name") for group in node.groups
         )
 
+    def _template_frame(
+        self,
+        node: SpecialInvocation,
+        frame: _Frame | None,
+    ) -> _Frame:
+        """The frame a template-only construct needs to read its bindings."""
+
+        if frame is None:
+            raise MacroExpansionError(
+                f"!{node.name} is only valid inside a macro template",
+                node.span,
+            )
+        return frame
+
     def _param(
         self,
         node: SpecialInvocation,
         frame: _Frame | None,
     ) -> tuple[Node, ...]:
-        if frame is None:
-            raise MacroExpansionError(
-                "!param is only valid inside a macro template",
-                node.span,
-            )
+        frame = self._template_frame(node, frame)
         if node.suite is not None:
             raise ValidationError("!param does not accept a suite", node.span)
         (name,) = self._single_name(node, "!param", 1)
@@ -412,11 +415,7 @@ class _Expander:
         node: SpecialInvocation,
         frame: _Frame | None,
     ) -> tuple[Node, ...]:
-        if frame is None:
-            raise MacroExpansionError(
-                "!each is only valid inside a macro template",
-                node.span,
-            )
+        frame = self._template_frame(node, frame)
         if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError("!each requires a ': |' template suite", node.span)
         sequence_name, item_name = self._single_name(node, "!each", 2)
@@ -573,10 +572,8 @@ def expand_macros(
 
 
 __all__ = [
-    "IsBuiltin",
     "MacroDefinition",
     "MacroParameter",
-    "RESERVED_NAMES",
     "Reserved",
     "Value",
     "collect_macros",

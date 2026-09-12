@@ -376,11 +376,11 @@ class CompileTests(unittest.TestCase):
         )
 
     def test_custom_handler_remains_ast_to_ast(self):
-        def result(node, _context):
+        def result(node, _registry):
             return (GenericInvocation("infobox", (), node.suite, node.span),)
 
         registry = BUILTIN_DIRECTIVES.copy()
-        registry.register("result", result)
+        registry["result"] = result
         document = normalize(parse("!result: |\n    \\foo{A}\n"), registry)
         self.assertEqual(
             render(document),
@@ -388,11 +388,11 @@ class CompileTests(unittest.TestCase):
         )
 
     def test_custom_handler_must_return_canonical_tuple(self):
-        def invalid(_node, _context):
+        def invalid(_node, _registry):
             return "generated TeX"
 
         registry = BUILTIN_DIRECTIVES.copy()
-        registry.register("invalid", invalid)
+        registry["invalid"] = invalid
         with self.assertRaises(TypeError):
             normalize(parse("!invalid\n"), registry)
 

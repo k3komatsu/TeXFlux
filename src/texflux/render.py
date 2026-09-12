@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from .syntax import is_escaped
+from .syntax import blank, is_escaped
 from .ast import (
     Argument,
     ArgumentLayout,
@@ -203,12 +203,6 @@ def _comment_index(line: str) -> int:
     return -1
 
 
-def _blank_line(node: CanonicalNode) -> bool:
-    """A rendered blank line, which carries no provenance worth annotating."""
-
-    return isinstance(node, RawTex) and not node.text
-
-
 def _source_comment(emitter: MappedEmitter, node: CanonicalNode) -> None:
     span = node.span
     emitter.line(
@@ -224,7 +218,7 @@ def _render_block(
     source_comments: bool,
 ) -> None:
     for node in block.nodes:
-        if source_comments and not _blank_line(node):
+        if source_comments and not blank(node):
             _source_comment(emitter, node)
 
         match node:
@@ -386,9 +380,9 @@ def render(document: Document, *, source_comments: bool = False) -> str:
 
 __all__ = [
     "CompilationResult",
-    "RenderRole",
     "GeneratedSpan",
     "MappedEmitter",
+    "RenderRole",
     "RenderWarning",
     "RenderedDocument",
     "RenderedFragment",

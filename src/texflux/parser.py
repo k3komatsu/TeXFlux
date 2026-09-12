@@ -234,17 +234,12 @@ class HeaderScanner:
     def _stack_separator(self, position: int, *, spaced: bool) -> int:
         """Scan one ``>>`` separator and return the next segment's offset."""
 
-        if not spaced:
+        if not spaced or self.text[position + 2 : position + 3] != " ":
             raise self._error(
                 "stack separator requires surrounding spaces",
                 position,
             )
         position += 2
-        if position >= self.end or self.text[position] != " ":
-            raise self._error(
-                "stack separator requires surrounding spaces",
-                position,
-            )
         self.saw_structure = True
         position = self._skip_spaces(position)
         if position == self.end:
@@ -484,11 +479,7 @@ class _Parser:
             first = rest[extra : extra + 1]
 
             if raw_suite:
-                raw_text = line.text[base:]
-                nodes.append(
-                    RawTex(raw_text, self._line_span(line, base + 1, raw_text))
-                )
-                self.index += 1
+                self._emit_raw(nodes, line, base)
                 continue
 
             if first == "@" and rest[extra : extra + 2] == "@@":
@@ -500,25 +491,15 @@ class _Parser:
                 continue
 
             if first in {"@", "!"} and line.indent != base:
-                raise ParseError(
-                    "invalid structural indentation",
-                    self._line_span(line, line.indent + 1),
-                )
+                raise self._indent_error(line)
 
             if line.indent != base:
                 if first == "\\" and self._scan_command_header(
                     line,
                     line.indent,
                 ) is not None:
-                    raise ParseError(
-                        "invalid structural indentation",
-                        self._line_span(line, line.indent + 1),
-                    )
-                raw_text = line.text[base:]
-                nodes.append(
-                    RawTex(raw_text, self._line_span(line, base + 1, raw_text))
-                )
-                self.index += 1
+                    raise self._indent_error(line)
+                self._emit_raw(nodes, line, base)
                 continue
 
             if first in {"@", "!"}:
@@ -531,13 +512,27 @@ class _Parser:
                     nodes.append(structural)
                     continue
 
-            raw_text = line.text[base:]
-            nodes.append(
-                RawTex(raw_text, self._line_span(line, base + 1, raw_text))
-            )
-            self.index += 1
+            self._emit_raw(nodes, line, base)
 
         return Block(tuple(nodes), _block_span(boundary, nodes))
+
+    def _emit_raw(
+        self,
+        nodes: list[Node],
+        line: _PhysicalLine,
+        base: int,
+    ) -> None:
+        """Append one raw TeX line, dedented to the suite base, and advance."""
+
+        raw_text = line.text[base:]
+        nodes.append(RawTex(raw_text, self._line_span(line, base + 1, raw_text)))
+        self.index += 1
+
+    def _indent_error(self, line: _PhysicalLine) -> ParseError:
+        return ParseError(
+            "invalid structural indentation",
+            self._line_span(line, line.indent + 1),
+        )
 
     def _scan_command_header(
         self,
@@ -566,10 +561,7 @@ class _Parser:
 
     def _directive(self, line: _PhysicalLine, base: int):
         if line.indent != base:
-            raise ParseError(
-                "invalid structural indentation",
-                self._line_span(line, line.indent + 1),
-            )
+            raise self._indent_error(line)
         header_span = self._header_span(line, base)
         result = HeaderScanner(line.text[base:], span=header_span).scan()
         return self._directive_result(base, result, header_span)

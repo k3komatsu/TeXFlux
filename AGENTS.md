@@ -7,10 +7,8 @@ preprocessor that removes structural LaTeX/Beamer boilerplate without
 replacing TeX semantics.
 
 There is no legacy compatibility target. The normative language definition is
-texflux_tex_first_dsl_v1_spec.md; the TeX-first DSL implementation plan is
-plan.md, and the approved source-map/SyncTeX expansion plan is
-texflux_source_map_synctex_plan.md. Read the relevant plans completely before
-changing the DSL.
+texflux_tex_first_dsl_v1_spec.md, and doc/dsl.md is its Japanese reference.
+Read the affected sections completely before changing the DSL.
 
 ## Source-of-truth rules
 
@@ -136,8 +134,7 @@ has stopped.
 
 ## Implementation workflow
 
-Work test-first in the phases in plan.md and, for source-map/SyncTeX work,
-texflux_source_map_synctex_plan.md:
+Work test-first:
 
 1. Read the affected specification sections and existing tests.
 2. Add the smallest failing unit or exact-output golden test.
@@ -146,8 +143,8 @@ texflux_source_map_synctex_plan.md:
 5. Confirm that no ParsedInvocation, SpecialInvocation, or Stack reaches the
    renderer.
 
-Use apply_patch for manual edits. Preserve unrelated user changes. Do not add
-dependencies when the standard library is sufficient.
+Preserve unrelated user changes. Do not add dependencies when the standard
+library is sufficient.
 
 Baseline verification:
 

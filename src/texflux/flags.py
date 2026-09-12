@@ -30,7 +30,7 @@ from .ast import (
     Stack,
 )
 from .errors import FlagError, ValidationError
-from .syntax import demand_text, optional_text, walk
+from .syntax import demand_text, optional_text, stacks, walk
 
 
 class Conditional(StrEnum):
@@ -53,7 +53,7 @@ class Combinator(StrEnum):
 CONDITIONAL_NAMES: Final = frozenset(Conditional)
 
 #: The modifiers a conditional accepts, spelled as an optional group.
-COMBINATORS: Final = frozenset(Combinator)
+_COMBINATORS: Final = frozenset(Combinator)
 
 # A flag is written in a group and on a command line, so it stays identifier
 # shaped with the hyphen a command line tends to want.
@@ -90,7 +90,7 @@ def _combinator(
     if text is None:
         return None, node.groups
     modifier = text.strip()
-    if modifier not in COMBINATORS:
+    if modifier not in _COMBINATORS:
         raise ValidationError(
             f"!{node.name} modifier must be '[and]' or '[or]', "
             f"got '[{modifier}]'",
@@ -157,10 +157,8 @@ def validate_flag_forms(document: Document) -> None:
     be, so this runs on the syntax AST while the stack is still visible.
     """
 
-    for node in walk(document.body):
-        if not isinstance(node, Stack):
-            continue
-        for segment in node.segments:
+    for stack in stacks(document.body):
+        for segment in stack.segments:
             if (
                 isinstance(segment, SpecialInvocation)
                 and segment.name == Conditional.DECLARE
@@ -270,11 +268,10 @@ def collect_flags(
 
 
 __all__ = [
-    "COMBINATORS",
     "CONDITIONAL_NAMES",
-    "FLAG_VALUES",
     "Combinator",
     "Conditional",
+    "FLAG_VALUES",
     "Flags",
     "collect_flags",
     "evaluate_conditional",

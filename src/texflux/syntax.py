@@ -35,7 +35,7 @@ def is_escaped(text: str, index: int) -> bool:
     return backslashes % 2 == 1
 
 
-def _blank(node: Node) -> bool:
+def blank(node: Node) -> bool:
     """Whether a node is a blank source line rather than content."""
 
     return isinstance(node, RawTex) and not node.text
@@ -106,10 +106,16 @@ def walk(block: Block) -> Iterator[Node]:
                 pass
 
 
+def stacks(block: Block) -> Iterator[Stack]:
+    """Yield every ``>>`` stack under ``block``, before desugaring removes it."""
+
+    return (node for node in walk(block) if isinstance(node, Stack))
+
+
 def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
     """Read the ``-`` value entries of a sequence suite, ignoring blank lines."""
 
-    entries = tuple(child for child in suite.nodes if not _blank(child))
+    entries = tuple(child for child in suite.nodes if not blank(child))
     for child in entries:
         if not isinstance(child, SequenceEntry):
             raise ValidationError(
@@ -120,10 +126,12 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
 
 
 __all__ = [
+    "blank",
     "demand_text",
     "is_escaped",
     "optional_text",
     "required_text",
     "sequence_entries",
+    "stacks",
     "walk",
 ]

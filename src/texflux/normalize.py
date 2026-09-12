@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
-from typing import Self, TypeAlias
+from collections.abc import Callable
+from dataclasses import replace
+from typing import Final, TypeAlias
 
 from .ast import (
     Argument,
@@ -31,34 +31,16 @@ from .errors import DirectiveError, ParseError, ValidationError
 from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
-from .syntax import required_text, sequence_entries
+from .syntax import blank, required_text, sequence_entries
 
 
-@dataclass(frozen=True, slots=True)
-class TransformContext:
-    registry: "DirectiveRegistry"
-
+#: The deliberately small in-process special registry: one handler per name.
+DirectiveRegistry: TypeAlias = dict[str, "SpecialHandler"]
 
 SpecialHandler: TypeAlias = Callable[
-    [SpecialInvocation, TransformContext],
+    [SpecialInvocation, DirectiveRegistry],
     tuple[CanonicalNode, ...],
 ]
-
-
-class DirectiveRegistry:
-    """The deliberately small in-process special registry."""
-
-    def __init__(self, handlers: Mapping[str, SpecialHandler] | None = None):
-        self._handlers: dict[str, SpecialHandler] = dict(handlers or {})
-
-    def copy(self) -> Self:
-        return type(self)(self._handlers)
-
-    def register(self, name: str, handler: SpecialHandler) -> None:
-        self._handlers[name] = handler
-
-    def lookup(self, name: str) -> SpecialHandler | None:
-        return self._handlers.get(name)
 
 
 _CANONICAL_TYPES = (RawTex, GenericInvocation, BraceGroup, Item)
@@ -137,38 +119,38 @@ def _desugar_argument(argument: Argument) -> Argument:
     return argument
 
 
-def _normalize_block(block: Block, context: TransformContext) -> Block:
+def _normalize_block(block: Block, registry: DirectiveRegistry) -> Block:
     nodes: list[CanonicalNode] = []
     for node in block.nodes:
-        nodes.extend(_normalize_node(node, context))
+        nodes.extend(_normalize_node(node, registry))
     return Block(tuple(nodes), block.span)
 
 
 def _normalize_node(
     node: Node,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[CanonicalNode, ...]:
     match node:
         case RawTex():
             return (node,)
         case ParsedInvocation():
-            return _normalize_invocation(node, context)
+            return _normalize_invocation(node, registry)
         case SpecialInvocation():
-            return _normalize_special(node, context)
+            return _normalize_special(node, registry)
         case SequenceEntry():
             raise ValidationError(
                 "sequence entries are only valid inside a ':' suite",
                 node.span,
             )
         case GenericInvocation() | BraceGroup() | Item():
-            return (_normalize_canonical(node, context),)
+            return (_normalize_canonical(node, registry),)
         case _:
             raise TypeError(f"unsupported AST node: {type(node).__name__}")
 
 
 def _normalize_canonical(
     node: CanonicalNode,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> CanonicalNode:
     match node:
         case RawTex():
@@ -176,35 +158,32 @@ def _normalize_canonical(
         case GenericInvocation(arguments=arguments, body=body):
             return replace(
                 node,
-                arguments=_header_arguments(arguments, context),
-                body=None if body is None else _normalize_block(body, context),
+                arguments=_header_arguments(arguments, registry),
+                body=None if body is None else _normalize_block(body, registry),
             )
         case BraceGroup(body=body):
-            return replace(node, body=_normalize_block(body, context))
+            return replace(node, body=_normalize_block(body, registry))
         case Item(continuation=continuation):
             return replace(
                 node,
-                continuation=_normalize_block(continuation, context),
+                continuation=_normalize_block(continuation, registry),
             )
         case _:
             raise TypeError(f"unsupported canonical node: {type(node).__name__}")
 
 
-def _normalize_argument(
-    argument: Argument,
-    context: TransformContext,
-) -> Argument:
-    value = argument.value
-    if isinstance(value, Block):
-        value = _normalize_block(value, context)
-    return replace(argument, value=value)
-
-
 def _header_arguments(
     arguments: tuple[Argument, ...],
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[Argument, ...]:
-    return tuple(_normalize_argument(argument, context) for argument in arguments)
+    """Normalize each header group, leaving inline raw text untouched."""
+
+    return tuple(
+        replace(group, value=_normalize_block(group.value, registry))
+        if isinstance(group.value, Block)
+        else group
+        for group in arguments
+    )
 
 
 def _suite_mode(
@@ -218,9 +197,9 @@ def _suite_mode(
 
 def _argument_from_entry(
     entry: SequenceEntry,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> Argument:
-    value = _normalize_block(entry.value, context)
+    value = _normalize_block(entry.value, registry)
     if _writes_own_braces(value):
         # The author placed both braces, so TeXFlux emits the text verbatim.
         return Argument(GroupKind.REQUIRED, value, ArgumentLayout.EXPLICIT, entry.span)
@@ -241,11 +220,7 @@ def _writes_own_braces(value: Block) -> bool:
     which shows up as a visible extra brace rather than as broken TeX.
     """
 
-    nodes = [
-        node
-        for node in value.nodes
-        if not (isinstance(node, RawTex) and not node.text)
-    ]
+    nodes = [node for node in value.nodes if not blank(node)]
     if not nodes or not all(isinstance(node, RawTex) for node in nodes):
         return False
     text = "\n".join(node.text for node in nodes).strip()
@@ -258,43 +233,43 @@ def _writes_own_braces(value: Block) -> bool:
     return end == len(text)
 
 
-def _sequence_body(suite: Block, context: TransformContext) -> Block:
+def _sequence_body(suite: Block, registry: DirectiveRegistry) -> Block:
     """Concatenate every ``-`` value of a sequence suite into one block."""
 
     nodes: list[CanonicalNode] = []
     for entry in sequence_entries(suite):
-        nodes.extend(_normalize_block(entry.value, context).nodes)
+        nodes.extend(_normalize_block(entry.value, registry).nodes)
     return Block(tuple(nodes), suite.span)
 
 
 def _container_body(
     node: ParsedInvocation,
     suite: Block,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> Block:
     """Flatten a container suite; either mode contributes one block value."""
 
     if _suite_mode(node) is SuiteMode.BLOCK:
-        return _normalize_block(suite, context)
-    return _sequence_body(suite, context)
+        return _normalize_block(suite, registry)
+    return _sequence_body(suite, registry)
 
 
 def _suite_arguments(
     node: ParsedInvocation,
     suite: Block,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[Argument, ...]:
     """Convert a command suite into its required block arguments."""
 
     if _suite_mode(node) is SuiteMode.SEQUENCE:
         return tuple(
-            _argument_from_entry(entry, context)
+            _argument_from_entry(entry, registry)
             for entry in sequence_entries(suite)
         )
     return (
         Argument(
             GroupKind.REQUIRED,
-            _normalize_block(suite, context),
+            _normalize_block(suite, registry),
             ArgumentLayout.BLOCK,
             node.suite_span or node.span,
         ),
@@ -305,12 +280,12 @@ def _normalize_environment(
     node: ParsedInvocation,
     arguments: tuple[Argument, ...],
     suite: Block,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> GenericInvocation:
     """A block suite is the body; a sequence suite ends with it."""
 
     if _suite_mode(node) is SuiteMode.BLOCK:
-        body = _normalize_block(suite, context)
+        body = _normalize_block(suite, registry)
     else:
         entries = sequence_entries(suite)
         if not entries:
@@ -319,17 +294,17 @@ def _normalize_environment(
                 node.span,
             )
         arguments += tuple(
-            _argument_from_entry(entry, context) for entry in entries[:-1]
+            _argument_from_entry(entry, registry) for entry in entries[:-1]
         )
-        body = _normalize_block(entries[-1].value, context)
+        body = _normalize_block(entries[-1].value, registry)
     return GenericInvocation(node.name, arguments, body, node.span)
 
 
 def _normalize_invocation(
     node: ParsedInvocation,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[CanonicalNode, ...]:
-    arguments = _header_arguments(node.groups, context)
+    arguments = _header_arguments(node.groups, registry)
     if node.suite is None:
         if node.kind is InvocationKind.COMMAND:
             return (GenericInvocation(node.name, arguments, None, node.span),)
@@ -345,21 +320,21 @@ def _normalize_invocation(
             return (
                 GenericInvocation(
                     node.name,
-                    arguments + _suite_arguments(node, suite, context),
+                    arguments + _suite_arguments(node, suite, registry),
                     None,
                     node.span,
                 ),
             )
 
         case InvocationKind.ENVIRONMENT:
-            return (_normalize_environment(node, arguments, suite, context),)
+            return (_normalize_environment(node, arguments, suite, registry),)
 
         case InvocationKind.BRACE:
             match node.groups:
                 case (Argument(kind=GroupKind.REQUIRED, value=str() as raw),):
                     return (
                         BraceGroup(
-                            _container_body(node, suite, context),
+                            _container_body(node, suite, registry),
                             node.span,
                             raw,
                         ),
@@ -376,7 +351,7 @@ def _normalize_invocation(
                     "transparent containers do not accept header groups",
                     node.span,
                 )
-            return _container_body(node, suite, context).nodes
+            return _container_body(node, suite, registry).nodes
 
         case _:
             raise TypeError(f"unsupported invocation kind: {node.kind}")
@@ -384,22 +359,22 @@ def _normalize_invocation(
 
 def _normalize_special(
     node: SpecialInvocation,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[CanonicalNode, ...]:
-    handler = context.registry.lookup(node.name)
+    handler = registry.get(node.name)
     if handler is None:
         raise DirectiveError(
             f"unknown special directive '!{node.name}'",
             node.span,
         )
-    result = handler(node, context)
+    result = handler(node, registry)
     if not isinstance(result, tuple) or any(
         not isinstance(item, _CANONICAL_TYPES) for item in result
     ):
         raise TypeError(
             "special directive handlers must return canonical AST tuples"
         )
-    return tuple(_normalize_canonical(item, context) for item in result)
+    return tuple(_normalize_canonical(item, registry) for item in result)
 
 
 def _vspace(group: Argument) -> GenericInvocation:
@@ -408,7 +383,7 @@ def _vspace(group: Argument) -> GenericInvocation:
 
 def _vpad_handler(
     node: SpecialInvocation,
-    context: TransformContext,
+    registry: DirectiveRegistry,
 ) -> tuple[CanonicalNode, ...]:
     if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
         raise ValidationError("!vpad requires a ': |' block suite", node.span)
@@ -427,7 +402,7 @@ def _vpad_handler(
             invalid_group.span,
         )
 
-    body = _normalize_block(node.suite, context)
+    body = _normalize_block(node.suite, registry)
     result: list[CanonicalNode] = [_vspace(node.groups[0])]
     result.extend(body.nodes)
     if len(node.groups) == 2:
@@ -437,7 +412,7 @@ def _vpad_handler(
 
 def _items_handler(
     node: SpecialInvocation,
-    _context: TransformContext,
+    _registry: DirectiveRegistry,
 ) -> tuple[CanonicalNode, ...]:
     if (
         node.groups
@@ -473,9 +448,9 @@ def _items_handler(
 
 
 def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
-    while index < len(lines) and lines[index].text == "":
-        index += 1
-    return None if index == len(lines) else index
+    """The first non-blank line at or after ``index``, or ``None``."""
+
+    return next((i for i in range(index, len(lines)) if lines[i].text), None)
 
 
 def _span_from(span: SourceSpan, offset: int) -> SourceSpan:
@@ -503,10 +478,6 @@ def _span_at(span: SourceSpan, offset: int) -> SourceSpan:
     return SourceSpan(span.file, start, end)
 
 
-def _source_span_at(line: RawTex, text_index: int) -> SourceSpan:
-    return _span_at(line.span, text_index)
-
-
 def _leading_spaces(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
@@ -524,7 +495,7 @@ def _item_group(
 ) -> tuple[Argument, int]:
     """Scan one item prefix group and return it with the following cursor."""
 
-    span = _source_span_at(line, cursor)
+    span = _span_at(line.span, cursor)
     end, value = scan_group(line.text, cursor, span=span)
     span = SourceSpan(
         span.file,
@@ -541,7 +512,7 @@ def _item_prefix(
     """Split one item line into its overlay, label, and first content line."""
 
     text = line.text
-    marker_span = _source_span_at(line, depth)
+    marker_span = _span_at(line.span, depth)
     if _char_at(text, depth) != "-":
         raise ValidationError("expected an item marker '-'", marker_span)
 
@@ -567,21 +538,18 @@ def _item_prefix(
     if overlay is None and label is not None and _char_at(text, cursor) == "<":
         raise ValidationError("item label must not precede its overlay", label.span)
     if _char_at(text, cursor) in {"<", "["}:
-        raise ValidationError("duplicate item prefix", _source_span_at(line, cursor))
+        raise ValidationError("duplicate item prefix", _span_at(line.span, cursor))
 
     match _char_at(text, cursor):
         case "":
             pass
         case " ":
             cursor += 1
-        case _ if overlay is not None or label is not None:
+        case _:
+            # Only a consumed overlay or label can leave the cursor here: the
+            # character right after the marker was restricted above.
             raise ValidationError(
                 "item prefix must be followed by a space or end",
-                marker_span,
-            )
-        case _:
-            raise ValidationError(
-                "item marker must be followed by a space, group, or end",
                 marker_span,
             )
     return overlay, label, text[cursor:]
@@ -741,45 +709,38 @@ def _parse_item_level(
         item_span = _span_from(line.span, depth)
         index += 1
 
+        # A bare marker owns the deeper lines below it; anything else owns
+        # only its continuation. Both spellings build the same Item.
+        content: list[CanonicalNode] | None = None
         if first_line == "" and overlay is None and label is None:
-            next_index = _next_item_line(lines, index)
-            has_block_lines = (
-                next_index is not None
-                and _leading_spaces(lines[next_index].text) >= depth + 4
-            )
-            if has_block_lines:
-                first_line, block_lines, index = _block_item_lines(
+            following = _next_item_line(lines, index)
+            if (
+                following is not None
+                and _leading_spaces(lines[following].text) >= depth + 4
+            ):
+                first_line, content, index = _block_item_lines(
                     lines,
                     index,
                     depth,
                 )
-                items.append(
-                    Item(
-                        overlay,
-                        label,
-                        first_line,
-                        Block(tuple(block_lines), item_span),
-                        item_span,
-                    )
-                )
-                continue
-
-        continuation, index = _item_continuation(lines, index, depth)
+        if content is None:
+            content, index = _item_continuation(lines, index, depth)
 
         items.append(
             Item(
                 overlay,
                 label,
                 first_line,
-                Block(tuple(continuation), item_span),
+                Block(tuple(content), item_span),
                 item_span,
             )
         )
 
 
-BUILTIN_DIRECTIVES = DirectiveRegistry()
-BUILTIN_DIRECTIVES.register("items", _items_handler)
-BUILTIN_DIRECTIVES.register("vpad", _vpad_handler)
+BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
+    "items": _items_handler,
+    "vpad": _vpad_handler,
+}
 
 
 def _assert_canonical_block(block: Block) -> None:
@@ -822,14 +783,10 @@ def normalize(
     validate_flag_forms(document)
     document = desugar(document)
     document, resolved = collect_flags(document, flags)
-    document, macros = collect_macros(
-        document,
-        lambda name: registry.lookup(name) is not None,
-    )
+    document, macros = collect_macros(document, registry)
     document = expand_macros(document, macros, resolved)
 
-    context = TransformContext(registry)
-    normalized = Document(_normalize_block(document.body, context), document.span)
+    normalized = Document(_normalize_block(document.body, registry), document.span)
     _assert_canonical_block(normalized.body)
     return normalized
 
@@ -838,7 +795,6 @@ __all__ = [
     "BUILTIN_DIRECTIVES",
     "DirectiveRegistry",
     "SpecialHandler",
-    "TransformContext",
     "desugar",
     "normalize",
 ]

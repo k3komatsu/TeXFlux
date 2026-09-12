@@ -177,11 +177,11 @@ Node = SyntaxNode | CanonicalNode
 __all__ = [
     "Argument",
     "ArgumentLayout",
-    "GROUP_OPENERS",
-    "BraceGroup",
     "Block",
+    "BraceGroup",
     "CanonicalNode",
     "Document",
+    "GROUP_OPENERS",
     "GenericInvocation",
     "GroupKind",
     "InvocationKind",
@@ -194,6 +194,6 @@ __all__ = [
     "SourceSpan",
     "SpecialInvocation",
     "Stack",
-    "SyntaxNode",
     "SuiteMode",
+    "SyntaxNode",
 ]
