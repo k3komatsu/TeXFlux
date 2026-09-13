@@ -152,6 +152,28 @@ class MacroBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(MacroExpansionError, r"required '\{\.\.\.\}'"):
             compile_text(WRAPPER + "!smallred[opt]:\n    A\n", filename="m.tfx")
 
+    def test_macro_calls_reject_explicit_sequence_entries(self):
+        source = (
+            "!defmacro{foo}{value}:\n"
+            "    !param{value}\n"
+            "!foo::\n"
+            "    + {value}\n"
+        )
+        with self.assertRaisesRegex(
+            MacroExpansionError,
+            "macro calls do not accept '\\+' sequence entries",
+        ):
+            compile_text(source, filename="m.tfx")
+
+    def test_macro_template_can_use_an_explicit_group_with_text_interpolation(self):
+        source = (
+            "!defmacro{foo}{value}:\n"
+            "    \\cmd::\n"
+            "        + {!text{value}}\n"
+            "!foo{A}\n"
+        )
+        self.assertEqual(compile_text(source, filename="m.tfx"), "\\cmd{A}\n")
+
 
 class MacroVariadicTests(unittest.TestCase):
     SOURCE = """!defmacro{foo}{head}{...rest}:

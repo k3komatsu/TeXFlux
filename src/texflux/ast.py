@@ -179,13 +179,21 @@ class SpecialInvocation:
 
 @dataclass(frozen=True, slots=True)
 class SequenceEntry:
-    """One explicit ``-`` block value in a sequence suite."""
+    """One marked argument value in a sequence suite.
+
+    ``argument_kind`` is ``None`` for a ``-`` entry, whose value receives a
+    generated required group during normalization.  A ``+`` entry records
+    the delimiter kind of the one group the author wrote and is rendered
+    explicitly.
+    """
 
     value: Block
     marker_span: SourceSpan
     span: SourceSpan
     #: A value confined to the marker line renders with braces that hug it.
     spans_one_line: bool = False
+    #: The authored group's kind for ``+`` entries; ``None`` means ``-``.
+    argument_kind: GroupKind | None = None
 
 
 @dataclass(frozen=True, slots=True)

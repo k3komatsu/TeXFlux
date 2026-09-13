@@ -405,6 +405,11 @@ layout=block|hugged|explicit
     → value.type=block
 ```
 
+`explicit` is used for a sequence entry written with `+`. Its block value
+already contains the authored `{...}`, `[...]`, or `<...>` delimiters; the
+consumer must not synthesize a second pair. A `-` sequence entry always uses
+`block` or `hugged` and receives a generated required group during rendering.
+
 ---
 
 # 9. `group`

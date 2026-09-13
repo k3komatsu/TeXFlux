@@ -130,6 +130,42 @@ class ParserTests(unittest.TestCase):
             ["A", "continuation"],
         )
         self.assertEqual(second.value.nodes[0].text, "B")
+        self.assertIsNone(first.argument_kind)
+        self.assertIsNone(second.argument_kind)
+
+    def test_explicit_sequence_entries_are_one_opaque_group(self):
+        node = parse(
+            "\\foo::\n"
+            "    + {%\n"
+            "      \\bar: >> @baz{A} @@literal !!special\n"
+            "      }   \n"
+            "    - tail\n",
+            "x.tfx",
+        ).body.nodes[0]
+        first, second = node.suite.nodes
+        self.assertIsInstance(first, SequenceEntry)
+        self.assertEqual(first.argument_kind, GroupKind.REQUIRED)
+        self.assertEqual(
+            [child.text for child in first.value.nodes],
+            ["{%", "\\bar: >> @baz{A} @@literal !!special", "}"],
+        )
+        self.assertIsNone(second.argument_kind)
+
+        for opener, close in (("{", "}"), ("[", "]"), ("<", ">")):
+            with self.subTest(opener=opener):
+                entry = parse(f"\\foo::\n    + {opener}value{close}\n").body.nodes[0].suite.nodes[0]
+                self.assertEqual(entry.argument_kind, GroupKind.from_opener(opener))
+
+    def test_explicit_sequence_entries_require_exactly_one_balanced_group(self):
+        for payload in ("value", "{a}{b}", "{unclosed"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ParseError, "explicit sequence entries"):
+                    parse(f"\\foo::\n    + {payload}\n", "x.tfx")
+
+    def test_explicit_group_preserves_trailing_spaces_inside_an_unclosed_line(self):
+        source = "\\foo::\n    + {a  \n      b}\n"
+        entry = parse(source, "x.tfx").body.nodes[0].suite.nodes[0]
+        self.assertEqual([child.text for child in entry.value.nodes], ["{a  ", "b}"])
 
     def test_block_suite_is_an_ordinary_structural_block(self):
         node = parse("\\foo:\n    A\n    @bar:\n        B\n", "x.tfx").body.nodes[0]
@@ -315,6 +351,48 @@ class ParserTests(unittest.TestCase):
         ).body.nodes[0].suite.nodes[0]
         self.assertEqual([node.text for node in entry.value.nodes], ["!item{A"])
         self.assertTrue(entry.value.nodes[0].verbatim)
+
+    def test_raw_mode_can_be_an_explicit_sequence_continuation(self):
+        entry = parse(
+            "\\foo::\n"
+            "    + {\n"
+            "      !BEGIN_RAW_MODE\n"
+            "      \\foo: |\n"
+            "      !END_RAW_MODE\n"
+            "      }\n",
+            "raw.tfx",
+        ).body.nodes[0].suite.nodes[0]
+        self.assertEqual(
+            [node.text for node in entry.value.nodes], ["{", "\\foo: |", "}"],
+        )
+        self.assertFalse(entry.value.nodes[0].verbatim)
+        self.assertTrue(entry.value.nodes[1].verbatim)
+        self.assertFalse(entry.value.nodes[2].verbatim)
+
+    def test_explicit_sequence_rejects_misaligned_raw_mode_markers(self):
+        cases = (
+            "\\foo::\n"
+            "    + {\n"
+            "      content\n"
+            "        !BEGIN_RAW_MODE\n"
+            "        \\item\n"
+            "        !END_RAW_MODE\n"
+            "      }\n",
+            "\\foo::\n"
+            "    + {\n"
+            "      a\n"
+            "        !BEGIN_RAW_MODE\n"
+            "      !BEGIN_RAW_MODE\n"
+            "        !END_RAW_MODE\n"
+            "      }\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ParseError,
+                    r"raw\.tfx:4:9: parse error: invalid structural indentation",
+                ):
+                    parse(source, "raw.tfx")
 
     def test_raw_mode_diagnostics_cover_unpaired_and_non_standalone_markers(self):
         cases = (

@@ -670,7 +670,13 @@ class _Parser:
         header, honours an escape, or lets a dedent close the enclosing block.
         """
 
-        end = self.raw_regions[self.index]
+        try:
+            end = self.raw_regions[self.index]
+        except KeyError:
+            # A whole-line marker at an unexpected nesting level can be
+            # swallowed by the physical pre-scan as a nested BEGIN.  Never
+            # expose that implementation detail as an uncaught KeyError.
+            raise self._indent_error(self.lines[self.index]) from None
         nodes: list[Node] = []
         for index in range(self.index + 1, end):
             line = self.lines[index]
@@ -840,7 +846,7 @@ class _Parser:
             )
             if not suite.nodes and requires_entry:
                 raise ParseError(
-                    "sequence suites require at least one '-' value entry",
+                    "sequence suites require at least one '-' or '+' value entry",
                     header_span,
                 )
             return suite
@@ -852,7 +858,7 @@ class _Parser:
         return Block((), header_span)
 
     def _sequence_suite(self, base: int, boundary: SourceSpan) -> Block:
-        """Parse a ``:`` suite whose values are explicitly marked with ``-``."""
+        """Parse a ``::`` suite whose values are marked with ``-`` or ``+``."""
 
         entries: list[SequenceEntry] = []
         while self.index < len(self.lines):
@@ -869,27 +875,39 @@ class _Parser:
                     "sequence entries must start at suite indentation",
                     self._line_span(line, line.indent + 1),
                 )
-            if not line.text.startswith("-", base):
+            marker = line.text[base]
+            if marker not in "-+":
                 raise ParseError(
-                    "sequence suites require '-' value entries",
+                    "sequence suites require '-' or '+' value entries",
                     self._line_span(line, base + 1),
                 )
-            entries.append(self._sequence_entry(line, base))
+            entries.append(self._sequence_entry(line, base, marker))
         return Block(tuple(entries), _block_span(boundary, entries))
 
     def _sequence_entry(
         self,
         line: _PhysicalLine,
         base: int,
+        marker: str,
     ) -> SequenceEntry:
-        marker_span = self._line_span(line, base + 1, "-")
+        marker_span = self._line_span(line, base + 1, marker)
         entry_span = self._line_span(line, base + 1, line.text[base:])
         payload_start = base + 1
         while payload_start < len(line.text) and line.text[payload_start] == " ":
             payload_start += 1
-        payload = line.text[payload_start:].rstrip(" ")
+        payload_raw = line.text[payload_start:]
+        payload = payload_raw if marker == "+" else payload_raw.rstrip(" ")
 
         self.index += 1
+
+        if marker == "+":
+            return self._explicit_sequence_entry(
+                line,
+                payload,
+                payload_start,
+                marker_span,
+                entry_span,
+            )
 
         nodes: list[Node] = []
         if payload:
@@ -929,6 +947,144 @@ class _Parser:
         # suite or a continuation line makes it a multi-line value.
         spans_one_line = bool(payload) and value_end.line == entry_span.start.line
         return SequenceEntry(value, marker_span, value_span, spans_one_line)
+
+    def _explicit_sequence_entry(
+        self,
+        line: _PhysicalLine,
+        payload: str,
+        payload_start: int,
+        marker_span: SourceSpan,
+        entry_span: SourceSpan,
+    ) -> SequenceEntry:
+        """Parse a ``+`` entry as exactly one opaque authored group.
+
+        The group is scanned only after physical continuation lines have been
+        dedented.  None of those lines go through header scanning or the
+        ``@@``/``!!`` raw-line escapes: an explicit group is authored TeX.
+        """
+
+        payload_span = self._line_span(line, payload_start + 1, payload)
+        if not payload or payload[0] not in GROUP_OPENERS:
+            raise ParseError(
+                "explicit sequence entries require one '{...}', '[...]', "
+                "or '<...>' group",
+                payload_span,
+            )
+
+        nodes: list[Node] = [RawTex(payload, payload_span)]
+        continuation = self._raw_sequence_continuation(
+            base=line.indent,
+            boundary=entry_span,
+        )
+        nodes.extend(continuation.nodes)
+        raw_nodes: list[RawTex] = []
+        for node in nodes:
+            if not isinstance(node, RawTex):
+                raise ParseError(
+                    "explicit sequence entries require opaque raw text",
+                    node.span,
+                )
+            raw_nodes.append(node)
+        text = "\n".join(node.text for node in raw_nodes)
+
+        kind = GroupKind.from_opener(payload[0])
+        try:
+            end, _ = scan_group(text, 0, span=payload_span)
+        except ParseError as error:
+            raise ParseError(
+                "explicit sequence entries require one balanced group",
+                error.span,
+            ) from None
+        if any(char != " " for char in text[end:]):
+            raise ParseError(
+                "explicit sequence entries require exactly one group",
+                payload_span,
+            )
+
+        kept = self._truncate_raw_nodes(raw_nodes, end)
+        value = Block(tuple(kept), _block_span(entry_span, kept))
+        spans_one_line = len(kept) == 1 and value.span.end.line == entry_span.start.line
+        return SequenceEntry(
+            value,
+            marker_span,
+            value.span,
+            spans_one_line,
+            kind,
+        )
+
+    def _raw_sequence_continuation(
+        self,
+        base: int,
+        boundary: SourceSpan,
+    ) -> Block:
+        """Read a sequence continuation without interpreting its contents."""
+
+        next_index = self._next_nonblank(self.index)
+        if next_index is None or self.lines[next_index].indent <= base:
+            return Block((), boundary)
+
+        continuation_base = self.lines[next_index].indent
+        nodes: list[Node] = []
+        while self.index < len(self.lines):
+            line = self.lines[self.index]
+            if line.blank:
+                run = self._blank_run(continuation_base)
+                if run is None:
+                    break
+                for blank_index in run:
+                    nodes.append(
+                        RawTex("", self._line_span(self.lines[blank_index]))
+                    )
+                continue
+            if line.indent < continuation_base:
+                break
+            marker = _line_marker(line)
+            if marker is not None:
+                if line.indent != continuation_base:
+                    # Explicit groups are opaque, but raw-mode markers retain
+                    # their physical-line indentation rule everywhere a
+                    # continuation block can occur.
+                    raise self._indent_error(line)
+                if marker == RAW_BEGIN_MARKER:
+                    nodes.extend(self._raw_region(continuation_base))
+                    continue
+            raw_text = line.text[continuation_base:]
+            nodes.append(
+                RawTex(raw_text, self._line_span(line, continuation_base + 1, raw_text))
+            )
+            self.index += 1
+        return Block(tuple(nodes), _block_span(boundary, nodes))
+
+    def _truncate_raw_nodes(
+        self,
+        nodes: list[RawTex],
+        length: int,
+    ) -> list[RawTex]:
+        """Keep the first ``length`` joined characters of raw line nodes."""
+
+        kept: list[RawTex] = []
+        remaining = length
+        for index, node in enumerate(nodes):
+            if remaining <= len(node.text):
+                if remaining:
+                    text = node.text[:remaining]
+                    kept.append(
+                        replace(
+                            node,
+                            text=text,
+                            span=SourceSpan(
+                                node.span.file,
+                                node.span.start,
+                                node.span.start.advance(text),
+                            ),
+                        )
+                    )
+                break
+            kept.append(node)
+            remaining -= len(node.text)
+            if index < len(nodes) - 1:
+                remaining -= 1
+        return kept
 
     def _sequence_continuation(
         self,

@@ -550,7 +550,9 @@ def _emit_text(emitter, text, parts, span, base_role):
 2 つだけである。どちらも T01 になる。
 
 1. 行頭の `!text{x}` — `_Parser._directive` が `SpecialInvocation(name="text")` を作る。
-2. `::` sequence suite の `- !text{x}` — `parser.py:793-805` が同じノードを作る。
+2. `::` sequence suite の `- !text{x}` — sequence entry の通常の構造化値として同じノードを作る。
+   `+ {!text{x}}` は明示グループ内の raw text field なので、マクロテンプレート内では
+   `!text` が補間される。
 
 ### 10.3 `normalize.py` — 変更は 1 箇所のみ
 
@@ -560,8 +562,8 @@ def _emit_text(emitter, text, parts, span, base_role):
 
 `normalize.py` は `RawTex.text` を切り刻まない。`!items` の mini-grammar が
 削除されたことで、テキストをスライスして新しいノードを作るパスは存在しなくなり、
-`parts` は正準化を素通りする。`_writes_own_braces` は検出のために `.text` を
-連結するだけなので変更不要。
+`parts` は正準化を素通りする。シーケンス値の明示配置は `+` エントリーの
+`argument_kind` で決まり、`-` の本文が `{` で始まるかどうかを `.text` から推測しない。
 （`_vspace(group)` が `Argument` をそのまま渡して `!vpad{!text{gap}}` の provenance を
 保つ、という当時の記述は `!vpad` の削除とともに不要になった。同じ provenance は
 `!before{\vspace{!text{gap}}}` の呼び出し値として保たれる。）
@@ -850,6 +852,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 - text 位置の `!text{x}` は成功する。
 - text 位置の `!param{x}` は T08。
 - `::` sequence suite の `- !text{x}` も T01。
+- マクロテンプレートの `+ {!text{x}}` は text field として補間される。
 
 **control metadata（`InterpolationMetadataTests`）** — いずれも「補間されない」ことの確認。
 

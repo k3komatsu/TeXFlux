@@ -233,7 +233,7 @@ if position < self.end and self.text[position] not in " :>":
 | `_has_top_level_trailing_colon` ([parser.py:125](../src/texflux/parser.py#L125)) | `GROUP_OPENERS` を走査するので `(` は見ない。生 TeX の判定は不変。 |
 | 環境名走査（`"{[<:> "` で切る） | 不変。`@foo(x):` は今も環境名 `foo(x)` のまま。 |
 | `\command` セグメント | 不変。`(` が来れば従来どおり `"unexpected token after structural name or group"`。 |
-| `_writes_own_braces` | `text.startswith("{")` のときだけ `scan_group` を呼ぶので不変。 |
+| シーケンス引数の `-` / `+` | `-` は常に生成必須引数、`+` はパーサーが記録した明示グループとして扱われ、束縛群の走査には影響しない。 |
 | `render._emit_group` | 不変（§4.7）。 |
 
 ### 4.6 後方互換性

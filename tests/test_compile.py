@@ -65,6 +65,43 @@ class CompileTests(unittest.TestCase):
             "\\foo{COMPACT}{A}{B}\n",
         )
 
+    def test_sequence_markers_distinguish_generated_and_explicit_arguments(self):
+        self.assertEqual(
+            compile_text(
+                "\\command::\n"
+                "    - simple\n"
+                "    - {group as content}\n"
+                "    + {explicit required argument}\n"
+                "    + [explicit optional argument]\n"
+                "    + <2->\n"
+                "    + {%\n"
+                "      whitespace-sensitive%\n"
+                "      }\n"
+            ),
+            "\\command{simple}{{group as content}}"
+            "{explicit required argument}[explicit optional argument]<2->"
+            "{%\nwhitespace-sensitive%\n}\n",
+        )
+
+    def test_environment_sequence_accepts_explicit_arguments_before_body(self):
+        self.assertEqual(
+            compile_text(
+                "@myenv::\n"
+                "    + [opt]\n"
+                "    - ARG\n"
+                "    - @:\n"
+                "        BODY\n"
+            ),
+            "\\begin{myenv}[opt]{ARG}\n"
+            "BODY\n"
+            "\\end{myenv}\n",
+        )
+        with self.assertRaisesRegex(
+            ValidationError,
+            "environment sequence suites require the final '-' entry to be the body",
+        ):
+            compile_text("@myenv::\n    + {body}\n")
+
     def test_command_block_is_one_long_argument(self):
         self.assertEqual(
             compile_text("\\foo:\n    A\n    B\n"),
@@ -100,18 +137,18 @@ class CompileTests(unittest.TestCase):
             "\\foo{\n\\begin{center}\nx\n\\end{center}\n}\n",
         )
 
-    def test_author_written_braces_are_copied_verbatim(self):
-        # '{' first and a matching '}' last means the author placed both
-        # braces, so TeXFlux reproduces their exact layout.
+    def test_generated_and_explicit_braces_have_distinct_semantics(self):
+        # '-' treats brace-looking text as content; '+' preserves the one
+        # group the author wrote, including its layout.
         self.assertEqual(
             compile_text(
                 "\\foo::\n    - {a\n      b\n      }\n    - {\n      c\n      d}\n"
             ),
-            "\\foo{a\nb\n}{\nc\nd}\n",
+            "\\foo{\n{a\nb\n}\n}{\n{\nc\nd}\n}\n",
         )
         for text in ("{a\\} b}", "{50\\% off}", "{a{b}c}"):
             with self.subTest(text=text):
-                rendered = compile_text(f"\\foo::\n    - {text}\n").rstrip("\n")
+                rendered = compile_text(f"\\foo::\n    + {text}\n").rstrip("\n")
                 self.assertEqual(rendered, f"\\foo{text}")
 
     def test_unbalanced_braces_fall_back_to_a_generated_pair(self):
@@ -137,7 +174,7 @@ class CompileTests(unittest.TestCase):
         # Identical output has to produce an identical diagnostic.
         generated = compile_with_map("\\cmd::\n    - a % b\n    - t\n", filename="c.tfx")
         explicit = compile_with_map(
-            "\\cmd::\n    - {a % b}\n    - t\n",
+            "\\cmd::\n    + {a % b}\n    - t\n",
             filename="c.tfx",
         )
 
@@ -152,7 +189,7 @@ class CompileTests(unittest.TestCase):
         # though the author's '}' sits inside one. The group is broken either
         # way, but the next argument must not be commented out too.
         result = compile_with_map(
-            "\\cmd::\n    - {a\n      % foo}\n    - tail\n",
+            "\\cmd::\n    + {a\n      % foo}\n    - tail\n",
             filename="c.tfx",
         )
 
@@ -222,6 +259,11 @@ class CompileTests(unittest.TestCase):
         self.assertEqual(compile_text("@::\n    - A\n    - B\n"), "A\nB\n")
         self.assertEqual(compile_text("@::\n"), "\n")
         self.assertEqual(compile_text("@{}::\n"), "{\n}\n")
+        with self.assertRaisesRegex(
+            ValidationError,
+            "anonymous containers do not accept '\\+' sequence entries",
+        ):
+            compile_text("@::\n    + {A}\n")
         with self.assertRaises(ValidationError):
             compile_text("@foo::\n")
         self.assertEqual(

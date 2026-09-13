@@ -1,5 +1,5 @@
 \mycommand::
     - ARG1
-    - INLINE
+    + [INLINE]
     -
         ARG2

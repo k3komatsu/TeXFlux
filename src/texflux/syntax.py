@@ -131,13 +131,13 @@ def stacks(block: Block) -> Iterator[Stack]:
 
 
 def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
-    """Read the ``-`` value entries of a sequence suite, ignoring blank lines."""
+    """Read the marked value entries of a sequence suite, ignoring blanks."""
 
     entries = tuple(child for child in suite.nodes if not blank(child))
     for child in entries:
         if not isinstance(child, SequenceEntry):
             raise ValidationError(
-                "sequence suites require '-' value entries",
+                "sequence suites require '-' or '+' value entries",
                 child.span,
             )
     return entries

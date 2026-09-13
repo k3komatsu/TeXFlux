@@ -693,6 +693,14 @@ class _Expander:
             ),))
 
         if node.suite is not None:
+            if node.suite_mode is SuiteMode.SEQUENCE:
+                for entry in sequence_entries(node.suite):
+                    if entry.argument_kind is not None:
+                        raise _error(
+                            "macro calls do not accept '+' sequence entries",
+                            entry.span,
+                            frame,
+                        )
             suite = self.block(node.suite, frame)
             if node.suite_mode is SuiteMode.SEQUENCE:
                 values.extend(

@@ -1,5 +1,5 @@
 \callout{Compact header}::
-    - Inline argument
+    + {Inline argument}
     -
         This is a multiline block argument.
         It remains raw TeX: $x^2$.

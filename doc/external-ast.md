@@ -73,6 +73,11 @@ PYTHONPATH=src python -m unittest tests.test_ast_schema
   `layout: "inline"`の`value`は`{"type": "text", "text": "..."}`、
   `block`・`hugged`・`explicit`の`value`はBlock。各引数は`span`も持つ。
 
+`layout: "explicit"` はシーケンスの `+` エントリーから生成される。value の Block には
+著者が書いた `{...}`、`[...]`、`<...>` の区切り文字も含まれるため、consumer は別の
+区切り文字を追加してはならない。`-` エントリーは `block` または `hugged` となり、
+必須グループが生成される。
+
 `span`は`source`（source ID）、`start`、`end`を持つ。位置は1始まりの
 `line`・`column`で、Unicode code point単位、LF改行、半開区間`[start, end)`。
 import先のノードはimport先の位置を保持する。同じモジュールを複数回importした

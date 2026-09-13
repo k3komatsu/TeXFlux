@@ -32,11 +32,10 @@ from .ast import (
     Stack,
     SuiteMode,
 )
-from .errors import DirectiveError, ModuleError, ParseError, ValidationError
+from .errors import DirectiveError, ModuleError, ValidationError
 from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
-from .parser import scan_group
-from .syntax import blank, sequence_entries
+from .syntax import sequence_entries
 
 
 #: The in-process special registry: one handler per name. A reusable
@@ -201,9 +200,13 @@ def _argument_from_entry(
     registry: DirectiveRegistry,
 ) -> Argument:
     value = _normalize_block(entry.value, registry)
-    if _writes_own_braces(value):
-        # The author placed both braces, so TeXFlux emits the text verbatim.
-        return Argument(GroupKind.REQUIRED, value, ArgumentLayout.EXPLICIT, entry.span)
+    if entry.argument_kind is not None:
+        return Argument(
+            entry.argument_kind,
+            value,
+            ArgumentLayout.EXPLICIT,
+            entry.span,
+        )
     layout = (
         ArgumentLayout.HUGGED
         if entry.spans_one_line
@@ -212,33 +215,16 @@ def _argument_from_entry(
     return Argument(GroupKind.REQUIRED, value, layout, entry.span)
 
 
-def _writes_own_braces(value: Block) -> bool:
-    """Whether a value is raw TeX already wrapped in its own balanced braces.
-
-    The author then controls exactly where each brace sits, so the text is
-    emitted verbatim instead of being wrapped in a generated pair. Anything
-    that does not scan as one balanced group falls back to a generated pair,
-    which shows up as a visible extra brace rather than as broken TeX.
-    """
-
-    nodes = [node for node in value.nodes if not blank(node)]
-    if not nodes or not all(isinstance(node, RawTex) for node in nodes):
-        return False
-    text = "\n".join(node.text for node in nodes).strip()
-    if not text.startswith("{"):
-        return False
-    try:
-        end, _ = scan_group(text, 0, span=value.span)
-    except ParseError:
-        return False
-    return end == len(text)
-
-
 def _sequence_body(suite: Block, registry: DirectiveRegistry) -> Block:
-    """Concatenate every ``-`` value of a sequence suite into one block."""
+    """Concatenate every generated-value entry of a sequence suite."""
 
     nodes: list[CanonicalNode] = []
     for entry in sequence_entries(suite):
+        if entry.argument_kind is not None:
+            raise ValidationError(
+                "anonymous containers do not accept '+' sequence entries",
+                entry.span,
+            )
         nodes.extend(_normalize_block(entry.value, registry).nodes)
     return Block(tuple(nodes), suite.span)
 
@@ -293,6 +279,11 @@ def _normalize_environment(
             raise ValidationError(
                 "environment sequence suites require a body value",
                 node.span,
+            )
+        if entries[-1].argument_kind is not None:
+            raise ValidationError(
+                "environment sequence suites require the final '-' entry to be the body",
+                entries[-1].span,
             )
         arguments += tuple(
             _argument_from_entry(entry, registry) for entry in entries[:-1]

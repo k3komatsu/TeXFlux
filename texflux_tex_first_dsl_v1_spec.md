@@ -22,7 +22,7 @@ The fixed suite model is:
 ~~~text
 no suffix = one already-closed RHS value
 :         = one multiline block value
-::        = one block value per '-'; the next sibling '-' is its boundary
+::        = one marked value per '-' or '+'; the next sibling marker is its boundary
 ~~~
 
 ## 1. Lexical model
@@ -67,8 +67,9 @@ blank run is returned to the enclosing block when the suite closes.
 At the start of a block line (after spaces), `@@` and `!!` remove exactly
 one leading character and emit the rest as raw TeX, without header scanning.
 They are handled before the structural extra-indentation check, preserving
-spaces beyond the block base. The same escapes apply at the start of a
-sequence marker payload: `- !!bar` supplies raw `!bar`. Tabs remain invalid
+spaces beyond the block base. The same escapes apply at the start of a `-`
+sequence marker payload: `- !!bar` supplies raw `!bar`. A `+` payload is an
+opaque authored group and never applies the marker escape. Tabs remain invalid
 outside raw-mode regions.
 Thus `!!` emits `!`, `!!!foo` emits `!!foo`, and `!!重要` emits `!重要`.
 Unbalanced braces and trailing `:` or `>>` remain literal on escaped lines.
@@ -156,13 +157,15 @@ The parser keeps syntax shape and source spans. The relevant syntax nodes are:
 - ParsedInvocation(kind, name, groups, suite, suite_mode, span)
 - SpecialInvocation(name, groups, suite, suite_mode, span)
 - Stack(segments, suite, suite_mode, span)
-- SequenceEntry(value, marker_span, span)
+- SequenceEntry(value, marker_span, span, argument_kind)
 - Block(nodes, span)
 
 Invocation kinds include command, named environment, brace container, and
 transparent container. SuiteMode is Sequence or Block. Every parsed
-SequenceEntry value is a Block whose first line is the marker payload and whose
-remaining lines continue until the next sibling marker.
+`SequenceEntry` value is a Block whose first line is the marker payload and whose
+remaining lines continue until the next sibling marker. A `-` entry has
+`argument_kind=None`; a `+` entry records the kind of its one authored `{...}`,
+`[...]`, or `<...>` group.
 
 A suffix-less Stack has no suite. A suffix-bearing Stack stores the suffix suite
 on its rightmost segment after desugaring.
@@ -171,7 +174,7 @@ on its rightmost segment after desugaring.
 
 ### 5.1 Sequence mode
 
-A double-colon suite contains explicit sequence entries. A structured command
+A double-colon suite contains marked sequence entries. A structured command
 sequence must contain at least one entry:
 
 ~~~text
@@ -180,10 +183,15 @@ sequence must contain at least one entry:
     - B
 ~~~
 
-Direct raw child lines such as A and B without - are invalid. Each '-' starts
-one block value. Text after the marker is its first line; subsequent lines
-indented beyond the sequence base belong to that value until the next sibling
-marker. A bare '-' is therefore the multiline spelling.
+Direct raw child lines such as A and B without a marker are invalid. Each `-`
+starts one generated required argument: its text after the marker is the first
+line, and subsequent lines indented beyond the sequence base belong to that
+value until the next sibling marker. A bare `-` is therefore the multiline
+spelling. A `+` starts one explicit argument and must be followed by exactly
+one balanced `{...}`, `[...]`, or `<...>` group. The group may span indented
+continuation lines; its complete text is kept opaque and is never header-
+scanned. The delimiter is part of the value, so `+ {x}` emits `{x}` rather
+than a generated pair around it.
 
 ~~~text
 \foo::
@@ -194,10 +202,15 @@ marker. A bare '-' is therefore the multiline spelling.
         BODY
 ~~~
 
-The sequence value blocks and structural entry suites use the normal TeXFlux
-parser. They are not opaque YAML scalars. The marker span and value span are
-retained. The spelling "- |" is not a block marker; it starts a value whose
-first line is the raw character "|".
+`-` value blocks and structural entry suites use the normal TeXFlux parser.
+They are not opaque YAML scalars. A `+` group is the intentional exception:
+all of its physical lines are raw TeX. The two whole-line raw-mode markers are
+still recognized in a `+` continuation block at its continuation base; an
+off-base marker is the same structural-indentation error as in a `-` block.
+Marker and value spans are retained.
+The spelling "- |" is not a block marker; it starts a value whose first line
+is the raw character "|". A `+` with no group, an unbalanced group, or trailing
+tokens after its group is a ParseError.
 
 ### 5.2 Block mode
 
@@ -217,8 +230,10 @@ specials, stacks, and blank lines. An empty block suite is valid.
 
 ### 6.1 Command
 
-A structured command consumes all suite values as required arguments. Compact
-header groups are emitted first.
+A structured command consumes all suite entries as arguments after its compact
+header groups. A `-` entry becomes one generated required argument. A `+`
+entry contributes exactly the one required, optional, or overlay group it
+contains, including its authored delimiters.
 
 ~~~text
 \foo{COMPACT}::
@@ -230,6 +245,21 @@ renders as:
 
 ~~~tex
 \foo{COMPACT}{A}{B}
+~~~
+
+Mixed entries make the distinction explicit:
+
+~~~text
+\command::
+    - simple
+    - {group as content}
+    + {explicit required argument}
+    + [explicit optional argument]
+    + <2->
+~~~
+
+~~~tex
+\command{simple}{{group as content}}{explicit required argument}[explicit optional argument]<2->
 ~~~
 
 A block suite produces one long required argument:
@@ -276,8 +306,10 @@ closed canonical command value.
 
 A block suite is the environment body. Compact groups remain begin arguments.
 
-For a sequence suite, all values except the final value become required block
-arguments and the final value becomes the body:
+For a sequence suite, all entries except the final entry become begin
+arguments and the final `-` entry becomes the body. Earlier entries may be
+either generated required arguments (`-`) or explicit groups (`+`); the final
+entry must be `-` so that body ownership is unambiguous:
 
 ~~~text
 @myenv::
@@ -295,6 +327,25 @@ BODY
 \end{myenv}
 ~~~
 
+An explicit argument can precede the generated arguments and body:
+
+~~~text
+@myenv::
+    + [opt]
+    - ARG
+    - @:
+        BODY
+~~~
+
+~~~tex
+\begin{myenv}[opt]{ARG}
+BODY
+\end{myenv}
+~~~
+
+A final `+` entry is a validation error because an environment sequence must
+end with its generated body entry.
+
 The final block value contributes its canonical nodes as the body. An empty
 sequence environment is a validation error. An empty body is written as an
 empty @: value.
@@ -310,6 +361,10 @@ Use `@:` or `@{}:` when the empty block form should be explicit.
 @{}: and @{RAW_TEX}: emit literal brace groups. RAW_TEX is emitted as
 leading opaque TeX inside the braces. Literal braces remain in all contexts,
 including command argument context.
+
+Anonymous `@:` and `@{...}:` containers accept only `-` sequence entries. A
+`+` entry is reserved for command arguments and named-environment begin
+arguments, so using it in an anonymous sequence is a ValidationError.
 
 ## 8. Stack composition
 
@@ -372,13 +427,14 @@ are parse errors. Spaces after a trailing `>>` are allowed. Any suite suffix
 belongs to the final segment on the final header line; its suite is indented
 four spaces from the header's structural base as usual.
 
-In a sequence entry beginning `- @hoge >>`, continuation lines align with the
-`-` marker, without repeating it; the suite base remains four spaces deeper
-than that marker. Such a value spans multiple physical lines, so the existing
-multiline argument-brace layout applies. Raw TeX and escaped `@@` / `!!` lines do
-not acquire continuation syntax. Groups cannot be split
-across lines. Segments, groups, and suffixes retain their physical source spans;
-the parser produces one ordinary Stack, with no new canonical node type.
+In a generated sequence entry beginning `- @hoge >>`, continuation lines align
+with the `-` marker, without repeating it; the suite base remains four spaces
+deeper than that marker. Such a value spans multiple physical lines, so the
+existing multiline argument-brace layout applies. Raw TeX and escaped `@@` /
+`!!` lines do not acquire continuation syntax. Header groups cannot be split
+across lines; only a `+` entry's authored group may span its indented raw
+continuation lines. Segments, groups, and suffixes retain their physical source
+spans; the parser produces one ordinary Stack, with no new canonical node type.
 
 ## 9. Specials
 
@@ -425,9 +481,10 @@ nothing:
 Every rule of section 10 applies to these five, and no rule of its own does.
 A payload written with a `':'` block suite and a payload written as the rest
 of a `>>` composition are the same single value (section 10.2), and a `'::'`
-sequence suite is one value per `-` entry there as anywhere else; a wrong value
-count is the ordinary arity diagnostic; and provenance follows section 15, so each
-value keeps the span of the group or suite the author wrote it in.
+sequence suite is one value per `-` or `+` entry there as anywhere else. A `+`
+entry is rejected for these macro calls; a wrong value count is the ordinary
+arity diagnostic; and provenance follows section 15, so each value keeps the
+span of the group or suite the author wrote it in.
 
 `!drop` needs no primitive and has none. Its template is empty, so the value
 it binds reaches no template position and nothing survives expansion. That is
@@ -481,7 +538,7 @@ differently:
 - A depth-zero trailing colon makes the line a structural command candidate
   (section 3), so `\item Summary:` fails. A continuation line that scans as a
   complete header, such as `\TextCA{Note}::`, fails through the other branch
-  and reports a missing `-` entry instead. An empty trailing group --
+  and reports a missing `-`/`+` entry instead. An empty trailing group --
   `\item Summary:{}` -- writes either one, and changes no TeX: an empty group
   leaves `\spacefactor` alone, so the colon's end-of-sentence space survives.
 - A line beginning `@` is an environment header; `@@` escapes it.
@@ -560,12 +617,14 @@ values its suite produces.
 ~~~text
 !foo{A}{B}          two inline values
 !foo:              one block value
-!foo::             one block value per '-'
+!foo::             one value per '-' or '+' entry (but '+' is rejected at macro calls)
 !foo >> VALUE       the closed stack payload as one value
 ~~~
 
 `!foo{A} >> \bar{B}` therefore binds `[A, \bar{B}]`. Optional and overlay
-groups are not values and are rejected on a macro call.
+groups are not values and are rejected on a macro call. A `+` sequence entry is
+also rejected there; explicit groups are only for command and named-environment
+argument suites.
 
 A non-rest parameter consumes exactly one value. A trailing `{...rest}`
 parameter consumes every remaining value as a sequence and may consume none.
@@ -1063,10 +1122,10 @@ build flags either.
 
 ## 14. Argument brace placement
 
-A sequence value's own shape decides where its generated braces go. A value
-confined to one line renders with braces that hug it; a value that needs more
-than one line renders with the braces on their own lines. Nothing is marked:
-the compact case stays compact and the structural case stays readable.
+A `-` sequence value's shape decides where its generated required braces go. A
+value confined to one line renders with braces that hug it; a value that needs
+more than one line renders with the braces on their own lines. Nothing is
+marked: the compact case stays compact and the structural case stays readable.
 
 ~~~text
 \command::
@@ -1083,36 +1142,46 @@ figure
 }
 ~~~
 
-An author who wants a different layout writes the braces instead. When a
-value is raw TeX that begins with `{` and ends with the matching `}`, those
-braces are the argument's own and the text is copied verbatim, so each brace
-sits exactly where it was written:
+The `-` marker always means "generate one required group". In particular, a
+brace-looking value is content, not syntax:
 
 ~~~text
 \command::
     - {fooo
       bar
       }
-    - {
-      a
-      c}
+~~~
+
+~~~tex
+\command{
+{fooo
+bar
+}
+}
+~~~
+
+Use `+` when the group itself is the argument and its delimiters must be kept.
+It accepts exactly one balanced required, optional, or overlay group, including
+multiline groups, and copies the complete raw text without header scanning:
+
+~~~text
+\command::
+    + {fooo
+      bar
+      }
+    + [opt]
+    + <2->
 ~~~
 
 ~~~tex
 \command{fooo
 bar
-}{
-a
-c}
+}[opt]<2->
 ~~~
 
-The scan only locates the matching brace; it never interprets the contents.
-A value that does not scan as one balanced group keeps a generated pair, so a
-mistake shows up as a visible extra brace rather than as a changed argument
-count. A value that must itself be a TeX group is written over several lines,
-which takes the generated form. The rule reads the value after macro
-expansion, so a macro that expands to one balanced group supplies the
-argument's braces in exactly the same way.
+Multiple groups, an unbalanced group, or trailing tokens after a `+` group are
+ParseErrors. The `+` group's delimiter is not generated a second time, and its
+contents remain opaque TeX.
 
 A hugged closing brace is unsafe after a TeX comment, which would swallow it.
 When the value's last rendered line is entirely a comment, the closing brace
@@ -1128,7 +1197,7 @@ one-based column in a half-open SourceSpan. The implementation retains
 provenance for:
 
 - colon and double-colon suite markers
-- each sequence -
+- each sequence `-` / `+` marker and explicit group kind
 - each sequence value block boundary
 - @{} / @{RAW_TEX} headers
 - @: / @:: headers
@@ -1212,8 +1281,11 @@ sequence-suffix   ::= "::" SP*
 block-suffix      ::= ":" SP*
 
 sequence-suite    ::= sequence-entry*
-sequence-entry   ::= "-" SP* sequence-block
-sequence-block    ::= first-line continuation-line*
+sequence-entry   ::= ("-" SP* generated-block)
+                    | ("+" SP* explicit-group)
+generated-block   ::= first-line continuation-line*
+explicit-group   ::= one balanced "{...}", "[...]", or "<...>"
+                    with optional indented raw continuation lines
 first-line        ::= inline-value | structural-expression
 continuation-line ::= indented TeXFlux line
 
@@ -1255,9 +1327,10 @@ each-construct    ::= "!each" "{" parameter-name "}" "{" parameter-name "}"
 ~~~
 
 This grammar is conceptual; item metadata and balanced raw groups are scanned by
-the handwritten parser. A sequence-block continues until the next sibling '-'.
-Its normative distinctions are the explicit `-` double-colon sequence, the
-single-colon block, and suffix-less closed values.
+the handwritten parser. A sequence entry continues until the next sibling `-`
+or `+` marker. Its normative distinctions are generated required values from
+`-`, authored groups from `+`, the single-colon block, and suffix-less closed
+values.
 
 ## 18. Executable examples
 

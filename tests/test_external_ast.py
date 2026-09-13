@@ -65,7 +65,7 @@ class ExternalAstTests(TempDirTestCase):
         source = (
             "@unknown*{title}[opt]<2->:\n"
             "    @{\\small}:\n        \\item opaque\n"
-            "\\foo::\n    - short\n    - {explicit}\n"
+            "\\foo::\n    - short\n    + {explicit}\n"
             "    -\n        long\n        value\n"
             "\\bar:\n    body\n"
             "!before{\\vspace{1em}} >> \\padded\n"
@@ -85,6 +85,8 @@ class ExternalAstTests(TempDirTestCase):
         self.assertNotIn("body", command)
         self.assertEqual([a["layout"] for a in command["arguments"]],
                          ["hugged", "explicit", "block"])
+        self.assertEqual([a["kind"] for a in command["arguments"]],
+                         ["required", "required", "required"])
         self.assertTrue(all(a["value"]["type"] == "block" for a in command["arguments"]))
         self.assertEqual(len(long_command["arguments"]), 1)
         self.assertEqual(long_command["arguments"][0]["layout"], "block")
@@ -92,6 +94,19 @@ class ExternalAstTests(TempDirTestCase):
         # is the raw TeX the author wrote, and !before itself exports nothing.
         self.assertEqual(prefix["text"], "\\vspace{1em}")
         self.assertEqual((padded["form"], padded["name"]), ("command", "padded"))
+
+    def test_explicit_sequence_group_kinds_are_preserved(self):
+        result = compile_ast(
+            "\\foo::\n"
+            "    + {required}\n"
+            "    + [optional]\n"
+            "    + <2->\n"
+        )
+        node = json.loads(serialize_ast(result))["document"]["body"]["nodes"][0]
+        self.assertEqual(
+            [(argument["kind"], argument["layout"]) for argument in node["arguments"]],
+            [("required", "explicit"), ("optional", "explicit"), ("overlay", "explicit")],
+        )
 
     def test_session_dependencies_scope_bindings_and_repeated_spans(self):
         core = self.write("core.tfxm", "!defmacro{inner}{x}:\n    @box{!text{x}}:\n        !param{x}\n")

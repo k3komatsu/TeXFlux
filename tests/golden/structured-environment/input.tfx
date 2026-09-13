@@ -1,3 +1,4 @@
 @myenv::
+    + [opt]
     - ARG
     - BODY
