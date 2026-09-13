@@ -1,27 +1,27 @@
-!defmacro{smallred}{body}: |
+!defmacro{smallred}{body}:
     @{\small\color{red}} >> !param{body}
 
-!defmacro{box}{title}{body}: |
-    @block:
+!defmacro{box}{title}{body}:
+    @block::
         - !param{title}
         - !param{body}
 
-!defmacro{bullets}{...items}: |
-    @itemize: |
-        !each{items}{item}: |
+!defmacro{bullets}{...items}:
+    @itemize:
+        !each{items}{item}:
             \item
             !param{item}
 
-@frame{Source macros}: |
-    !smallred: |
+@frame{Source macros}:
+    !smallred:
         A wrapper macro keeps the raw TeX in one place.
 
     !smallred >> \TextCA{A closed stack payload is one value}
 
-    !box{Result}: |
+    !box{Result}:
         Compact groups bind before the suite values.
 
-    !bullets:
+    !bullets::
         - A variadic macro walks its rest parameter
         - Each item stays one block value
           even when it spans several lines

@@ -231,7 +231,7 @@ if position < self.end and self.text[position] not in " :>":
 | 箇所 | 影響 |
 | --- | --- |
 | `_has_top_level_trailing_colon` ([parser.py:125](../src/texflux/parser.py#L125)) | `GROUP_OPENERS` を走査するので `(` は見ない。生 TeX の判定は不変。 |
-| 環境名走査（`"{[<:> "` で切る） | 不変。`@foo(x): |` は今も環境名 `foo(x)` のまま。 |
+| 環境名走査（`"{[<:> "` で切る） | 不変。`@foo(x):` は今も環境名 `foo(x)` のまま。 |
 | `\command` セグメント | 不変。`(` が来れば従来どおり `"unexpected token after structural name or group"`。 |
 | `_writes_own_braces` | `text.startswith("{")` のときだけ `scan_group` を呼ぶので不変。 |
 | `render._emit_group` | 不変（§4.7）。 |
@@ -412,10 +412,10 @@ def bind_import_flags(
 % quiz.tfx
 !flag{answers}{off}
 
-@frame{Question}: |
+@frame{Question}:
     Question text
 
-    !when{answers}: |
+    !when{answers}:
         Answer: 42
 ```
 
@@ -534,7 +534,7 @@ def canonicalize(
 すなわち条件分岐が解決された**後**に検査する。これにより次が成立する。
 
 ```text
-!when{appendix}: |
+!when{appendix}:
     !import{broken-or-missing.tfx}
 ```
 
@@ -917,7 +917,7 @@ main.tfx:
 `node.suite is not None` の 1 条件が、次の**両方**を捕捉する。
 
 ```text
-!import{foo.tfx}: |        % 明示的な suite
+!import{foo.tfx}:        % 明示的な suite
 !import{foo.tfx} >> @center % 脱糖で合成 suite が付く（ラッパー用法）
 ```
 
@@ -935,10 +935,10 @@ main.tfx:
 いずれの中でも有効である。
 
 ```text
-!when{appendix}: |
+!when{appendix}:
     !import{appendix.tfx}
 
-\twocolumn:
+\twocolumn::
     - !import{left.tfx}
     - !import{right.tfx}
 ```
@@ -950,11 +950,11 @@ main.tfx:
 一方、**マクロの引数として渡された `!import` は有効**である。
 
 ```text
-!defmacro{framed}{body}: |
-    @frame: |
+!defmacro{framed}{body}:
+    @frame:
         !param{body}
 
-!framed: |
+!framed:
     !import{slide.tfx}
 ```
 

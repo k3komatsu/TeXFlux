@@ -15,7 +15,7 @@ from texflux.render import MappedEmitter
 
 class SpanTests(unittest.TestCase):
     def test_parser_nodes_use_half_open_source_spans(self):
-        document = parse("@center: |\n    BODY\n", "input.tfx")
+        document = parse("@center:\n    BODY\n", "input.tfx")
         invocation = document.body.nodes[0]
 
         self.assertEqual(
@@ -23,7 +23,7 @@ class SpanTests(unittest.TestCase):
             SourceSpan(
                 "input.tfx",
                 SourcePosition(1, 1),
-                SourcePosition(1, 11),
+                SourcePosition(1, 9),
             ),
         )
         body = invocation.suite.nodes[0]
@@ -37,7 +37,7 @@ class SpanTests(unittest.TestCase):
         )
 
     def test_compile_with_map_returns_mapped_rendering(self):
-        result = compile_with_map("@center: |\n    BODY\n", filename="input.tfx")
+        result = compile_with_map("@center:\n    BODY\n", filename="input.tfx")
 
         self.assertIsInstance(result, CompilationResult)
         self.assertEqual(
@@ -63,7 +63,7 @@ class SpanTests(unittest.TestCase):
 
     def test_fragments_tile_generated_output_and_preserve_roles(self):
         rendered = compile_with_map(
-            "@center: |\n    BODY\n",
+            "@center:\n    BODY\n",
             filename="input.tfx",
         ).rendered
 
@@ -133,9 +133,9 @@ class SpanTests(unittest.TestCase):
         self.assertTrue(all(fragment.source is None for fragment in synthetic))
 
     def test_render_is_the_same_canonical_renderer_used_by_compile(self):
-        document = parse("@center: |\n    BODY\n", "input.tfx")
+        document = parse("@center:\n    BODY\n", "input.tfx")
         canonical = normalize(document)
-        self.assertEqual(render(canonical), compile_with_map("@center: |\n    BODY\n").text)
+        self.assertEqual(render(canonical), compile_with_map("@center:\n    BODY\n").text)
 
     def test_retracting_a_newline_leaves_the_cursor_after_the_kept_text(self):
         # A coalesced fragment keeps the text before the newline, so the
@@ -150,11 +150,11 @@ class SpanTests(unittest.TestCase):
 
     def test_a_value_ending_in_blank_lines_keeps_a_sorted_map(self):
         source = (
-            "!defmacro{nothing}: |\n"
-            "!defmacro{m}: |\n"
+            "!defmacro{nothing}:\n"
+            "!defmacro{m}:\n"
             "    plain\n\n\n"
             "    !nothing\n"
-            "\\cmd:\n"
+            "\\cmd::\n"
             "    - !m\n"
         )
         result = compile_with_map(source, filename="input.tfx")
@@ -173,7 +173,7 @@ class SpanTests(unittest.TestCase):
 
     def test_renderer_rejects_syntax_only_nodes(self):
         with self.assertRaises(TypeError):
-            render(parse("\\foo: |\n    BODY\n", "input.tfx"))
+            render(parse("\\foo:\n    BODY\n", "input.tfx"))
 
     def test_unicode_source_columns_are_half_open(self):
         document = parse("日本語\n", "input.tfx")

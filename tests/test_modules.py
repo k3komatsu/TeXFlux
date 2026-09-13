@@ -33,10 +33,10 @@ def collect(source, filename, module):
 
 class InterpolationModuleTests(TempDirTestCase):
     def test_nested_macro_text_preserves_transitive_fragment_sources(self):
-        self.write("inner.tfxm", "!defmacro{inner}{id}: |\n    \\label{!text{id}}\n")
+        self.write("inner.tfxm", "!defmacro{inner}{id}:\n    \\label{!text{id}}\n")
         self.write("outer.tfxm", "!macroimport{inner.tfxm}\n"
-                   "!defmacro{outer}{prefix}{id}: |\n    !inner{!text{prefix}-!text{id}}\n")
-        source = "!macroimport{outer.tfxm}\n!outer:\n    - sec\n    - intro\n"
+                   "!defmacro{outer}{prefix}{id}:\n    !inner{!text{prefix}-!text{id}}\n")
+        source = "!macroimport{outer.tfxm}\n!outer::\n    - sec\n    - intro\n"
         root = self.write("main.tfx", source)
         result = compile_with_map(source, filename=str(root))
         self.assertEqual(result.text, "\\label{sec-intro}\n")
@@ -49,7 +49,7 @@ class InterpolationModuleTests(TempDirTestCase):
         self.assertEqual(result.text, "".join(f.text for f in result.rendered.fragments))
 
     def test_ast_text_in_macro_module_gets_template_diagnostic(self):
-        self.write("style.tfxm", "!defmacro{m}{x}: |\n    !text{x}\n")
+        self.write("style.tfxm", "!defmacro{m}{x}:\n    !text{x}\n")
         with self.assertRaisesRegex(MacroExpansionError, "!text is only valid inside a textual field"):
             compile_text("!macroimport{style.tfxm}\n!m{A}\n", filename=str(self.root / "main.tfx"))
 
@@ -76,7 +76,7 @@ class GuardTests(unittest.TestCase):
                     "cannot be redefined",
                 ):
                     compile_text(
-                        "!defmacro{%s}: |\n    A\n" % name,
+                        "!defmacro{%s}:\n    A\n" % name,
                         filename="x.tfx",
                     )
 
@@ -84,8 +84,8 @@ class GuardTests(unittest.TestCase):
 class LexicalScopeTests(unittest.TestCase):
     """A macro's template resolves names in its own defining module."""
 
-    CORE = "!defmacro{wrapper}{body}: |\n    @{\\small} >> !param{body}\n"
-    OUTER = "!defmacro{foo}{body}: |\n    !wrapper: |\n        !param{body}\n"
+    CORE = "!defmacro{wrapper}{body}:\n    @{\\small} >> !param{body}\n"
+    OUTER = "!defmacro{foo}{body}:\n    !wrapper:\n        !param{body}\n"
 
     def environments(self):
         _, core = collect(self.CORE, "core.tfxm", "/core.tfxm")
@@ -98,7 +98,7 @@ class LexicalScopeTests(unittest.TestCase):
 
     def test_a_template_sees_its_own_private_imports(self):
         environments, outer = self.environments()
-        document = desugar(parse("!foo: |\n    Hello\n", "main.tfx"))
+        document = desugar(parse("!foo:\n    Hello\n", "main.tfx"))
         # main.tfx sees !foo only, never core.tfxm's !wrapper.
         environments["/main.tfx"] = dict(outer)
         expanded = expand_macros(
@@ -113,7 +113,7 @@ class LexicalScopeTests(unittest.TestCase):
     def test_a_caller_does_not_see_a_private_import(self):
         environments, outer = self.environments()
         environments["/main.tfx"] = dict(outer)
-        document = desugar(parse("!wrapper: |\n    Hello\n", "main.tfx"))
+        document = desugar(parse("!wrapper:\n    Hello\n", "main.tfx"))
         expanded = expand_macros(
             document,
             environments["/main.tfx"],
@@ -126,12 +126,12 @@ class LexicalScopeTests(unittest.TestCase):
 
     def test_same_name_in_two_modules_is_not_recursion(self):
         _, inner = collect(
-            "!defmacro{same}{b}: |\n    \\inner{!text{b}}\n",
+            "!defmacro{same}{b}:\n    \\inner{!text{b}}\n",
             "b.tfxm",
             "/b.tfxm",
         )
         _, outer = collect(
-            "!defmacro{same}{b}: |\n    !same: |\n        !param{b}\n",
+            "!defmacro{same}{b}:\n    !same:\n        !param{b}\n",
             "a.tfxm",
             "/a.tfxm",
         )
@@ -141,7 +141,7 @@ class LexicalScopeTests(unittest.TestCase):
             "/a.tfxm": dict(inner),
             "/main.tfx": dict(outer),
         }
-        document = desugar(parse("!same: |\n    X\n", "main.tfx"))
+        document = desugar(parse("!same:\n    X\n", "main.tfx"))
         expanded = expand_macros(
             document,
             outer,
@@ -153,12 +153,12 @@ class LexicalScopeTests(unittest.TestCase):
 
     def test_recursion_across_modules_names_each_defining_file(self):
         _, inner = collect(
-            "!defmacro{same}{b}: |\n    !same: |\n        !param{b}\n",
+            "!defmacro{same}{b}:\n    !same:\n        !param{b}\n",
             "b.tfxm",
             "/b.tfxm",
         )
         _, outer = collect(
-            "!defmacro{same}{b}: |\n    !same: |\n        !param{b}\n",
+            "!defmacro{same}{b}:\n    !same:\n        !param{b}\n",
             "a.tfxm",
             "/a.tfxm",
         )
@@ -167,7 +167,7 @@ class LexicalScopeTests(unittest.TestCase):
             "/a.tfxm": dict(inner),
             "/main.tfx": dict(outer),
         }
-        document = desugar(parse("!same: |\n    X\n", "main.tfx"))
+        document = desugar(parse("!same:\n    X\n", "main.tfx"))
         with self.assertRaisesRegex(MacroExpansionError, "same@a.tfxm -> same@b.tfxm"):
             expand_macros(
                 document,
@@ -181,7 +181,7 @@ class LexicalScopeTests(unittest.TestCase):
         # A template only names a special sometimes, so a missing environment
         # has to fail on the lookup rather than on the first call that needs it.
         document, macros = collect(
-            "!defmacro{m}: |\n    !before{1em}: |\n        A\n!m\n",
+            "!defmacro{m}:\n    !before{1em}:\n        A\n!m\n",
             "main.tfx",
             "",
         )
@@ -200,7 +200,7 @@ class LexicalScopeTests(unittest.TestCase):
             "recursive macro expansion detected: foo -> foo",
         ):
             compile_text(
-                "!defmacro{foo}: |\n    !foo\n!foo\n",
+                "!defmacro{foo}:\n    !foo\n!foo\n",
                 filename="x.tfx",
             )
 
@@ -214,7 +214,7 @@ class TemplateContentTests(unittest.TestCase):
                     f"!{name} is not allowed inside a macro template",
                 ):
                     collect(
-                        "!defmacro{m}: |\n    !%s{a.tfx}\n" % name,
+                        "!defmacro{m}:\n    !%s{a.tfx}\n" % name,
                         "x.tfx",
                         "/x.tfx",
                     )
@@ -240,19 +240,19 @@ class ModuleTestCase(TempDirTestCase):
 class PathResolutionTests(ModuleTestCase):
     def test_paths_resolve_against_the_file_that_writes_them(self):
         (self.root / "archive").mkdir()
-        self.write("archive/macros.tfxm", "!defmacro{deep}: |\n    DEEP\n")
+        self.write("archive/macros.tfxm", "!defmacro{deep}:\n    DEEP\n")
         self.write(
             "archive/slide.tfx",
             "!macroimport{macros.tfxm}\n\n!deep\n",
         )
         # A sibling of main.tfx by the same name must not win.
-        self.write("macros.tfxm", "!defmacro{deep}: |\n    SHALLOW\n")
+        self.write("macros.tfxm", "!defmacro{deep}:\n    SHALLOW\n")
         self.write("main.tfx", "!import{archive/slide.tfx}\n")
         self.assertIn("DEEP", self.build())
 
     def test_parent_relative_paths_resolve(self):
         (self.root / "part").mkdir()
-        self.write("shared.tfxm", "!defmacro{up}: |\n    UP\n")
+        self.write("shared.tfxm", "!defmacro{up}:\n    UP\n")
         self.write("part/a.tfx", "!macroimport{../shared.tfxm}\n\n!up\n")
         self.write("main.tfx", "!import{part/a.tfx}\n")
         self.assertIn("UP", self.build())
@@ -276,7 +276,7 @@ class PathResolutionTests(ModuleTestCase):
     def test_both_constructs_reject_the_same_malformed_paths(self):
         # Path shape is checked before either construct touches the file
         # system, so neither can leak an unspanned error the other catches.
-        self.write("a.tfxm", "!defmacro{m}: |\n    M\n")
+        self.write("a.tfxm", "!defmacro{m}:\n    M\n")
         for source, message in (
             ("!macroimport{a\x00b.tfxm}\n", "must not contain a NUL character"),
             ("!macroimport{}\n", "must not be empty"),
@@ -313,8 +313,8 @@ class ImportFormTests(ModuleTestCase):
 
     def test_import_never_owns_a_suite_or_wraps_a_payload(self):
         for source in (
-            "!import{a.tfx}: |\n    X\n",
-            "!import{a.tfx}:\n    - X\n",
+            "!import{a.tfx}:\n    X\n",
+            "!import{a.tfx}::\n    - X\n",
             "!import{a.tfx} >> @center\n",
         ):
             with self.subTest(source=source):
@@ -345,7 +345,7 @@ class ImportFormTests(ModuleTestCase):
         self.assertEqual(self.build(), "{\nA\n}\n")
 
     def test_import_is_valid_in_a_value_position(self):
-        self.write("main.tfx", "\\pair:\n    - !import{a.tfx}\n    - tail\n")
+        self.write("main.tfx", "\\pair::\n    - !import{a.tfx}\n    - tail\n")
         # One imported line is a one-line value, so its braces hug it.
         self.assertEqual(self.build(), "\\pair{A}{tail}\n")
 
@@ -355,7 +355,7 @@ class BindingTests(ModuleTestCase):
         "!flag{answers}{off}\n"
         "\n"
         "Q\n"
-        "!when{answers}: |\n"
+        "!when{answers}:\n"
         "    A\n"
     )
 
@@ -439,11 +439,11 @@ class CycleTests(ModuleTestCase):
     def test_macro_module_cycles_are_allowed(self):
         self.write(
             "a.tfxm",
-            "!macroimport{b.tfxm}\n\n!defmacro{fa}: |\n    !fb\n",
+            "!macroimport{b.tfxm}\n\n!defmacro{fa}:\n    !fb\n",
         )
         self.write(
             "b.tfxm",
-            "!macroimport{a.tfxm}\n\n!defmacro{fb}: |\n    B\n",
+            "!macroimport{a.tfxm}\n\n!defmacro{fb}:\n    B\n",
         )
         self.write("main.tfx", "!macroimport{a.tfxm}\n\n!fa\n")
         self.assertEqual(self.build(), "\nB\n")
@@ -451,10 +451,10 @@ class CycleTests(ModuleTestCase):
 
 class MacroImportTests(ModuleTestCase):
     def test_macro_imports_are_private_and_non_transitive(self):
-        self.write("core.tfxm", "!defmacro{hidden}: |\n    H\n")
+        self.write("core.tfxm", "!defmacro{hidden}:\n    H\n")
         self.write(
             "style.tfxm",
-            "!macroimport{core.tfxm}\n\n!defmacro{shown}: |\n    !hidden\n",
+            "!macroimport{core.tfxm}\n\n!defmacro{shown}:\n    !hidden\n",
         )
         self.write("main.tfx", "!macroimport{style.tfxm}\n\n!shown\n")
         self.assertEqual(self.build(), "\nH\n")
@@ -463,8 +463,8 @@ class MacroImportTests(ModuleTestCase):
             self.build()
 
     def test_two_versions_of_one_library_coexist(self):
-        self.write("core-v1.tfxm", "!defmacro{tag}: |\n    V1\n")
-        self.write("core-v2.tfxm", "!defmacro{tag}: |\n    V2\n")
+        self.write("core-v1.tfxm", "!defmacro{tag}:\n    V1\n")
+        self.write("core-v2.tfxm", "!defmacro{tag}:\n    V2\n")
         self.write(
             "old.tfx",
             "!macroimport{core-v1.tfxm}\n\n!tag\n",
@@ -477,14 +477,14 @@ class MacroImportTests(ModuleTestCase):
         self.assertEqual(self.build(), "\nV1\n\nV2\n")
 
     def test_diamond_imports_stay_isolated(self):
-        self.write("core.tfxm", "!defmacro{shared}: |\n    S\n")
+        self.write("core.tfxm", "!defmacro{shared}:\n    S\n")
         self.write(
             "a.tfxm",
-            "!macroimport{core.tfxm}\n\n!defmacro{fa}: |\n    !shared\n",
+            "!macroimport{core.tfxm}\n\n!defmacro{fa}:\n    !shared\n",
         )
         self.write(
             "b.tfxm",
-            "!macroimport{core.tfxm}\n\n!defmacro{fb}: |\n    !shared\n",
+            "!macroimport{core.tfxm}\n\n!defmacro{fb}:\n    !shared\n",
         )
         self.write(
             "main.tfx",
@@ -493,8 +493,8 @@ class MacroImportTests(ModuleTestCase):
         self.assertEqual(self.build(), "\nS\nS\n")
 
     def test_visible_name_conflicts_are_errors(self):
-        self.write("a.tfxm", "!defmacro{same}: |\n    A\n")
-        self.write("b.tfxm", "!defmacro{same}: |\n    B\n")
+        self.write("a.tfxm", "!defmacro{same}:\n    A\n")
+        self.write("b.tfxm", "!defmacro{same}:\n    B\n")
         self.write(
             "main.tfx",
             "!macroimport{a.tfxm}\n!macroimport{b.tfxm}\n",
@@ -503,15 +503,15 @@ class MacroImportTests(ModuleTestCase):
 
         self.write(
             "main.tfx",
-            "!macroimport{a.tfxm}\n\n!defmacro{same}: |\n    LOCAL\n",
+            "!macroimport{a.tfxm}\n\n!defmacro{same}:\n    LOCAL\n",
         )
         with self.assertRaisesRegex(ValidationError, "already defined at"):
             self.build()
 
     def test_forms_are_checked(self):
-        self.write("a.tfxm", "!defmacro{m}: |\n    M\n")
+        self.write("a.tfxm", "!defmacro{m}:\n    M\n")
         for source, message in (
-            ("!macroimport{a.tfxm}: |\n    X\n", "does not accept a suite"),
+            ("!macroimport{a.tfxm}:\n    X\n", "does not accept a suite"),
             ("!macroimport\n", "one '{path}' group"),
             ("!macroimport{a.tfxm}{b}\n", "one '{path}' group"),
             ("!macroimport[x]\n", "path must be a required"),
@@ -521,7 +521,7 @@ class MacroImportTests(ModuleTestCase):
                 "already imported at",
             ),
             (
-                "@center: |\n    !macroimport{a.tfxm}\n",
+                "@center:\n    !macroimport{a.tfxm}\n",
                 "only valid at the top level",
             ),
             (
@@ -543,8 +543,8 @@ class MacroModulePurityTests(ModuleTestCase):
     def test_a_macro_module_states_only_definitions_and_imports(self):
         for macro_module in (
             "raw tex\n",
-            "@center: |\n    X\n",
-            "\\foo: |\n    X\n",
+            "@center:\n    X\n",
+            "\\foo:\n    X\n",
             "@center >> \\foo{x}\n",
         ):
             with self.subTest(macro_module=macro_module):
@@ -570,7 +570,7 @@ class MacroModulePurityTests(ModuleTestCase):
     def test_a_raw_mode_region_inside_a_macro_template_is_allowed(self):
         self.write(
             "a.tfxm",
-            "!defmacro{m}: |\n"
+            "!defmacro{m}:\n"
             "    !BEGIN_RAW_MODE\n"
             "    !text{x}\n"
             "    !END_RAW_MODE\n",
@@ -581,7 +581,7 @@ class MacroModulePurityTests(ModuleTestCase):
     def test_comments_and_blank_lines_are_allowed(self):
         self.write(
             "a.tfxm",
-            "% a comment\n\n!defmacro{m}: |\n    M\n\n  % indented comment\n",
+            "% a comment\n\n!defmacro{m}:\n    M\n\n  % indented comment\n",
         )
         self.write("main.tfx", "!macroimport{a.tfxm}\n\n!m\n")
         self.assertEqual(self.build(), "\nM\n")
@@ -589,9 +589,9 @@ class MacroModulePurityTests(ModuleTestCase):
     def test_flags_and_conditionals_are_rejected_anywhere(self):
         for macro_module in (
             "!flag{d}{off}\n",
-            "!defmacro{m}: |\n    !when{d} >> \\X\n",
-            "!defmacro{m}: |\n    !unless{d} >> \\X\n",
-            "!defmacro{m}: |\n    !import{a.tfx}\n",
+            "!defmacro{m}:\n    !when{d} >> \\X\n",
+            "!defmacro{m}:\n    !unless{d} >> \\X\n",
+            "!defmacro{m}:\n    !import{a.tfx}\n",
         ):
             with self.subTest(macro_module=macro_module):
                 self.write("a.tfxm", macro_module)
@@ -605,15 +605,15 @@ class MacroModulePurityTests(ModuleTestCase):
 
     def test_a_macro_module_must_be_self_contained(self):
         self.check(
-            "!defmacro{foo}{body}: |\n    !helper: |\n        !param{body}\n",
+            "!defmacro{foo}{body}:\n    !helper:\n        !param{body}\n",
             "'!helper' is not defined in",
         )
 
     def test_a_callers_namespace_cannot_complete_a_macro_module(self):
-        self.write("a.tfxm", "!defmacro{foo}: |\n    !helper\n")
+        self.write("a.tfxm", "!defmacro{foo}:\n    !helper\n")
         self.write(
             "main.tfx",
-            "!macroimport{a.tfxm}\n\n!defmacro{helper}: |\n    H\n\n!foo\n",
+            "!macroimport{a.tfxm}\n\n!defmacro{helper}:\n    H\n\n!foo\n",
         )
         self.assertIn("'!helper' is not defined in", self.failure().message)
 
@@ -622,7 +622,7 @@ class ConditionalImportTests(ModuleTestCase):
     def test_a_dropped_import_never_opens_its_file(self):
         self.write(
             "main.tfx",
-            "!flag{appendix}{off}\n\n!when{appendix}: |\n    !import{missing.tfx}\n",
+            "!flag{appendix}{off}\n\n!when{appendix}:\n    !import{missing.tfx}\n",
         )
         self.assertEqual(self.build(), "\n")
         with self.assertRaises(ModuleError):
@@ -632,7 +632,7 @@ class ConditionalImportTests(ModuleTestCase):
         self.write("part.tfx", "PART\n")
         self.write(
             "main.tfx",
-            "!flag{appendix}{on}\n\n!when{appendix}: |\n    !import{part.tfx}\n",
+            "!flag{appendix}{on}\n\n!when{appendix}:\n    !import{part.tfx}\n",
         )
         self.assertEqual(self.build(), "\nPART\n")
 
@@ -642,11 +642,11 @@ class ImportAsMacroValueTests(ModuleTestCase):
         self.write("a.tfx", "A\n")
         self.write(
             "main.tfx",
-            "!defmacro{twice}{body}: |\n"
+            "!defmacro{twice}{body}:\n"
             "    !param{body}\n"
             "    !param{body}\n"
             "\n"
-            "!twice: |\n"
+            "!twice:\n"
             "    !import{a.tfx}\n",
         )
         self.assertEqual(self.build(), "\nA\nA\n")
@@ -654,7 +654,7 @@ class ImportAsMacroValueTests(ModuleTestCase):
 
 class DiagnosticChainTests(ModuleTestCase):
     def test_an_error_keeps_its_own_span_and_names_the_import_chain(self):
-        self.write("broken.tfx", "!defmacro{m}{x}{x}: |\n    A\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}:\n    A\n")
         self.write("mid.tfx", "!import{broken.tfx}\n")
         self.write("main.tfx", "!import{mid.tfx}\n")
         with self.assertRaises(ValidationError) as caught:
@@ -678,7 +678,7 @@ class DiagnosticChainTests(ModuleTestCase):
     def test_a_macro_module_error_names_the_file_that_imported_it(self):
         # A .tfxm is shared between decks, so which !macroimport reached it
         # is what tells the author where to look.
-        self.write("impure.tfxm", "!defmacro{m}: |\n    !nosuchmacro\n")
+        self.write("impure.tfxm", "!defmacro{m}:\n    !nosuchmacro\n")
         self.write("mid.tfx", "!macroimport{impure.tfxm}\n\nA\n")
         self.write("main.tfx", "!import{mid.tfx}\n")
         error = self.failure()
@@ -688,7 +688,7 @@ class DiagnosticChainTests(ModuleTestCase):
         self.assertEqual(error.message.count("imported from"), 2)
 
     def test_a_macro_module_parse_error_names_its_import_site(self):
-        self.write("broken.tfxm", "!defmacro{m}: |\n    @frame{a\n")
+        self.write("broken.tfxm", "!defmacro{m}:\n    @frame{a\n")
         self.write("main.tfx", "!macroimport{broken.tfxm}\n")
         with self.assertRaises(ParseError) as caught:
             self.build()
@@ -698,9 +698,9 @@ class DiagnosticChainTests(ModuleTestCase):
         self.assertIn("main.tfx", error.message)
 
     def test_a_shared_macro_module_names_its_shallowest_import(self):
-        self.write("shared.tfxm", "!defmacro{s}: |\n    !nope\n")
-        self.write("p.tfxm", "!macroimport{shared.tfxm}\n\n!defmacro{p}: |\n    P\n")
-        self.write("q.tfxm", "!macroimport{shared.tfxm}\n\n!defmacro{q}: |\n    Q\n")
+        self.write("shared.tfxm", "!defmacro{s}:\n    !nope\n")
+        self.write("p.tfxm", "!macroimport{shared.tfxm}\n\n!defmacro{p}:\n    P\n")
+        self.write("q.tfxm", "!macroimport{shared.tfxm}\n\n!defmacro{q}:\n    Q\n")
         self.write("main.tfx", "!macroimport{p.tfxm}\n!macroimport{q.tfxm}\n")
         message = self.failure().message
         self.assertIn("p.tfxm", message)
@@ -708,16 +708,16 @@ class DiagnosticChainTests(ModuleTestCase):
 
     def test_a_shallower_import_wins_over_an_earlier_deeper_one(self):
         # Breadth first, so main.tfx's second line beats a.tfxm's first.
-        self.write("z.tfxm", "!defmacro{z}: |\n    !nope\n")
-        self.write("a.tfxm", "!macroimport{z.tfxm}\n\n!defmacro{a}: |\n    A\n")
+        self.write("z.tfxm", "!defmacro{z}:\n    !nope\n")
+        self.write("a.tfxm", "!macroimport{z.tfxm}\n\n!defmacro{a}:\n    A\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n!macroimport{z.tfxm}\n")
         message = self.failure().message
         self.assertIn("main.tfx", message)
         self.assertNotIn("a.tfxm", message)
 
     def test_a_deep_macro_import_names_every_level(self):
-        self.write("deep.tfxm", "!defmacro{m}: |\n    !nope\n")
-        self.write("b.tfxm", "!macroimport{deep.tfxm}\n\n!defmacro{b}: |\n    B\n")
+        self.write("deep.tfxm", "!defmacro{m}:\n    !nope\n")
+        self.write("b.tfxm", "!macroimport{deep.tfxm}\n\n!defmacro{b}:\n    B\n")
         self.write("main.tfx", "!macroimport{b.tfxm}\n")
         message = self.failure().message
         self.assertEqual(message.count("imported from"), 2)
@@ -727,7 +727,7 @@ class DiagnosticChainTests(ModuleTestCase):
     def test_a_nested_unreadable_module_keeps_the_levels_above_it(self):
         # The level written at the error's own line adds nothing, but it must
         # not stop the walk: how a.tfxm entered the build is still needed.
-        self.write("a.tfxm", "!macroimport{missing.tfxm}\n\n!defmacro{a}: |\n    A\n")
+        self.write("a.tfxm", "!macroimport{missing.tfxm}\n\n!defmacro{a}:\n    A\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n")
         error = self.failure()
         self.assertTrue(error.span.file.endswith("a.tfxm"))
@@ -741,7 +741,7 @@ class DiagnosticChainTests(ModuleTestCase):
         self.write("dep.tfx", "A\n")
         for source in ("!macroimport{dep.tfx}\n", "!macroimport{missing.tfxm}\n"):
             with self.subTest(source=source):
-                self.write("a.tfxm", source + "\n!defmacro{a}: |\n    A\n")
+                self.write("a.tfxm", source + "\n!defmacro{a}:\n    A\n")
                 self.write("main.tfx", "!macroimport{a.tfxm}\n")
                 message = self.failure().message
                 self.assertEqual(message.count("imported from"), 1)

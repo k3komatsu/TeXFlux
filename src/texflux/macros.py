@@ -157,7 +157,7 @@ def _definition(
 ) -> MacroDefinition:
     if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
         raise ValidationError(
-            "!defmacro requires a ': |' template suite",
+            "!defmacro requires a ':' template suite",
             node.span,
         )
     if not node.groups:
@@ -213,12 +213,12 @@ def _definition(
 
 
 def validate_macro_forms(document: Document) -> None:
-    """Reject a template construct whose ``: |`` suite is not actually written.
+    """Reject a template construct whose ``:`` suite is not actually written.
 
     Stack desugaring hands every segment but the rightmost a synthetic block
     suite that no later pass can tell from a written one, so this runs on the
     syntax AST before ``>>`` is resolved. The rightmost segment keeps the
-    stack's own suffix, so ``@{\\bfseries} >> !each{items}{item}: |`` owns a
+    stack's own suffix, so ``@{\\bfseries} >> !each{items}{item}:`` owns a
     real template and stays legal.
     """
 
@@ -230,7 +230,7 @@ def validate_macro_forms(document: Document) -> None:
                 # Composing a definition would nest it under the segments to
                 # its left, and a definition must be a top-level statement.
                 raise ValidationError(
-                    "!defmacro must be a top-level ': |' definition and "
+                    "!defmacro must be a top-level ':' definition and "
                     "cannot be a '>>' segment",
                     segment.span,
                 )
@@ -240,7 +240,7 @@ def validate_macro_forms(document: Document) -> None:
             )
             if segment.name == Reserved.EACH and not writes_own_suite:
                 raise ValidationError(
-                    "!each requires a ': |' template suite of its own",
+                    "!each requires a ':' template suite of its own",
                     segment.span,
                 )
 
@@ -571,7 +571,7 @@ class _Expander:
     ) -> tuple[Node, ...]:
         frame = self._template_frame(node, frame)
         if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
-            raise ValidationError("!each requires a ': |' template suite", node.span)
+            raise ValidationError("!each requires a ':' template suite", node.span)
         sequence_name, item_name = self._single_name(node, "!each", 2, frame)
         if _PARAM_NAME_RE.fullmatch(item_name) is None:
             raise ValidationError(
@@ -622,12 +622,12 @@ class _Expander:
         keep = evaluate_conditional(node, self._flags)
         if node.suite is None:
             raise ValidationError(
-                f"!{node.name} requires a ': |' suite or a '>>' payload",
+                f"!{node.name} requires a ':' suite or a '>>' payload",
                 node.span,
             )
         if node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError(
-                f"!{node.name} does not accept a ':' sequence suite",
+                f"!{node.name} does not accept a '::' sequence suite",
                 node.span,
             )
 

@@ -1,9 +1,9 @@
 % Ordinary lines are raw TeX.
 \section{TeXFlux}
 
-@frame{A small example}: |
+@frame{A small example}:
     \vspace{-.5em}
-    @itemize: |
+    @itemize:
         \item Keep the TeX-first model
         \item<2->[A] Shorten structural boilerplate only
     \medskip

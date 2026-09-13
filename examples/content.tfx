@@ -13,9 +13,9 @@
 \institute[豊橋技科大]{豊橋技術科学大学}
 \date{\today}
 
-@frame[t,plain,noframenumbering]{}: |
+@frame[t,plain,noframenumbering]{}:
     % ロゴを入れる
-    @tikzpicture[overlay]: |
+    @tikzpicture[overlay]:
         \node at (\paperwidth-12ex,-1.2cm) {
         \includegraphics[width=7ex]{logo/tut_logo.pdf}
         };
@@ -24,12 +24,12 @@
     \vspace{2cm}
     % \vfill
 
-    @rightnote >> @center: |
-        @{}: |
+    @rightnote >> @center:
+        @{}:
             \Large
             ランダムDFT拡散スペクトル有効周波数分割多重と\\期待値伝播法に基づく低計算量復調法
         \\
-        @{}: |
+        @{}:
             \small
             Randomized DFT Spread Spectrally Efficient Frequency Division Multiplexing\\
             and Low-Complexity Expectation-Propagation Detection
@@ -37,8 +37,8 @@
     % \vspace{0.5cm}
     \vfill
 
-    @center: |
-        @tabular{rrl}: |
+    @center:
+        @tabular{rrl}:
             $\dagger$豊橋技術科学大学&〇&小松和暉 \\
             $\dagger\dagger$東京大学&&小島駿 \\
             $\dagger$&&上原秀幸 \\
@@ -46,7 +46,7 @@
         % \vspace{0.5cm}
         \vfill
 
-        @{}: |
+        @{}:
             電子情報通信学会　無線通信システム研究会\\
             6月研究会@北海道大学
 
@@ -98,23 +98,23 @@
 
 
 
-@frame[t]{スペクトル有効周波数分割多重：SEFDM} >> !before{\vspace{-0.5em}}: |
-    \doublecolumn[0.48]:
-        - \scalebox{0.9}: |
+@frame[t]{スペクトル有効周波数分割多重：SEFDM} >> !before{\vspace{-0.5em}}:
+    \doublecolumn[0.48]::
+        - \scalebox{0.9}:
             \input{figs/sefdm_ofdm.tex}
 
         -
             \small
-            \scalebox{0.9}: |
+            \scalebox{0.9}:
                 \input{figs/sefdm_mod.tex}
 
 
-    \diffdoublecolumn{0.78}{0.27}:
-        - @itemize: |
+    \diffdoublecolumn{0.78}{0.27}::
+        - @itemize:
             \item 直交周波数分割多重（OFDM）より\TextCA{狭い帯域幅で\\同一の伝送速度}で情報を伝送する技術
             \item OFDMのように逆高速フーリエ変換（IFFT）を\\用いて\TextCA{低計算量で変調が可能}
 
-        - \rightnotebox{Note} >> @align*: |
+        - \rightnotebox{Note} >> @align*:
             &\text{圧縮率 } \alpha = N/K < 1 \\
             &\text{サブキャリア数} N \\
             &\text{FFTサイズ} K
@@ -122,21 +122,21 @@
 
 
 
-@frame[t]{SEFDMにおけるキャリア間干渉（ICI）} >> !before{\vspace{-2em}}: |
+@frame[t]{SEFDMにおけるキャリア間干渉（ICI）} >> !before{\vspace{-2em}}:
 
-    \doublecolumn[0.48]:
-        - @center: |
+    \doublecolumn[0.48]::
+        - @center:
             \input{figs/sefdm_ici_ofdm.tex}\\
             サブキャリアが直交しているため\\FFTで簡単に復調可能
 
-        - @center: |
+        - @center:
             \input{figs/sefdm_ici_sefdm.tex}\\
             サブキャリアが直交しておらず\\
             \TextCB{ICIによりFFTでは復調できない}
 
 
-    !before{\vspace{1em}} >> \singlecolumn[0.06]: |
-        @infobox{SEFDMの特徴（OFDMとの比較）} >> @itemize: |
+    !before{\vspace{1em}} >> \singlecolumn[0.06]:
+        @infobox{SEFDMの特徴（OFDMとの比較）} >> @itemize:
             \item サブキャリアを密に配置するため\TextCA{必要な帯域幅が減らせる}
             \item \TextCB{ICIにより復調が困難}
 
@@ -170,28 +170,28 @@
 % \end{frame}
 
 
-@frame[t]{既存のSEFDMの復調方法} >> !before{\vspace{-1.5em}}: |
-    @center: |
+@frame[t]{既存のSEFDMの復調方法} >> !before{\vspace{-1.5em}}:
+    @center:
         \renewcommand\arraystretch{2}
         \tabcolsep = 0.1cm
-        @tabular{cccc}: |
+        @tabular{cccc}:
             基礎技術 & 復調性能 & 計算量 & 問題点 \\ \hline
             最尤推定 & ○○ & ×× & 指数計算量 \\ \hline
             固有モード伝送 & ○ & ○ & 小さな特異値の問題 \\ \hline
             確率推論 & ○ & ○ & 小さな$N$で性能劣化 \\ \hline
 
-    !before{\vspace{0.2em}} >> \singlecolumn[0.11]: |
-        @infobox{} >> @itemize: |
+    !before{\vspace{0.2em}} >> \singlecolumn[0.11]:
+        @infobox{} >> @itemize:
             \item 基本的にはMIMO伝送の復調方式と同等な\\アルゴリズムによって復調可能
             \item それぞれ一長一短があるのが現状
 
 
 
-@frame[t]{大規模SEFDMにおける復調方法の比較} >> !before{\vspace{-1.5em}}: |
-    @center: |
+@frame[t]{大規模SEFDMにおける復調方法の比較} >> !before{\vspace{-1.5em}}:
+    @center:
         \renewcommand\arraystretch{2}
         \tabcolsep = 0.1cm
-        @tabular{cccc}: |
+        @tabular{cccc}:
             基礎技術 & 復調性能 & 計算量 & 問題点 \\ \hline
             最尤推定 & ○○ & ×× & \TextCB{指数計算量} \\ \hline
             固有モード伝送 & ○ & ○ & \TextCB{小さな特異値の問題} \\ \hline
@@ -202,29 +202,29 @@
     %     \item 最尤推定・固有モード伝送は$N$が大きくなればなるほど\TextCB{問題点がより厳しくなってくる}
     %     \item 確率推論は\TextCA{$N$が大きいほうが有利}
     % \end{itemize}
-    !before{\vspace{0.2em}} >> \singlecolumn[0.07]: |
-        @infobox{}: |
+    !before{\vspace{0.2em}} >> \singlecolumn[0.07]:
+        @infobox{}:
             % \begin{itemize}
             %     \item 基本的にはMIMO伝送の復調方式と同等な\\アルゴリズムによって復調可能
             %     \item それぞれ一長一短があるのが現状
             % \end{itemize}
-            @itemize: |
+            @itemize:
                 \item 最尤推定・固有モード伝送は$N$が大きくなればなるほど\\\TextCB{問題点がより厳しくなってくる}
                 % \item OFDMでは一般的にサブキャリア数$N \geq 50$
                 \item 確率推論は\TextCA{$N$が大きいほうが有利}
 
 
 
-@frame[t]{2022年10月RCS研究会での発表の概要} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.11]: |
+@frame[t]{2022年10月RCS研究会での発表の概要} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.11]:
     % \vspace{-0.5em}
-    @infobox{目的}: |
+    @infobox{目的}:
         サブキャリア数$N$の大きなSEFDMにおいて
-        @itemize: |
+        @itemize:
             \item 確率推論手法の\TextCA{期待値伝播法（EP）}の性能評価
             \item \TextCA{ハール・プリコーディング}による復調性能改善
 
 
-    @infobox{結果のまとめ} >> @itemize: |
+    @infobox{結果のまとめ} >> @itemize:
         \item $N=160$, QPSK-SEFDMにおいてOFDMと\\比較して62.5\%まで帯域を削減可能
 
 
@@ -423,27 +423,27 @@
 
 
 
-@frame[t]{性能評価するSEFDMシステム（前回の発表より抜粋）} >> !before{\vspace{-0.5em}} >> \singlecolumn[0.1]: |
-    \scalebox{1}: |
+@frame[t]{性能評価するSEFDMシステム（前回の発表より抜粋）} >> !before{\vspace{-0.5em}} >> \singlecolumn[0.1]:
+    \scalebox{1}:
         \small
         \input{figs/sefdm_eval_system.tex}
 
 
-    !before{\vspace{1em}} >> @itemize: |
+    !before{\vspace{1em}} >> @itemize:
         \item 送信サブキャリアに\TextCA{ハール直交行列}を作用
         \item 受信側では\TextCA{期待値伝播法（EP）}で復調
 
 
 
-@frame[t]{AWGN，$N=160$，$\alpha=0.625$（前回の発表より抜粋）}: |
+@frame[t]{AWGN，$N=160$，$\alpha=0.625$（前回の発表より抜粋）}:
     % \vspace{-0.5em}
-    \diffdoublecolumn{0.70}{0.35}:
-        - !before{\vspace{-2em}} >> @center: |
+    \diffdoublecolumn{0.70}{0.35}::
+        - !before{\vspace{-2em}} >> @center:
             \includegraphics[page=3,width=0.95\textwidth]{plot_pdfs.pdf}
 
-        - @{}: |
+        - @{}:
             \small
-            @itemize: |
+            @itemize:
                 \item \textcolor{C4}{QRM-MLD}：\\QR分解Mアルゴリズム\\最尤推定法
                 \item \textcolor{C3}{EMT}：固有モード伝送
                 \item \textcolor{C1}{GaBP}：ガウス信念伝播法
@@ -452,74 +452,74 @@
 
 
 
-    !before{\vspace{-0.5em}} >> \centering: |
+    !before{\vspace{-0.5em}} >> \centering:
         \TextCA{EPは無圧縮OFDMの理論BER特性を達成}
     % \end{infobox}
 
 
-@frame[t]{前回の発表の課題と本研究での解決方法}: |
-    \singlecolumn[0.07]: |
+@frame[t]{前回の発表の課題と本研究での解決方法}:
+    \singlecolumn[0.07]:
         \TextCB{復調処理（EP法）の計算量の問題}
-        @itemize: |
+        @itemize:
             \item チャネル応答推定後に特異値分解$\mathcal{O}(N^3)$が必要
             \item EP法の反復1回に$\mathcal{O}(N^2)$の計算コスト\\
             （比較：OFDMは$\mathcal{O}(N\log N)$で復調可能）
 
-        !before{\vspace{1em}} >> @infobox{本研究での解決策}: |
+        !before{\vspace{1em}} >> @infobox{本研究での解決策}:
             以下の計算が低コスト$\mathcal{O}(N\log N)$で実行可能な\\\TextCA{新しいSEFDMの変調行列$\mathmat{W}$の設計}
-            @itemize: |
+            @itemize:
                 \item 行列ベクトル積$\mathmat{W} \mathmat{x}$
                 \item 線形MMSEフィルタ$\mathmat{W}^{H} \brkts{ \sigma^2 \mathmat{I} + v \mathmat{W} \mathmat{W}^{H} }^{-1}$
 
 
 
-@frame[t]{本発表の概要} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.09]: |
+@frame[t]{本発表の概要} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.09]:
     % \vspace{-0.5em}
-    @infobox{目的}: |
+    @infobox{目的}:
         サブキャリア数の大きなSEFDMにおいて
-        @itemize: |
+        @itemize:
             \item 低計算量で期待値伝播法（EP）が適用可能な\\変調方法の考案：\TextCA{ランダムDFT拡散SEFDM}
             \item 期待値伝播法（EP）適用時の誤り率の評価
 
 
-    @infobox{結果のまとめ} >> @itemize: |
+    @infobox{結果のまとめ} >> @itemize:
         \item OFDMと同じチャネル推定等の技術が適用可能
         \item FFTサイズ$N \geq 512$で良好な誤り率特性を達成
         \item パスダイバーシチ効果を確認
 
 
 
-@frame[t]{SEFDM変調行列：特異値分布（$N=160$，$\alpha=10/16$）}: |
-    \diffdoublecolumn{0.62}{0.45}:
-        - !before{\vspace{-1em}}: |
+@frame[t]{SEFDM変調行列：特異値分布（$N=160$，$\alpha=10/16$）}:
+    \diffdoublecolumn{0.62}{0.45}::
+        - !before{\vspace{-1em}}:
             \includegraphics[width=1\textwidth,page=1]{plot_svd.pdf}
 
         -
             圧縮率$\alpha$のSEFDM変調行列
-            @align*: |
+            @align*:
                 &[\mathmat{W}_{\alpha}]_{m,n} = \exp\Brkts{-j\frac{2\pi}{N}mn {\color{red} \alpha} } \\
                 &\mathmat{W}_{\alpha} = \mathmat{U} \BackgroundB{$\displaystyle \mathmat{\Sigma}$} \mathmat{V}^{H} \\
                 &\BackgroundB{$\displaystyle \mathmat{\Sigma}$} = \mathrm{diag}\BRKTS{ \sigma_0, \sigma_1, \cdots, \sigma_{N-1}}\\
                 &\sigma_0 \geq \sigma_1 \geq \cdots \geq \sigma_{N-1}
 
-            @infobox{}: |
+            @infobox{}:
                 $\alpha N$個の特異値のみ値を持ち\\$(1-\alpha)N$個の特異値が0
 
 
 
 
-@frame[t]{SEFDM変調行列：右ユニタリ行列（$N=160$，$\alpha=10/16$）}: |
-    \diffdoublecolumn{0.62}{0.45}:
-        - !before{\vspace{-1em}}: |
+@frame[t]{SEFDM変調行列：右ユニタリ行列（$N=160$，$\alpha=10/16$）}:
+    \diffdoublecolumn{0.62}{0.45}::
+        - !before{\vspace{-1em}}:
             \includegraphics[width=1\textwidth,page=2]{plot_svd.pdf}
 
         -
             圧縮率$\alpha$のSEFDM変調行列
-            @align*: |
+            @align*:
                 &[\mathmat{W}_{\alpha}]_{m,n} = \exp\Brkts{-j\frac{2\pi}{N}mn {\color{red} \alpha} } \\
                 &\mathmat{W}_{\alpha} = \mathmat{U} \sqrt{\mathmat{\Sigma}} \BackgroundB{$\displaystyle \sqrt{\mathmat{\Sigma}} \mathmat{V}^{H}$}\\
 
-            @infobox{} >> @itemize: |
+            @infobox{} >> @itemize:
                 \item 入力の$N$次元ベクトルを\\
                 \TextCA{$\alpha N$次元へ帯域圧縮}
                 \item サブキャリア間干渉
@@ -527,57 +527,57 @@
 
 
 
-@frame[t]{SEFDM変調行列：左ユニタリ行列（$N=160$，$\alpha=10/16$）}: |
-    \diffdoublecolumn{0.62}{0.45}:
-        - !before{\vspace{-1em}}: |
+@frame[t]{SEFDM変調行列：左ユニタリ行列（$N=160$，$\alpha=10/16$）}:
+    \diffdoublecolumn{0.62}{0.45}::
+        - !before{\vspace{-1em}}:
             \includegraphics[width=1\textwidth,page=3]{plot_svd.pdf}
 
         -
             圧縮率$\alpha$のSEFDM変調行列
-            @align*: |
+            @align*:
                 &[\mathmat{W}_{\alpha}]_{m,n} = \exp\Brkts{-j\frac{2\pi}{N}mn {\color{red} \alpha} } \\
                 &\BackgroundB{$\UnderlineAcap{$\mathmat{W}$}{DFT} \mathmat{U} \sqrt{\mathmat{\Sigma}}$} \sqrt{\mathmat{\Sigma}} \mathmat{V}^{H}\\
 
-            !before{\vspace{-1em}} >> @infobox{} >> @itemize: |
+            !before{\vspace{-1em}} >> @infobox{} >> @itemize:
                 \item DFTした結果が単位行列の$\alpha N$部分行列 \\
                 $\rightarrow$ \TextCA{IDFT行列の部分行列}
 
 
 
 
-@frame[t]{SEFDM変調行列と提案変調方法}: |
+@frame[t]{SEFDM変調行列と提案変調方法}:
     \headuline{CA}{ハール・プリコーディングSEFDM変調行列}
-    @align*: |
+    @align*:
         \mathmat{W}_{\alpha} \UnderlineC{$\mathmat{Q}$} = \UnderlineA{$\displaystyle \mathmat{U} \sqrt{\mathmat{\Sigma}}$} \UnderlineB{$ \displaystyle\sqrt{\mathmat{\Sigma}} \mathmat{V}^{H}$} \UnderlineC{$\mathmat{Q}$}
-    !before{\vspace{-2em}} >> @itemize: |
+    !before{\vspace{-2em}} >> @itemize:
         \item \UnderlineC{ハール行列$\mathmat{Q}$}：ランダムにサブキャリアを拡散
         \item $\mathmat{W}_{\alpha}$の\UnderlineB{入力側$ \displaystyle\sqrt{\mathmat{\Sigma}} \mathmat{V}^{H}$}：$\alpha$倍の帯域圧縮（$\alpha < 1$）
         \item $\mathmat{W}_{\alpha}$の\UnderlineA{出力側$\displaystyle \mathmat{U} \sqrt{\mathmat{\Sigma}}$}：逆離散フーリエ変換行列の部分行列
 
-    !before{\vspace{1em}}: |
+    !before{\vspace{1em}}:
         \headuline{CA}{提案変調方法：ランダムDFT拡散SEFDM}
-        @align*: |
+        @align*:
             \mathmat{W}'_{\alpha} = \UnderlineAcap{$\mathmat{W}^{H}$}{IDFT} \UnderlineBcap{$\mathmat{D}$}{帯域圧縮} \UnderlineCcap{$\mathmat{P}_{\pi} \mathmat{W}$}{ランダムDFT拡散}
 
 
-@frame[t]{提案変調方法の詳細}: |
-    \singlecolumn[0.05] >> !before{\vspace{-2em}}: |
-        @align*: |
+@frame[t]{提案変調方法の詳細}:
+    \singlecolumn[0.05] >> !before{\vspace{-2em}}:
+        @align*:
             \mathmat{W}'_{\alpha} = \UnderlineA{$\mathmat{W}^{H}$} \UnderlineB{$\mathmat{D}$} \UnderlineC{$\mathmat{P}_{\pi} \mathmat{W}$}
 
         \UnderlineC{\textbf{ランダムDFT拡散}$\mathmat{P}_{\pi} \mathmat{W}$}\headuline{CC}{}\\
-        @itemize: |
+        @itemize:
             \item DFT行列の行をランダムに入れ替えた\textbf{ユニタリ行列}
 
         \UnderlineB{\textbf{帯域圧縮}$\mathmat{D}$}\headuline{CB}{}\\
-        @itemize: |
+        @itemize:
             \item $\alpha N$個だけ値を持つ\textbf{対角行列}
 
         \UnderlineA{\textbf{IDFT行列}$\mathmat{W}^{H}$}\headuline{CA}{}\\
-        @itemize: |
+        @itemize:
             \item OFDMと同じくIDFT行列で変調（\textbf{ユニタリ行列}）
 
-        @infobox{} >> @itemize: |
+        @infobox{} >> @itemize:
             \item<only@1> \TextCA{特異値分解と同じ構造}（ユニタリ行列で挟まれた対角行列）
             \item<only@1> 三つの作用素すべて\TextCA{高々$\mathcal{O}(N \log N)$で計算可能}
             \item<only@2> 周波数領域でランダム化・圧縮をしたDFT-s-OFDM
@@ -585,19 +585,19 @@
 
 
 
-@frame[t]{提案変調方法のブロック図} >> !before{\vspace{-0.5em}}: |
-    @{}: |
+@frame[t]{提案変調方法のブロック図} >> !before{\vspace{-0.5em}}:
+    @{}:
         \small
-        \scalebox{0.95}: |
+        \scalebox{0.95}:
             \input{figs/rdft_s_sefdm_sys.tex}
 
-    !before{\vspace{-1em}} >> \diffdoublecolumn{0.7}{0.35}:
+    !before{\vspace{-1em}} >> \diffdoublecolumn{0.7}{0.35}::
         -
             \headuline{CA}{受信信号の周波数領域表現}
-            @align*: |
+            @align*:
                 \mathmat{y} = \UnderlineC{$\mathmat{H} \mathmat{D} \mathmat{P}_{\pi} \mathmat{W}$} \mathmat{x} + \mathmat{w} = \UnderlineC{$\mathmat{A}$} \mathmat{x} + \mathmat{w}
 
-        - !before{\vspace{0.5em}} >> \rightnotebox{}: |
+        - !before{\vspace{0.5em}} >> \rightnotebox{}:
             $\mathmat{H}$：周波数応答対角行列\\
             $\mathmat{w}$：AWGNベクトル\\
             \UnderlineC{$\mathmat{A}$}：観測行列
@@ -605,28 +605,28 @@
 
 
 
-@frame[t]{期待値伝播法（EP）の概要} >> !before{\vspace{-0.5em}}: |
-    @center: |
+@frame[t]{期待値伝播法（EP）の概要} >> !before{\vspace{-0.5em}}:
+    @center:
         \small
-        \scalebox{1}: |
+        \scalebox{1}:
             \input{figs/ep_abstract.tex}
 
 
-    @itemize: |
+    @itemize:
         \item 並列干渉除去と軟判定を交互に繰り返す手法
         \item モジュールAは\TextCA{受信信号$\mathmat{y}$の情報を用いて送信シンボル$\mathmat{x}$を推定}
-        @itemize: |
+        @itemize:
             \item 線形最小二乗誤差フィルタによる並列干渉除去
         \item モジュールBは\TextCA{送信シンボル$\mathmat{x}$の変調の特徴を利用して$\mathmat{x}$を推定}
-        @itemize: |
+        @itemize:
             \item AWGNとしたときの軟判定復調
         \item 互いに推定値$\mathmat{x}$と分散$v$を交換して収束させる
 
 
-@frame[t]{期待値伝播法の処理} >> !before{\vspace{-0.5em}}: |
+@frame[t]{期待値伝播法の処理} >> !before{\vspace{-0.5em}}:
     \headuline{CA}{モジュールA：LMMSEフィルタでの並列干渉除去}
     % \vspace{-1em}
-    \diffdoublecolumn{0.7}{0.5}:
+    \diffdoublecolumn{0.7}{0.5}::
         -
             % \scalebox{0.95}{
             $\displaystyle \mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^t = \mathmat{x}_{\mathrm{B} \rightarrow \mathrm{A}}^t + \gamma_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} \mathmat{A}^H {\color{CB} \mathmat{\Xi}^{-1}_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} } \brkts{ \mathmat{y} - \mathmat{A} \mathmat{x}^t_{\mathrm{B} \rightarrow \mathrm{A}} }$ \\
@@ -642,7 +642,7 @@
 
 
     \headuline{CA}{モジュールB：軟判定復調}
-    \diffdoublecolumn{0.5}{0.5}:
+    \diffdoublecolumn{0.5}{0.5}::
         -
             % \begin{align*}
             $\displaystyle \mathmat{x}_{\mathrm{B}}^{t+1} = \mathbb{E}\BRKTS{\mathmat{x} | \mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^t }$\\
@@ -657,14 +657,14 @@
 
 
 
-    @alertbox{} >> @itemize: |
+    @alertbox{} >> @itemize:
         \item モジュールAでの処理に\textbf{\TextCB{逆行列}}が必要，高計算量
         \item 観測行列$\mathmat{A}$を事前に特異値分解$\mathcal{O}(N^3)$する方法などが考案
 
-@frame[t]{提案変調方法における期待値伝播法} >> !before{\vspace{-0.5em}}: |
+@frame[t]{提案変調方法における期待値伝播法} >> !before{\vspace{-0.5em}}:
 
     \headuline{CA}{モジュールA：LMMSEフィルタでの並列干渉除去}
-    \diffdoublecolumn{0.7}{0.5}:
+    \diffdoublecolumn{0.7}{0.5}::
         -
             % \scalebox{0.95}{
             $\displaystyle \mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^t = \mathmat{x}_{\mathrm{B} \rightarrow \mathrm{A}}^t + \gamma_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} \mathmat{A}^H {\color{CB} \mathmat{\Xi}^{-1}_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} } \brkts{ \mathmat{y} - \mathmat{A} \mathmat{x}^t_{\mathrm{B} \rightarrow \mathrm{A}} }$ \\
@@ -678,14 +678,14 @@
             % }
 
 
-    @infobox{}: |
+    @infobox{}:
         \centering
         提案変調方法における観測行列$\mathmat{A}$は\TextCA{\textbf{自然と特異値分解済み}}\\
         になるように変調行列を設計（左ユニタリ行列は単位行列）
-        !before{\vspace{-0.5em}} >> @align*: |
+        !before{\vspace{-0.5em}} >> @align*:
             \mathmat{A} = \UnderlineBcap{$\mathmat{I}_N$}{左ユニタリ行列} \UnderlineAcap{$\mathmat{H} \mathmat{D}$}{特異値} \UnderlineBcap{$\mathmat{P}_{\pi} \mathmat{W}$}{右ユニタリ行列}
 
-        !before{\vspace{-0.5em}} >> @itemize: |
+        !before{\vspace{-0.5em}} >> @itemize:
             \item モジュールAで必要な逆行列${\color{CB} \mathmat{\Xi}_{v}^{-1}}$の計算は\TextCA{対角行列の逆行列になる}
             \item 反復1回あたりDFT/IDFTがそれぞれ1回ずつ：\TextCA{$\mathcal{O}(N \log N)$}
 
@@ -704,8 +704,8 @@
 
 % \end{frame}
 
-@frame[t]{性能評価シミュレーション諸元}: |
-    @center >> @tabular{c|c}: |
+@frame[t]{性能評価シミュレーション諸元}:
+    @center >> @tabular{c|c}:
         \hline
         % Parameter & Value \\ \hline
         サブキャリア変調 & QPSK \\ \hline
@@ -714,25 +714,25 @@
         サブキャリア数 & 40, 160, 320, 640, 1280 \\ \hline
         通信路 & AWGN，周波数選択性レイリーフェージング \\ \hline
 
-    !before{\vspace{1em}}: |
+    !before{\vspace{1em}}:
         \headuline{CA}{独立$L$波周波数選択性レイリーフェージング}
-        @align*: |
+        @align*:
             h[n] = \begin{cases}
             \mathcal{CN}(0, 1/L) & n < L \\
             0 & \text{otherwise}
             \end{cases}
 
 
-@frame[t]{AWGN通信路における性能評価}: |
-    \diffdoublecolumn{0.67}{0.38}:
-        - !before{\vspace{-1.4em}}: |
+@frame[t]{AWGN通信路における性能評価}:
+    \diffdoublecolumn{0.67}{0.38}::
+        - !before{\vspace{-1.4em}}:
             \includegraphics[page=1,width=\textwidth]{plot_ber.pdf}
 
         -
             圧縮率$\alpha = 0.625$ \\
             繰返し回数$I = 20$ \\
 
-            @infobox{} >> @itemize: |
+            @infobox{} >> @itemize:
                 \item $N=64$のとき\\$10^{-2}$付近でフロア
                 \item $N=256$のとき\\
                 $10^{-5}$付近でフロア
@@ -742,9 +742,9 @@
 
 
 
-@frame[t]{独立$L$波レイリーフェージング通信路における性能評価}: |
-    \diffdoublecolumn{0.67}{0.38}:
-        - !before{\vspace{-1.4em}}: |
+@frame[t]{独立$L$波レイリーフェージング通信路における性能評価}:
+    \diffdoublecolumn{0.67}{0.38}::
+        - !before{\vspace{-1.4em}}:
             \includegraphics[page=2,width=\textwidth]{plot_ber.pdf}
 
         -
@@ -752,16 +752,16 @@
             FFTサイズ$N=512$\\
             繰返し回数$I = 20$ \\
 
-            @infobox{} >> @itemize: |
+            @infobox{} >> @itemize:
                 \item 独立波の数を増やすと
                 性能改善
                 \item 周波数領域でのランダムDFT拡散による\TextCA{パスダイバーシチ効果}
 
 
 
-@frame[t]{EP法の繰り返し回数による性能評価}: |
-    \diffdoublecolumn{0.67}{0.38}:
-        - !before{\vspace{-1.4em}}: |
+@frame[t]{EP法の繰り返し回数による性能評価}:
+    \diffdoublecolumn{0.67}{0.38}::
+        - !before{\vspace{-1.4em}}:
             \includegraphics[page=4,width=\textwidth]{plot_ber.pdf}
 
         -
@@ -769,24 +769,24 @@
             FFTサイズ$N=512$\\
             独立波数$L=8$ \\
 
-            @infobox{} >> @itemize: |
+            @infobox{} >> @itemize:
                 \item 12回以上繰り返すとほとんど収束\\
                 \item OFDMの24倍程度の計算量
 
 
 
-@frame[t]{本発表のまとめ} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.07]: |
+@frame[t]{本発表のまとめ} >> !before{\vspace{-0.7em}} >> \singlecolumn[0.07]:
     % \vspace{-0.5em}
-    @infobox{目的}: |
+    @infobox{目的}:
         \centering
         サブキャリア数の大きなSEFDMのための\\
         新しい低計算量な変調・復調方法の提案
 
 
-    @infobox{結果のまとめ} >> @itemize: |
+    @infobox{結果のまとめ} >> @itemize:
         \item $N \geq 512$で良好な誤り率特性を達成
         \item パスダイバーシチ効果を確認
-    @alertbox{今後の課題}: |
+    @alertbox{今後の課題}:
         チャネル推定誤差や高いPAPRによる非線形性の影響の調査
 
 
@@ -904,42 +904,42 @@
 %     \end{infobox}
 % \end{frame}
 
-@frame[t,noframenumbering]{EP法とハール・プリコーディング}: |
+@frame[t,noframenumbering]{EP法とハール・プリコーディング}:
 
-    \singlecolumn[0.07] >> !before{\vspace{-0.5em}}: |
+    \singlecolumn[0.07] >> !before{\vspace{-0.5em}}:
 
         % \begin{infobox}{ハール直交行列}
         \headuline{CA}{ハール直交行列} \\
         要素が複素正規分布する行列$\mathmat{X}$をQR分解したときの\\\TextCA{ユニタリ行列$\mathmat{Q}$はハール直交行列}
-        @align*: |
+        @align*:
             \mathmat{X} = \UnderlineC{$\mathmat{Q}$} \mathmat{R}
 
-        !before{\vspace{1em}}: |
+        !before{\vspace{1em}}:
             % \end{infobox}
             % \vspace{1em}
 
             \headuline{CA}{ハール・プリコーディング}
-            @itemize: |
+            @itemize:
                 \item 送信側でハール直交行列を作用
                 \item 大規模MIMOにおいて大幅にEP法の復調性能改善
 
 
-            @infobox{}: |
+            @infobox{}:
                 \centering
                 SEFDMの復調においても性能改善されるのか調査
 
 
 
-@frame[t,noframenumbering]{EPのモジュールAでの処理}: |
+@frame[t,noframenumbering]{EPのモジュールAでの処理}:
     \TextCA{モジュールA：LMMSEフィルタでの並列干渉除去}
-    @align*: |
+    @align*:
         \mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^t &= \mathmat{x}_{\mathrm{B} \rightarrow \mathrm{A}}^t + \gamma_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} \mathmat{A}^H \mathmat{\Xi}^{-1}_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} \brkts{ \mathmat{y} - \mathmat{A} \mathmat{x}^t_{\mathrm{B} \rightarrow \mathrm{A}} }, \\
         v_{\mathrm{A} \rightarrow \mathrm{B}}^{t} &= \gamma_{v^t_{\mathrm{B} \rightarrow \mathrm{A}}} - v^t_{\mathrm{B} \rightarrow \mathrm{A}}, \\
         \mathmat{\Xi}_{v} &= \sigma^2 \mathmat{I}_M + v \mathmat{A}\mathmat{A}^H,\\
         \frac{1}{\gamma_v} &= \frac{1}{N} \mathrm{Tr}\brkts{ \mathmat{\Xi}_{v}^{-1} \mathmat{A} \mathmat{A}^H }
-@frame[t,noframenumbering]{EPのモジュールBでの処理}: |
+@frame[t,noframenumbering]{EPのモジュールBでの処理}:
     \TextCA{モジュールB：軟判定復調}
-    @align*: |
+    @align*:
         \mathmat{x}_{\mathrm{B} \rightarrow \mathrm{A}}^{t+1} &= v_{\mathrm{B} \rightarrow \mathrm{A}}^{t+1} \brkts{ \frac{\mathmat{x}_{\mathrm{B}}^{t+1}}{v_{\mathrm{B}}^{t+1}} - \frac{\mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^{t}}{v_{\mathrm{A} \rightarrow \mathrm{B}}^{t}}  }, \\
         \frac{1}{v_{\mathrm{B} \rightarrow \mathrm{A}}^{t+1}} &= \frac{1}{v_{\mathrm{B}}^{t+1}} - \frac{1}{v_{\mathrm{A} \rightarrow \mathrm{B}}^{t}}, \\
         \mathmat{x}_{\mathrm{B}}^{t+1} &= \mathbb{E}\BRKTS{\mathmat{x} | \mathmat{x}_{\mathrm{A} \rightarrow \mathrm{B}}^t },\\
@@ -965,9 +965,9 @@
 
 
 
-@frame[t,noframenumbering]{最尤推定法（MLD）に基づく復調手法}: |
+@frame[t,noframenumbering]{最尤推定法（MLD）に基づく復調手法}:
     送信シンボルを網羅的に全探索する手法
-    @itemize: |
+    @itemize:
         \item すべての候補で以下のコスト関数を計算
         \begin{align*}
         \mathcal{J}(\mathmat{x}) = \| \mathmat{y} - \mathmat{W}_{\alpha} \mathmat{x} \|^2
@@ -981,61 +981,61 @@
         \end{align*}
 
 
-@frame[t,fragile,noframenumbering]{固有モード伝送（EMT）法}: |
-    \only<1>: |
-        !before{\vspace{-0.5em}}: |
-            \scalebox{0.85}: |
+@frame[t,fragile,noframenumbering]{固有モード伝送（EMT）法}:
+    \only<1>:
+        !before{\vspace{-0.5em}}:
+            \scalebox{0.85}:
                 \small
                 \input{figs/sefdm_evd.tex}
 
-        @itemize: |
+        @itemize:
             \item 変調行列の特異値分解（SVD）$\mathmat{W}_{\alpha} = \mathmat{U} \mathmat{S} \mathmat{V}^{H}$
             \item 特異ベクトル$\mathmat{U}, \mathmat{V}$でプリ/ポストコーディング
             \item 特異値の逆数$\mathmat{S}^{-1}$で最適電力割当
 
-    \only<2>: |
-        @infobox{EMT法の利点} >> @itemize: |
+    \only<2>:
+        @infobox{EMT法の利点} >> @itemize:
             \item 送受信機での処理が簡単
             \item チャネル推定が完全なら誤り率特性も最適
-        !before{\vspace{1em}}: |
-            @alertbox{EMT法の欠点} >> @itemize: |
+        !before{\vspace{1em}}:
+            @alertbox{EMT法の欠点} >> @itemize:
                 \item ランク落ちや特異値に小さな値がある場合に\\対応するモードでの伝送を諦める必要がある\\
                 \item \TextCB{帯域を狭くすればするほど伝送レードも低下}
 
 
-@frame[t,noframenumbering]{変調行列の特異値分布（$N=256$）} >> !before{\vspace{-2em}}: |
+@frame[t,noframenumbering]{変調行列の特異値分布（$N=256$）} >> !before{\vspace{-2em}}:
     % \begin{minipage}[t]{0.49\textwidth}
     \centering
-    \scalebox{0.50}: |
+    \scalebox{0.50}:
         \input{../plot/eigen_values_256.pgf}
 
 
 
-    @itemize: |
+    @itemize:
         \item 帯域を圧縮率するほど小さな特異値の割合が増加
         \item 計算誤差によるEVMの増加$\rightarrow$ ビット誤り率の増大
 
 
-@frame[t,noframenumbering]{EMT法のエラーベクトル振幅（EVM）} >> !before{\vspace{-2em}}: |
+@frame[t,noframenumbering]{EMT法のエラーベクトル振幅（EVM）} >> !before{\vspace{-2em}}:
     % \begin{minipage}[t]{0.49\textwidth}
     \centering
-    \scalebox{0.50}: |
+    \scalebox{0.50}:
         \input{../plot/evd_evm.pgf}
 
     % \begin{itemize}
     %     \item 帯域を圧縮率するほど小さな固有値の割合が増加
     %     \item 計算誤差によるEVMの増加$\rightarrow$ ビット誤り率の増大
     % \end{itemize}
-    !before{\vspace{-0.5em}} >> @itemize: |
+    !before{\vspace{-0.5em}} >> @itemize:
         \item サブキャリア数が大きいと少しの圧縮でEVM劣化
         \item \TextCB{$N=256$ではほとんど圧縮不可}
 
 
-@frame[t,noframenumbering]{既存のSEFDMの復調方法（まとめ）} >> !before{\vspace{-2em}}: |
-    @center: |
+@frame[t,noframenumbering]{既存のSEFDMの復調方法（まとめ）} >> !before{\vspace{-2em}}:
+    @center:
         \renewcommand\arraystretch{2}
         \tabcolsep = 0.1cm
-        @tabular{cccc}: |
+        @tabular{cccc}:
             基礎技術 & 復調性能 & 計算量 & 問題点 \\ \hline
             最尤推定 & ○○ & ×× & \TextCB{指数計算量} \\ \hline
             固有モード伝送 & ○ & ○ & \TextCB{小さな特異値の問題} \\ \hline
@@ -1045,14 +1045,14 @@
     %     \item 基本的にはMIMO伝送の復調方式と同等な\\アルゴリズムによって復調可能
     %     \item それぞれ一長一短があるのが現状
     % \end{itemize}
-    @itemize: |
+    @itemize:
         \item 一般的なOFDMのサブキャリア数$N \geq 50$
         \item 最尤推定・固有モード伝送は$N$が大きくなればなるほど\TextCB{問題点がより厳しくなってくる}
         \item 確率推論は\TextCA{$N$が大きいほうが有利}
 
 
 
-@frame[t,noframenumbering]{確率推論に基づく手法}: |
+@frame[t,noframenumbering]{確率推論に基づく手法}:
     % \begin{infobox}{AWGN線形通信路モデル}
     %     ある線形システム$\mathmat{A}$とAWGN通信路$\mathmat{w}$を通って受信された受信ベクトル$\mathmat{y}$から送信信号ベクトル$\mathmat{x} \sim p(\mathmat{x})$を推定したい
     %     \begin{align*}
@@ -1060,11 +1060,11 @@
     %     \end{align*}
     % \end{infobox}
 
-    @infobox{確率推論}: |
+    @infobox{確率推論}:
         送信信号$\mathmat{x}$の事前確率$p(\mathmat{x})$や通信路の確率モデル$\mathmat{p}(\mathmat{y}|\mathmat{z} = \mathmat{A}\mathmat{x})$を利用して送信信号$\mathmat{x}$を推定する
 
     確率モデル上でのメッセージ伝播アルゴリズム
-    @itemize: |
+    @itemize:
         \item 並列干渉除去と信号推定を繰り返し動作
         \item バリエーションが存在（GaBP, AMP, EP）
         \item 大システム極限の仮定\\
@@ -1086,10 +1086,10 @@
 
 
 
-@frame[t,noframenumbering]{性能評価：諸元} >> !before{\vspace{-0.5em}}: |
+@frame[t,noframenumbering]{性能評価：諸元} >> !before{\vspace{-0.5em}}:
     % {
     % \centering
-    @center >> @tabular{c|c}: |
+    @center >> @tabular{c|c}:
         \hline
         % Parameter & Value \\ \hline
         サブキャリア変調 & QPSK \\ \hline
@@ -1098,48 +1098,48 @@
         サブキャリア数 & 10, 40, 160 \\ \hline
     % }
 
-    @{}: |
+    @{}:
         以下の手法でビット誤り率を比較
-        @itemize: |
+        @itemize:
             \item 最尤推定法（MLD）
             \item QR分解MアルゴリズムMLD法（QRM-MLD）
             \item 固有モード伝送法（EMT）
             \item 確率推論系
-            @itemize: |
+            @itemize:
                 \item ガウス信念伝播法（GaBP）
                 \item 近似的メッセージ伝播法（AMP）
                 \item 期待値伝播法（EP）
 
 
-@frame[t,noframenumbering]{AWGN，$N=10$，$\alpha=0.625$　}: |
-    !before{\vspace{-1em}} >> @center: |
+@frame[t,noframenumbering]{AWGN，$N=10$，$\alpha=0.625$　}:
+    !before{\vspace{-1em}} >> @center:
         % \scalebox{0.58}{
         % \input{../plot/ber_16_10_AWGN_forslide.pgf}
         % }
         \includegraphics[page=1,width=0.74\textwidth]{plot_pdfs.pdf}
 
-    !before{\vspace{-1.5em}} >> @itemize: |
+    !before{\vspace{-1.5em}} >> @itemize:
         \item<only@1> 小規模SEFDMで\textcolor{C3}{固有モード伝送（EMT）}は\\無圧縮のOFDMと同じBER特性を達成
         \item<only@1> \textcolor{C5}{最尤推定（MLD）系}はOFDMより少し劣化
         \item<only@2> 確率推論系は\TextCB{全く復調できない}\\
         $\rightarrow$ 大システム極限の仮定が成立しないため
 
 
-@frame[t,noframenumbering]{AWGN，$N=40$，$\alpha=0.625$　}: |
-    !before{\vspace{-1em}} >> @center: |
+@frame[t,noframenumbering]{AWGN，$N=40$，$\alpha=0.625$　}:
+    !before{\vspace{-1em}} >> @center:
         \includegraphics[page=2,width=0.74\textwidth]{plot_pdfs.pdf}
 
-    !before{\vspace{-1.5em}} >> @itemize: |
+    !before{\vspace{-1.5em}} >> @itemize:
         \item<only@1> 中規模SEFDMではどの手法も復調困難
         \item<only@1> MLD系は計算量・探索空間の問題によりBER増加
         \item<only@1> EMT法はEVMの劣化によるBER増加
         \item<only@2> サブキャリア数$N=40$程度では確率推論系も\\まだうまく動かない
 
 
-@frame[t,noframenumbering]{ハール・プリコーディング有無の比較}: |
-    !before{\vspace{-1em}} >> @center: |
+@frame[t,noframenumbering]{ハール・プリコーディング有無の比較}:
+    !before{\vspace{-1em}} >> @center:
         \includegraphics[page=4,width=0.74\textwidth]{plot_pdfs.pdf}
 
-    !before{\vspace{-1.5em}} >> @itemize: |
+    !before{\vspace{-1.5em}} >> @itemize:
         \item 大規模SEFDM（$N=160$, $\alpha=0.625$）で送信側のハール・プリコーディングの有無でBERを比較
         \item \TextCA{プリコーディングにより復調性能が大幅に改善}

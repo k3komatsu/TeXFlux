@@ -140,7 +140,7 @@ This is a conceptual model only. The compiler SHOULD NOT inject a synthetic `!ma
 #### Signature
 
 ```text
-!before{prefix}: |
+!before{prefix}:
     BODY
 ```
 
@@ -161,7 +161,7 @@ before(prefix, body) = prefix body
 #### Canonical macro definition
 
 ```text
-!defmacro{before}{prefix}{body}: |
+!defmacro{before}{prefix}{body}:
     !param{prefix}
     !param{body}
 ```
@@ -190,7 +190,7 @@ The macro performs structural AST composition. It MUST NOT concatenate source st
 #### Signature
 
 ```text
-!after{suffix}: |
+!after{suffix}:
     BODY
 ```
 
@@ -209,7 +209,7 @@ after(suffix, body) = body suffix
 #### Canonical macro definition
 
 ```text
-!defmacro{after}{suffix}{body}: |
+!defmacro{after}{suffix}{body}:
     !param{body}
     !param{suffix}
 ```
@@ -234,7 +234,7 @@ is structurally equivalent to:
 #### Signature
 
 ```text
-!around{prefix}{suffix}: |
+!around{prefix}{suffix}:
     BODY
 ```
 
@@ -253,7 +253,7 @@ around(prefix, suffix, body) = prefix body suffix
 #### Canonical macro definition
 
 ```text
-!defmacro{around}{prefix}{suffix}{body}: |
+!defmacro{around}{prefix}{suffix}{body}:
     !param{prefix}
     !param{body}
     !param{suffix}
@@ -286,7 +286,7 @@ No further convenience combinators SHOULD be added merely because they can abbre
 #### Signature
 
 ```text
-!off{ignored}: |
+!off{ignored}:
     BODY
 ```
 
@@ -307,7 +307,7 @@ The first value is accepted but discarded.
 #### Canonical macro definition
 
 ```text
-!defmacro{off}{ignored}{body}: |
+!defmacro{off}{ignored}{body}:
     !param{body}
 ```
 
@@ -328,7 +328,7 @@ removes the selected wrapper-like fragment while leaving the remainder of the pi
 #### Signature
 
 ```text
-!drop: |
+!drop:
     BODY
 ```
 
@@ -351,10 +351,10 @@ The body is still parsed according to ordinary TeXFlux syntax. Macro-expansion b
 #### Canonical macro definition
 
 ```text
-!defmacro{drop}{body}: |
+!defmacro{drop}{body}:
 ```
 
-The template is empty. That is not a new language feature: a `': |'` suite with no lines under it already parses to an empty block, and a bound value that no template position reads already contributes nothing. `!drop` therefore needs no empty-template syntax, no hidden `!empty`, and no compiler handler.
+The template is empty. That is not a new language feature: a `':'` suite with no lines under it already parses to an empty block, and a bound value that no template position reads already contributes nothing. `!drop` therefore needs no empty-template syntax, no hidden `!empty`, and no compiler handler.
 
 The phase behavior follows from the same fact rather than from a special case. A macro call reads its payload as one value; `drop`'s template writes it nowhere, so the payload never reaches normalization or content-import resolution. §8's guarantees hold for exactly the reason they held before.
 
@@ -387,7 +387,7 @@ This applies independently to:
 Thus, a user macro module may itself use the standard flow macros without explicitly importing them:
 
 ```text
-!defmacro{compact}{body}: |
+!defmacro{compact}{body}:
     !before{\smallskip} >>
     !after{\smallskip} >>
     !param{body}
@@ -440,7 +440,7 @@ drop
 A local macro with one of these names is invalid:
 
 ```text
-!defmacro{before}{x}{body}: |
+!defmacro{before}{x}{body}:
     ...
 ```
 
@@ -495,7 +495,7 @@ The compiler MUST preserve the current phase-order property that content imports
 Example:
 
 ```text
-!drop: |
+!drop:
     !import{missing.tfx}
 ```
 
@@ -526,28 +526,28 @@ It is TeX/LaTeX-specific convenience and can be expressed using the generic flow
 Existing:
 
 ```text
-!vpad{-1em}: |
+!vpad{-1em}:
     BODY
 ```
 
 becomes:
 
 ```text
-!before{\vspace{-1em}}: |
+!before{\vspace{-1em}}:
     BODY
 ```
 
 Existing:
 
 ```text
-!vpad{-1em}{0.5em}: |
+!vpad{-1em}{0.5em}:
     BODY
 ```
 
 becomes:
 
 ```text
-!around{\vspace{-1em}}{\vspace{0.5em}}: |
+!around{\vspace{-1em}}{\vspace{0.5em}}:
     BODY
 ```
 
@@ -1035,7 +1035,7 @@ The exact formatting should follow normal renderer rules.
 All applicable operations MUST behave consistently between block and stack payload forms:
 
 ```text
-!before{A}: |
+!before{A}:
     B
 ```
 
@@ -1062,7 +1062,7 @@ A standard macro implemented in terms of another standard macro MUST resolve tha
 Local definition:
 
 ```text
-!defmacro{before}{x}{body}: |
+!defmacro{before}{x}{body}:
     ...
 ```
 

@@ -11,7 +11,7 @@ from .support import TempDirTestCase
 class LatexIntegrationTests(TempDirTestCase):
     def test_generated_content_can_be_input_by_beamer(self):
         (self.root / "content.tex").write_text(
-            compile_text("@frame{Title}: |\n    Generated body\n"),
+            compile_text("@frame{Title}:\n    Generated body\n"),
             encoding="utf-8",
         )
         (self.root / "main.tex").write_text(

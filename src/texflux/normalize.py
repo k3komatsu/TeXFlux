@@ -145,7 +145,7 @@ def _normalize_node(
             return _normalize_special(node, registry)
         case SequenceEntry():
             raise ValidationError(
-                "sequence entries are only valid inside a ':' suite",
+                "sequence entries are only valid inside a '::' suite",
                 node.span,
             )
         case GenericInvocation() | BraceGroup():

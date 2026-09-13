@@ -21,8 +21,8 @@ The fixed suite model is:
 
 ~~~text
 no suffix = one already-closed RHS value
-:         = one block value per '-'; the next sibling '-' is its boundary
-: |       = one multiline block value
+:         = one multiline block value
+::        = one block value per '-'; the next sibling '-' is its boundary
 ~~~
 
 ## 1. Lexical model
@@ -40,6 +40,7 @@ literal-brace containers:
 @name
 @
 @:
+@::
 @{}
 @{RAW_TEX}
 ~~~
@@ -110,17 +111,31 @@ A depth-zero `>>` at the end of a structural header line continues that header
 on the immediately following physical line (section 8). The newline replaces
 the spaces after `>>`; at least one space before it is still required.
 
-A suite suffix is exactly a colon optionally followed by spaces and one pipe.
-The pipe is optional whitespace-separated syntax, not a raw scalar marker:
+A suite suffix is either a single colon or two adjacent colons, optionally
+followed by spaces. The single colon selects block mode; the double colon
+selects sequence mode. A pipe is never part of suite syntax:
 
 ~~~text
-:
-:|
-: |
+\foo:
+    BODY
+\foo::
+    - ITEM
 ~~~
 
 Any trailing token after this suffix is a ParseError. A pipe elsewhere in raw
 TeX is not syntax.
+
+The established ordinary-TeX spelling with an immediately attached binding-like
+text, `\foo(x):`, remains raw TeX so that the
+parenthesized text after a command is not reclassified by this migration.
+The `(...)` here is not a TeXFlux binding list. This compatibility exception
+does not apply to `::`; `\foo(x)::` remains a structural parse error.
+For an ordinary command, a single colon followed by non-space text is not a
+suffix: `\texttt{std}:vector` remains raw TeX. The `|` and `>>` tokens are
+the deliberate exceptions: they make the failed structural scan stay an
+error so old pipe suites and malformed stack headers fail rather than
+degrade. Once `::` is recognized, a following token is an error, so
+`\texttt{std}::vector` is invalid.
 
 At-sign classification has this precedence:
 
@@ -156,11 +171,11 @@ on its rightmost segment after desugaring.
 
 ### 5.1 Sequence mode
 
-A plain colon suite contains explicit sequence entries. A structured command
+A double-colon suite contains explicit sequence entries. A structured command
 sequence must contain at least one entry:
 
 ~~~text
-\foo:
+\foo::
     - A
     - B
 ~~~
@@ -171,11 +186,11 @@ indented beyond the sequence base belong to that value until the next sibling
 marker. A bare '-' is therefore the multiline spelling.
 
 ~~~text
-\foo:
+\foo::
     - short
       long line 1
       long line 2
-    - @center: |
+    - @center:
         BODY
 ~~~
 
@@ -186,12 +201,12 @@ first line is the raw character "|".
 
 ### 5.2 Block mode
 
-A colon-pipe suite is exactly one block value:
+A single-colon suite is exactly one block value:
 
 ~~~text
-\foo: |
+\foo:
     A
-    @center: |
+    @center:
         B
 ~~~
 
@@ -206,7 +221,7 @@ A structured command consumes all suite values as required arguments. Compact
 header groups are emitted first.
 
 ~~~text
-\foo{COMPACT}:
+\foo{COMPACT}::
     - A
     - B
 ~~~
@@ -220,7 +235,7 @@ renders as:
 A block suite produces one long required argument:
 
 ~~~text
-\foo: |
+\foo:
     A
     B
 ~~~
@@ -238,8 +253,8 @@ A structural sequence value is wrapped in one required argument. Literal brace
 containers are not absorbed by that outer argument:
 
 ~~~text
-\foo:
-    - @{}: |
+\foo::
+    - @{}:
         A
 ~~~
 
@@ -265,10 +280,10 @@ For a sequence suite, all values except the final value become required block
 arguments and the final value becomes the body:
 
 ~~~text
-@myenv:
+@myenv::
     - ARG1
     - ARG2
-    - @: |
+    - @:
         BODY
 ~~~
 
@@ -282,17 +297,17 @@ BODY
 
 The final block value contributes its canonical nodes as the body. An empty
 sequence environment is a validation error. An empty body is written as an
-empty @: | value.
+empty @: value.
 
 ## 7. Anonymous containers
 
-@: | is a transparent one-block value and emits only its body. A transparent
+@: is a transparent one-block value and emits only its body. The `@::`
 sequence form combines its values into one composite body without a wrapper.
 An empty transparent sequence is valid and emits nothing. An empty sequence
 for a literal brace container is valid and emits an empty literal brace group.
-Use `@: |` or `@{}: |` when the empty block form should be explicit.
+Use `@:` or `@{}:` when the empty block form should be explicit.
 
-@{}: | and @{RAW_TEX}: | emit literal brace groups. RAW_TEX is emitted as
+@{}: and @{RAW_TEX}: emit literal brace groups. RAW_TEX is emitted as
 leading opaque TeX inside the braces. Literal braces remain in all contexts,
 including command argument context.
 
@@ -319,7 +334,7 @@ An open stack gives its suffix to the rightmost segment and passes the completed
 value to the left:
 
 ~~~text
-@frame{Title} >> @center >> @{\small}: |
+@frame{Title} >> @center >> @{\small}:
     BODY
 ~~~
 
@@ -337,11 +352,11 @@ A stack header may be split immediately after any `>>`:
 ~~~text
 @hoge >>
 @fuga >>
-@fuge: |
+@fuge:
     foobarhoge
 ~~~
 
-This is equivalent to `@hoge >> @fuga >> @fuge: |` with the same suite. Keeping
+This is equivalent to `@hoge >> @fuga >> @fuge:` with the same suite. Keeping
 `@hoge >> @fuga >>` on the first line is also valid. A closed terminal needs no
 suite suffix, so this is valid too:
 
@@ -388,7 +403,7 @@ either kind of module, is a validation error rather than a shadowing.
 ~~~text
 !before{\smallskip} >> \foo
 !after{\smallskip} >> \foo
-!around{\vspace{-1em}}{\vspace{2em}}: |
+!around{\vspace{-1em}}{\vspace{2em}}:
     contents
 ~~~
 
@@ -408,16 +423,16 @@ nothing:
 ~~~
 
 Every rule of section 10 applies to these five, and no rule of its own does.
-A payload written `': |'` and a payload written as the rest of a `>>`
-composition are the same single value (section 10.2), and a `':'` sequence
-suite is one value per `-` entry there as anywhere else; a wrong value count is
-the ordinary arity diagnostic; and provenance follows section 15, so each
+A payload written with a `':'` block suite and a payload written as the rest
+of a `>>` composition are the same single value (section 10.2), and a `'::'`
+sequence suite is one value per `-` entry there as anywhere else; a wrong value
+count is the ordinary arity diagnostic; and provenance follows section 15, so each
 value keeps the span of the group or suite the author wrote it in.
 
 `!drop` needs no primitive and has none. Its template is empty, so the value
 it binds reaches no template position and nothing survives expansion. That is
 also what keeps its phase behaviour: a discarded payload is never normalized
-and never content-import-resolved, so `!drop: |` around an `!import` opens no
+and never content-import-resolved, so `!drop:` around an `!import` opens no
 file, and an unknown special or an unconsumable value shape inside one is
 never reported.
 
@@ -433,9 +448,9 @@ The old !vpad special is removed and is not an alias. Spacing is the TeX the
 author chose, placed by the generic combinators:
 
 ~~~text
-!before{\vspace{-1em}}: |
+!before{\vspace{-1em}}:
     contents
-!around{\vspace{-1em}}{\vspace{2em}}: |
+!around{\vspace{-1em}}{\vspace{2em}}:
     contents
 ~~~
 
@@ -450,9 +465,9 @@ already carries every overlay, optional label, continuation, and nesting the
 removed mini-grammar supported:
 
 ~~~text
-@itemize: |
+@itemize:
     \item<2->[Label] item
-    @itemize: |
+    @itemize:
         \item nested
 ~~~
 
@@ -465,7 +480,7 @@ differently:
 
 - A depth-zero trailing colon makes the line a structural command candidate
   (section 3), so `\item Summary:` fails. A continuation line that scans as a
-  complete header, such as `\TextCA{Note}:`, fails through the other branch
+  complete header, such as `\TextCA{Note}::`, fails through the other branch
   and reports a missing `-` entry instead. An empty trailing group --
   `\item Summary:{}` -- writes either one, and changes no TeX: an empty group
   leaves `\spacefactor` alone, so the colon's end-of-sentence space survives.
@@ -486,6 +501,13 @@ migration has to look for:
 A block suite also keeps blank lines as document content, while the removed
 handler dropped the blank separators between items.
 
+The suite-suffix migration has one separate silent case: an old sequence
+written as `\foo:` with `-` entries must be changed to `\foo::`. If it is left
+unchanged, the input is now a valid block suite and the entries become one
+multiline argument instead of separate arguments. An empty `:` suite is also
+valid, so a former sequence header with no entries must be reviewed rather
+than expected to fail.
+
 ## 10. Source macros
 
 A source macro is a structural AST macro, not a textual one. `!defmacro`
@@ -498,11 +520,11 @@ or parsed (section 10.6).
 ### 10.1 Definition
 
 ~~~text
-!defmacro{name}{param}{...rest}: |
+!defmacro{name}{param}{...rest}:
     TEMPLATE
 ~~~
 
-A definition takes a `: |` block suite; a sequence suite is a validation
+A definition takes a `:` block suite; a sequence suite is a validation
 error. The first required group is the macro name, which uses the special-name
 grammar so the macro is callable as `!name`. Every later required group is a
 parameter. Definitions emit no TeX. Lines around a definition, including blank
@@ -518,7 +540,7 @@ expanded, which makes forward references valid:
 ~~~text
 !foo >> \TextCA{A}
 
-!defmacro{foo}{body}: |
+!defmacro{foo}{body}:
     @{\small} >> !param{body}
 ~~~
 
@@ -537,8 +559,8 @@ values its suite produces.
 
 ~~~text
 !foo{A}{B}          two inline values
-!foo: |             one block value
-!foo:               one block value per '-'
+!foo:              one block value
+!foo::             one block value per '-'
 !foo >> VALUE       the closed stack payload as one value
 ~~~
 
@@ -564,7 +586,7 @@ parameter is a sequence rather than a value, so it is reached only with
 (section 10.6). For AST insertion, use structural form:
 
 ~~~text
-@infobox:
+@infobox::
     - !param{title}
     - !param{body}
 ~~~
@@ -572,23 +594,23 @@ parameter is a sequence rather than a value, so it is reached only with
 ### 10.4 !each
 
 ~~~text
-!each{rest-param}{item}: |
+!each{rest-param}{item}:
     TEMPLATE
 ~~~
 
 `!each` walks a rest parameter's values in source order, binds each one to
 `item`, instantiates the template per iteration, and concatenates the
 iterations into the enclosing block. An empty sequence produces nothing. It
-requires a `: |` suite, is valid only inside a template, and its first group
+requires a `:` suite, is valid only inside a template, and its first group
 must name a rest parameter. An item name that shadows a bound parameter is a
 macro error. `!each` may nest; each iteration binds its own item.
 
 `!each` may be the rightmost segment of a stack when the stack's suffix is
-`: |`, because that segment keeps the suffix and so still writes its own
+`:`, because that segment keeps the block suffix and so still writes its own
 template:
 
 ~~~text
-@{\bfseries} >> !each{items}{item}: |
+@{\bfseries} >> !each{items}{item}:
     \item
     !param{item}
 ~~~
@@ -728,15 +750,15 @@ therefore never silently does nothing.
 ~~~text
 !when{draft} >> \marginpar{re-measure before the talk}
 
-!unless{handout}: |
+!unless{handout}:
     \pause
     @{\small} >> \textit{Ask about the tail latency here.}
 ~~~
 
 Each takes one or more required inline groups, every one naming a declared
-flag, and a payload written either as a `': |'` suite or as the rest of a `>>`
-composition. A sequence suite is a validation error, as is a missing payload,
-a flag no declaration matches, or the same flag listed twice.
+flag, and a payload written either as a `':'` block suite or as the rest of a
+`>>` composition. A `'::'` sequence suite is a validation error, as is a
+missing payload, a flag no declaration matches, or the same flag listed twice.
 
 A kept payload is spliced into the enclosing block; it is not wrapped in a
 group of its own.
@@ -747,7 +769,7 @@ A leading optional group folds several flags into one answer:
 
 ~~~text
 !when[or]{draft}{internal} >> \marginpar{re-measure before the talk}
-!when[and]{notes}{handout}: |
+!when[and]{notes}{handout}:
     ...
 ~~~
 
@@ -789,7 +811,7 @@ What a dropped payload must still satisfy is every rule checked before
 conditionals are resolved. Its syntax must parse; `!flag` must be a top-level
 statement; `!macroimport` must be one too, and may not be a `>>` segment; and
 the template rules of section 10 hold, so `!defmacro` may not be a `>>`
-segment, `!each` must own its `': |'` suite, and a template may contain
+segment, `!each` must own its `':'` suite, and a template may contain
 neither `!import` nor `!macroimport`. Those four are the complete list.
 
 Every one of them is a purely syntactic question about where a line is
@@ -800,7 +822,7 @@ A conditional keeps or drops statements, not arguments. A sequence entry whose
 value is dropped remains an entry, and renders as an empty argument:
 
 ~~~text
-\cmd:
+\cmd::
     - !when{draft} >> \x
     - tail
 ~~~
@@ -1047,9 +1069,9 @@ than one line renders with the braces on their own lines. Nothing is marked:
 the compact case stays compact and the structural case stays readable.
 
 ~~~text
-\command:
+\command::
     - short
-    - @center: |
+    - @center:
         figure
 ~~~
 
@@ -1067,7 +1089,7 @@ braces are the argument's own and the text is copied verbatim, so each brace
 sits exactly where it was written:
 
 ~~~text
-\command:
+\command::
     - {fooo
       bar
       }
@@ -1105,11 +1127,11 @@ Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
 provenance for:
 
-- colon and pipe suite markers
+- colon and double-colon suite markers
 - each sequence -
 - each sequence value block boundary
 - @{} / @{RAW_TEX} headers
-- @: headers
+- @: / @:: headers
 - stack segments and closed terminals
 - sequence/block value boundaries
 - item metadata
@@ -1178,14 +1200,16 @@ v1 does not include:
 - renderer backend frameworks
 - runtime dependencies
 - structural trailing comments
-- block-scalar suffixes other than : |
+- pipe-based suite markers such as `:|` and `: |`
 
 ## 17. Conceptual grammar
 
 ~~~text
 document          ::= statement*
 
-suite-suffix      ::= ":" SP* ("|")?
+suite-suffix      ::= sequence-suffix | block-suffix
+sequence-suffix   ::= "::" SP*
+block-suffix      ::= ":" SP*
 
 sequence-suite    ::= sequence-entry*
 sequence-entry   ::= "-" SP* sequence-block
@@ -1212,8 +1236,6 @@ transparent-container-segment
                   ::= "@"
 special-segment  ::= "!" special-name group* binding-list?
 
-block-suffix      ::= ":" SP* "|"
-
 flag-declaration  ::= "!flag" "{" flag-name "}" "{" ("on" | "off") "}"
 combinator        ::= "[" ("and" | "or") "]"
 conditional       ::= ("!when" | "!unless") combinator? "{" flag-name "}"+
@@ -1234,8 +1256,8 @@ each-construct    ::= "!each" "{" parameter-name "}" "{" parameter-name "}"
 
 This grammar is conceptual; item metadata and balanced raw groups are scanned by
 the handwritten parser. A sequence-block continues until the next sibling '-'.
-Its normative distinctions are the explicit '-' block sequence, the single
-: | block, and suffix-less closed values.
+Its normative distinctions are the explicit `-` double-colon sequence, the
+single-colon block, and suffix-less closed values.
 
 ## 18. Executable examples
 

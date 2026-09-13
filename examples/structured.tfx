@@ -1,18 +1,18 @@
-\callout{Compact header}:
+\callout{Compact header}::
     - Inline argument
     -
         This is a multiline block argument.
         It remains raw TeX: $x^2$.
 
-\rightnotebox{Long argument}: |
-    @align*: |
+\rightnotebox{Long argument}:
+    @align*:
         &x = y
 
-\scope: |
-    @{\small}: |
+\scope:
+    @{\small}:
         A literal group inside the command argument.
 
-@note:
+@note::
     - Title
     -
         The body can contain raw TeX.

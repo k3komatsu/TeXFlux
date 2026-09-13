@@ -1,7 +1,7 @@
-!around{\vspace{-1em}}{\vspace{2em}}: |
+!around{\vspace{-1em}}{\vspace{2em}}:
     contents
 
 !before{\smallskip} >>
 !after{\medskip} >>
-@center: |
+@center:
     composed

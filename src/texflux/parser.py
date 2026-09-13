@@ -225,6 +225,20 @@ def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
     return end > 0 and text[end - 1] == ":"
 
 
+def _has_immediate_command_binding(text: str) -> bool:
+    """Keep ``\\foo(x):`` on the ordinary-TeX path."""
+
+    if not text.startswith("\\"):
+        return False
+    position = 1
+    if position >= len(text) or text[position] not in _NAME_START:
+        return False
+    position += 1
+    while position < len(text) and text[position] in _NAME_CHARS:
+        position += 1
+    return position < len(text) and text[position] == BINDING_OPENER
+
+
 class HeaderScanner:
     """Scan one structural header while keeping group contents opaque."""
 
@@ -296,24 +310,24 @@ class HeaderScanner:
         return position
 
     def _suite_marker(self, position: int) -> tuple[SuiteMode, SourceSpan]:
-        """Scan the trailing ``:`` or ``: |`` suite marker."""
+        """Scan the trailing ``:`` block or ``::`` sequence marker."""
 
         marker_start = position
+        if self.text.startswith("::", position):
+            self.saw_structure = True
+            position = self._skip_spaces(position + 2)
+            if position != self.end:
+                raise self._error("trailing token after suite marker", position)
+            return SuiteMode.SEQUENCE, self._span(marker_start, position)
+
         position = self._skip_spaces(position + 1)
         if position == self.end:
             self.saw_structure = True
-            return SuiteMode.SEQUENCE, self._span(marker_start, position)
+            return SuiteMode.BLOCK, self._span(marker_start, position)
 
-        if self.text[position] != "|":
-            if self.text.startswith(">>", position):
-                self.saw_structure = True
-            raise self._error("unexpected token in structural header", position)
-
-        self.saw_structure = True
-        position = self._skip_spaces(position + 1)
-        if position != self.end:
-            raise self._error("trailing token after suite marker", position)
-        return SuiteMode.BLOCK, self._span(marker_start, position)
+        if self.text[position] == "|" or self.text.startswith(">>", position):
+            self.saw_structure = True
+        raise self._error("unexpected token in structural header", position)
 
     def _stack_separator(self, position: int, *, spaced: bool) -> int:
         """Return the next segment's offset, or the line end for continuation."""
@@ -478,6 +492,14 @@ def _scan_structural_header(
     try:
         return scanner.scan()
     except ParseError:
+        end = len(text.rstrip(" "))
+        if (
+            end > 0
+            and text[end - 1] == ":"
+            and not text[:end].endswith("::")
+            and _has_immediate_command_binding(text)
+        ):
+            return None
         if scanner.saw_structure or _has_top_level_trailing_colon(text, span=span):
             raise
         return None
@@ -729,14 +751,14 @@ class _Parser:
             and segment.kind is InvocationKind.ENVIRONMENT
         ):
             raise ParseError(
-                "environment directives require a suite marker ':'",
+                "environment directives require a suite marker ':' or '::'",
                 segment.span,
             )
         next_index = self._next_nonblank(self.index)
         if next_index is not None and self.lines[next_index].indent >= base + 4:
             line = self.lines[next_index]
             raise ParseError(
-                "indented lines require a suite marker ':'",
+                "indented lines require a suite marker ':' or '::'",
                 self._line_span(line, line.indent + 1),
             )
 

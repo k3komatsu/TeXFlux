@@ -1,4 +1,4 @@
-@lstlisting: |
+@lstlisting:
     !BEGIN_RAW_MODE
     def f(x):
     	return !x

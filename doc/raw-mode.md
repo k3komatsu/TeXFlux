@@ -35,7 +35,7 @@ verbatim / lstlisting のような**長い生ブロック**では全行に `!` �
   したがって通常の文書の意味は変えない。ただし、従来この2つの名前でユーザーが
   `!defmacro` を定義していた文書は、raw mode の予約名と衝突するため意図的に
   バリデーションエラーになる。
-- **行区切りのマーカーであってスイートではない。** handoff.md §D-3 が `!raw: |` を
+- **行区切りのマーカーであってスイートではない。** handoff.md §D-3 が `!raw:` を
   却下した理由は「パーサが special 名を決め打ちして suite を raw にする仕組み
   （= 削除した `raw_suite`）の復活」だった。BEGIN/END 形式は suite marker も
   インデント規定の本体も持たないので、`_parse_suite` にも正準 AST にも
@@ -108,7 +108,7 @@ verbatim / lstlisting のような**長い生ブロック**では全行に `!` �
 
 2つのマーカー行は**ノードを1つも生まない**。空行すら出力されない。したがって
 `!BEGIN_RAW_MODE` の直後が `!END_RAW_MODE` である空の領域は、ソース2行に対して
-出力0行になる（囲みブロックが空になった場合は、空の `: |` スイートが何も出さない
+出力0行になる（囲みブロックが空になった場合は、空の `:` スイートが何も出さない
 という既存規則どおりの結果になる）。マーカーに対して `RawTex("")` を出さないこと。
 
 ### 2.4 終端
@@ -124,7 +124,7 @@ verbatim / lstlisting のような**長い生ブロック**では全行に `!` �
 
 ### 2.6 書ける位置
 
-ブロックが現れるあらゆる位置、すなわち文書のトップレベル、`: |` ブロックスイートの中、
+ブロックが現れるあらゆる位置、すなわち文書のトップレベル、`:` ブロックスイートの中、
 シーケンスエントリの継続行ブロックの中、`!defmacro` のテンプレートの中。
 
 `- ` の payload には書けない。`>>` のセグメントにもなれない。`.tfxm` の
@@ -135,7 +135,7 @@ verbatim / lstlisting のような**長い生ブロック**では全行に `!` �
 シーケンスの値を raw 領域にしたい場合は、payload を空にした `-` の継続行に書く:
 
 ```text
-@itemize:
+@itemize::
     -
         !BEGIN_RAW_MODE
         \item !literal
@@ -152,7 +152,7 @@ span は他のテンプレートリテラル行と同様に**呼び出し位置�
 ### 2.8 例
 
 ```text
-@lstlisting[language=Python]: |
+@lstlisting[language=Python]:
     !BEGIN_RAW_MODE
     def f(x):
     	return !x        # タブ・不均衡でない任意の文字列
@@ -385,7 +385,7 @@ def _scan_raw_regions(
 ```
 
 ヘッダースキャナは唯一の絞り込み点なので、この1箇所で `- !BEGIN_RAW_MODE`、
-`!BEGIN_RAW_MODE >> @center`、`!END_RAW_MODE: |`、`!BEGIN_RAW_MODE{x}`、
+`!BEGIN_RAW_MODE >> @center`、`!END_RAW_MODE:`、`!BEGIN_RAW_MODE{x}`、
 `>>` 継続行に置かれたマーカーのすべてを拒否できる。単独行のマーカーは
 `_block` が先に捕まえるのでここには来ない。
 
@@ -420,7 +420,7 @@ import に `RAW_BEGIN_MARKER`, `RAW_END_MARKER`, `RAW_MODE_NAMES` を追加す�
 _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES | RAW_MODE_NAMES
 ```
 
-これで `!defmacro{BEGIN_RAW_MODE}: |` が既存の
+これで `!defmacro{BEGIN_RAW_MODE}:` が既存の
 `'!BEGIN_RAW_MODE' is reserved by TeXFlux`（[macros.py:164](../src/texflux/macros.py#L164)）
 で落ちる。`from .syntax import ...` に `RAW_MODE_NAMES` を追加する。
 
@@ -523,7 +523,7 @@ _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES | RAW_MODE_NAME
 - 領域内のタブは通り、領域外のタブは従来どおり落ちる
 - 領域内のインデントの違う `!END_RAW_MODE` と `!BEGIN_RAW_MODE` がリテラルになる
 - マーカー行が空行すら生まないこと。とくに空の領域がノード0個になり、
-  `@center: |` の本文がそれだけなら `\begin{center}` と `\end{center}` が
+  `@center:` の本文がそれだけなら `\begin{center}` と `\end{center}` が
   連続すること
 - R01〜R04 を `assertRaisesRegex` で `x.tfx:L:C: parse error` まで固定
 - `- !BEGIN_RAW_MODE` と `!BEGIN_RAW_MODE >> @center` が R03 で落ちる
@@ -547,7 +547,7 @@ handoff §D の「なぜ要るか」表の4ケースを、領域版でも書け�
 既存 golden が覆っていない形（AGENTS.md:257-260）だけを入れる:
 
 ```text
-@lstlisting: |
+@lstlisting:
     !BEGIN_RAW_MODE
     def f(x):
     	return !x

@@ -2,6 +2,6 @@
 % このモジュールの私的な実装詳細であり、取り込む側からは見えない。
 !macroimport{core-v1.tfxm}
 
-!defmacro{highlight}{body}: |
-    !emphasis: |
+!defmacro{highlight}{body}:
+    !emphasis:
         !param{body}

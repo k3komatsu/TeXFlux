@@ -1,9 +1,9 @@
-!defmacro{items_simple}{...items}: |
-    @itemize: |
-        !each{items}{item}: |
+!defmacro{items_simple}{...items}:
+    @itemize:
+        !each{items}{item}:
             \item
             !param{item}
-!items_simple:
+!items_simple::
     - First item
     - Second item line 1
       Second item line 2

@@ -67,7 +67,7 @@ class RawTex:
 つまり、例えば
 
 ```text
-@hoge{abc}: |
+@hoge{abc}:
 ```
 
 における `abc` は TeX AST ではなく、TeXFlux から見れば opaque な文字列である。
@@ -143,7 +143,7 @@ parse
 したがって `!text` も macro expansion pass に置けば、
 
 ```text
-!when{off}: |
+!when{off}:
     ... !text{x} ...
 ```
 
@@ -236,7 +236,7 @@ TeXFlux 自身のコンパイル動作を決定するための文字列。
 したがって、以下は禁止する。
 
 ```text
-!defmacro{text}{x}: |
+!defmacro{text}{x}:
     ...
 ```
 
@@ -254,7 +254,7 @@ TeXFlux 自身のコンパイル動作を決定するための文字列。
 既存のまま
 
 ```text
-!defmacro{foo}{x}{body}: |
+!defmacro{foo}{x}{body}:
     ...
 ```
 
@@ -345,7 +345,7 @@ AST
 macro template 内の `RawTex.text` では `!text{name}` を認識する。
 
 ```text
-!defmacro{fig}{name}{width}: |
+!defmacro{fig}{name}{width}:
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
 ```
 
@@ -368,8 +368,8 @@ macro template 内の `RawTex.text` では `!text{name}` を認識する。
 したがって interpolation を許可する。
 
 ```text
-!defmacro{wrap}{style}{body}: |
-    @hoge{!text{style}}: |
+!defmacro{wrap}{style}{body}:
+    @hoge{!text{style}}:
         !param{body}
 ```
 
@@ -409,7 +409,7 @@ macro template 内の `RawTex.text` では `!text{name}` を認識する。
 例:
 
 ```text
-@foo[mode=!text{mode}]<!text{overlay}>: |
+@foo[mode=!text{mode}]<!text{overlay}>:
     ...
 ```
 
@@ -426,8 +426,8 @@ macro template 内の `RawTex.text` では `!text{name}` を認識する。
 そのため、macro template 内の item text で `!text` を使用してよい。
 
 ```text
-!defmacro{listitem}{label}: |
-    !items:
+!defmacro{listitem}{label}:
+    !items::
         - item-!text{label}
 ```
 
@@ -448,10 +448,10 @@ macro text interpolation
 macro composition のため、user-defined macro call の required compact group 内でも interpolation を許可する。
 
 ```text
-!defmacro{inner}{name}: |
+!defmacro{inner}{name}:
     \label{!text{name}}
 
-!defmacro{outer}{prefix}{name}: |
+!defmacro{outer}{prefix}{name}:
     !inner{!text{prefix}-!text{name}}
 ```
 
@@ -472,7 +472,7 @@ macro composition のため、user-defined macro call の required compact group
 したがって以下は禁止する。
 
 ```text
-!defmacro{bad}{x}: |
+!defmacro{bad}{x}:
     !text{x}
 ```
 
@@ -489,7 +489,7 @@ AST Value を挿入したいなら
 逆方向も禁止する。
 
 ```text
-@foo >> @bar >> @hoge{!param{variable}}:
+@foo >> @bar >> @hoge{!param{variable}}::
 ```
 
 は invalid とする。
@@ -523,10 +523,10 @@ str + AST + str
 禁止:
 
 ```text
-!when{!text{flag}}: |
+!when{!text{flag}}:
     ...
 
-!unless{!text{flag}}: |
+!unless{!text{flag}}:
     ...
 ```
 
@@ -547,9 +547,9 @@ flag name は compiler metadata であり静的である。
 ```text
 !param{!text{name}}
 !text{!text{name}}
-!each{!text{sequence}}{item}: |
+!each{!text{sequence}}{item}:
     ...
-!each{items}{!text{name}}: |
+!each{items}{!text{name}}:
     ...
 ```
 
@@ -588,7 +588,7 @@ command / environment / special / macro の名前そのものを interpolation �
 禁止概念:
 
 ```text
-@!text{env}: |
+@!text{env}:
     ...
 ```
 
@@ -765,8 +765,8 @@ TeXFlux と TeX engine の責務を分離する。
 現行の lazy/drop semantics をそのまま使用する。
 
 ```text
-!defmacro{m}{x}: |
-    !when{feature}: |
+!defmacro{m}{x}:
+    !when{feature}:
         \foo{!text{x}}
 ```
 
@@ -785,7 +785,7 @@ rest parameter 自体は sequence なので `!text` できない。
 禁止:
 
 ```text
-!defmacro{m}{...items}: |
+!defmacro{m}{...items}:
     \foo{!text{items}}
 ```
 
@@ -798,13 +798,13 @@ rest parameter 自体は sequence なので `!text` できない。
 一方、`!each` の item binding は一つの `Value` なので、その item が text-extractable なら `!text` 可能である。
 
 ```text
-!defmacro{labels}{...items}: |
-    !each{items}{item}: |
+!defmacro{labels}{...items}:
+    !each{items}{item}:
         \label{item:!text{item}}
 ```
 
 ```text
-!labels:
+!labels::
     - alpha
     - beta
 ```
@@ -820,10 +820,10 @@ item が environment 等の structural AST なら `!text{item}` は error とす
 以下を正式にサポートする。
 
 ```text
-!defmacro{inner}{name}: |
+!defmacro{inner}{name}:
     \label{!text{name}}
 
-!defmacro{outer}{prefix}{name}: |
+!defmacro{outer}{prefix}{name}:
     !inner{!text{prefix}-!text{name}}
 ```
 
@@ -886,7 +886,7 @@ item が environment 等の structural AST なら `!text{item}` は error とす
 例えば
 
 ```text
-!defmacro{m}{x}: |
+!defmacro{m}{x}:
     \foo{pre-!text{x}-post}
 
 !m{VALUE}
@@ -1076,7 +1076,7 @@ macro parameter 'body' is not a text value; use !param for structural values
 以下は typo / layer misuse として明示 error にすることを推奨する。
 
 ```text
-@hoge{!param{x}}: |
+@hoge{!param{x}}:
     ...
 ```
 
@@ -1228,11 +1228,11 @@ prefix-!text{x}-suffix
 以下をテストする。
 
 ```text
-@hoge{!text{x}}: |
+@hoge{!text{x}}:
 ```
 
 ```text
-@foo >> @bar >> @hoge{!text{x}}:
+@foo >> @bar >> @hoge{!text{x}}::
 ```
 
 command required group、optional group、overlay group、literal brace header についても確認する。
@@ -1303,7 +1303,7 @@ interpolated value が macro call spelling を含んでも実行されないこ�
 ### 22.10 source map
 
 ```text
-!defmacro{m}{x}: |
+!defmacro{m}{x}:
     \foo{pre-!text{x}-post}
 !m{VALUE}
 ```
@@ -1335,22 +1335,22 @@ pre/post   -> macro call span
 ### 23.1 画像
 
 ```text
-!defmacro{figure}{name}{width}{caption}: |
+!defmacro{figure}{name}{width}{caption}:
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
-    @center: |
+    @center:
         !param{caption}
 ```
 
 ```text
-!figure{result}{0.8\textwidth}: |
+!figure{result}{0.8\textwidth}:
     Result of the experiment
 ```
 
 ### 23.2 environment argument + AST body
 
 ```text
-!defmacro{styled}{style}{body}: |
-    @foo >> @bar >> @hoge{!text{style}}: |
+!defmacro{styled}{style}{body}:
+    @foo >> @bar >> @hoge{!text{style}}:
         !param{body}
 ```
 
@@ -1366,7 +1366,7 @@ body  -> !param -> AST splice
 ### 23.3 label generation
 
 ```text
-!defmacro{sectionlabel}{id}{body}: |
+!defmacro{sectionlabel}{id}{body}:
     \label{sec:!text{id}}
     !param{body}
 ```
@@ -1374,26 +1374,26 @@ body  -> !param -> AST splice
 ### 23.4 nested macro
 
 ```text
-!defmacro{label}{id}: |
+!defmacro{label}{id}:
     \label{!text{id}}
 
-!defmacro{sectionlabel}{prefix}{id}: |
+!defmacro{sectionlabel}{prefix}{id}:
     !label{!text{prefix}:!text{id}}
 ```
 
 ### 23.5 不正: AST in text
 
 ```text
-!defmacro{bad}{x}: |
-    @hoge{!param{x}}: |
+!defmacro{bad}{x}:
+    @hoge{!param{x}}:
         A
 ```
 
 ### 23.6 不正: dynamic condition
 
 ```text
-!defmacro{bad}{flag}{body}: |
-    !when{!text{flag}}: |
+!defmacro{bad}{flag}{body}:
+    !when{!text{flag}}:
         !param{body}
 ```
 
@@ -1522,7 +1522,7 @@ text --X--> TeXFlux AST reparsing
 ```text
 \label{prefix-!text{id}}
 \includegraphics[width=!text{width}]{!text{file}}
-@hoge{!text{option}}: |
+@hoge{!text{option}}:
 ```
 
 のような文字列組み立てを自然に記述できる。

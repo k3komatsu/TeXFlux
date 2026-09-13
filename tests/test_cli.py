@@ -15,7 +15,7 @@ class CliTests(TempDirTestCase):
     def test_success_writes_utf8_output(self):
         input_path = self.root / "slides.tfx"
         output_path = self.root / "out.tex"
-        input_path.write_text("@frame{日本語}: |\n    本文\n", encoding="utf-8")
+        input_path.write_text("@frame{日本語}:\n    本文\n", encoding="utf-8")
 
         self.assertEqual(
             main(["compile", str(input_path), "-o", str(output_path)]),

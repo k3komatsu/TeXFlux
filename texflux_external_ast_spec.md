@@ -74,7 +74,7 @@ SpecialInvocation
 たとえば、
 
 ```text
-!items:
+!items::
     -<1-> A
     -<2-> B
 ```
@@ -426,7 +426,7 @@ layout=block|hugged|explicit
 例えば、
 
 ```text
-@{\small\color{gray}}: |
+@{\small\color{gray}}:
     text
 ```
 
@@ -435,7 +435,7 @@ layout=block|hugged|explicit
 `header` は `{...}` の内部に書かれたopaque raw string。
 
 ```text
-@{}: |
+@{}:
 ```
 
 では空文字列とする。
@@ -490,8 +490,8 @@ nested listは `continuation.nodes` 内のinvocationとして表現される。
 入力:
 
 ```text
-@frame{System Model}: |
-    !items:
+@frame{System Model}:
+    !items::
         -<1-> Signal model
         -<2->[A] Proposed method
 ```

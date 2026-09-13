@@ -1,8 +1,8 @@
-\rightnotebox{Note}: |
-    @align*: |
+\rightnotebox{Note}:
+    @align*:
         &x = y
 
-\outer: |
-    \inner: |
-        @bar{X} >> @itemize: |
+\outer:
+    \inner:
+        @bar{X} >> @itemize:
             \item item

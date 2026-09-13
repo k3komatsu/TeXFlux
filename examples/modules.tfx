@@ -17,5 +17,5 @@
 !import{modules/archive-2023.tfx}(detail=$appendix)
 
 % 条件が false なら、そのファイルは開かれもしない。
-!unless{appendix}: |
+!unless{appendix}:
     !import{modules/never-compiled.tfx}

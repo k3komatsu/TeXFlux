@@ -1,6 +1,6 @@
 % The core version this style depends on is a private detail.
 !macroimport{core-v1.tfxm}
 
-!defmacro{note}{body}: |
-    !shell: |
+!defmacro{note}{body}:
+    !shell:
         !param{body}

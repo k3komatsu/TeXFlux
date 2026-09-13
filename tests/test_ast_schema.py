@@ -23,7 +23,7 @@ class AstSchemaTests(unittest.TestCase):
         cls.validator = Draft202012Validator(schema)
 
     def payload(self):
-        source = "@frame{title}: |\n    \\foo: |\n        text\n"
+        source = "@frame{title}:\n    \\foo:\n        text\n"
         return json.loads(serialize_ast(compile_ast(source)))
 
     def test_all_golden_outputs_and_empty_document(self):

@@ -1,5 +1,5 @@
 !macroimport{core-v2.tfxm}
 
-!defmacro{highlight}{body}: |
-    !emphasis: |
+!defmacro{highlight}{body}:
+    !emphasis:
         !param{body}

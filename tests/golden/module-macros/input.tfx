@@ -3,6 +3,6 @@
 !import{old-slide.tfx}
 !import{new-slide.tfx}
 
-@frame{Caller}: |
-    !note: |
+@frame{Caller}:
+    !note:
         The caller sees !note but never !shell.

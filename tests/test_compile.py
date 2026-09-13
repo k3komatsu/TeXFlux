@@ -26,8 +26,8 @@ from texflux.render import render, render_with_provenance
 class CompileTests(unittest.TestCase):
     def test_multiline_stacks_match_single_line_stacks(self):
         for header in (
-            "@hoge >>\n@fuga >>\n@fuge: |",
-            "@hoge >> @fuga >>\n@fuge: |",
+            "@hoge >>\n@fuga >>\n@fuge:",
+            "@hoge >> @fuga >>\n@fuge:",
         ):
             with self.subTest(header=header):
                 self.assertEqual(
@@ -37,10 +37,10 @@ class CompileTests(unittest.TestCase):
                 )
         for source in (
             "@hoge >>\n@fuga >> \\foobar\n",
-            "\\outer >>\n\\inner:\n    - A\n    - B\n",
-            "@outer: |\n    @center >>\n    \\textbf{A}\n",
+            "\\outer >>\n\\inner::\n    - A\n    - B\n",
+            "@outer:\n    @center >>\n    \\textbf{A}\n",
             "!off{unused} >>\n!before{\\vspace{1em}} >>\n\\x\n",
-            "@center >>\n@itemize: |\n    \\item A\n",
+            "@center >>\n@itemize:\n    \\item A\n",
         ):
             with self.subTest(source=source):
                 joined = source.replace(">>\n    ", ">> ").replace(">>\n", ">> ")
@@ -48,33 +48,36 @@ class CompileTests(unittest.TestCase):
 
     def test_multiline_stack_sequence_value_uses_multiline_braces(self):
         self.assertEqual(
-            compile_text("\\cmd:\n    - @center >>\n    \\x\n    - tail\n"),
+            compile_text("\\cmd::\n    - @center >>\n    \\x\n    - tail\n"),
             "\\cmd{\n\\begin{center}\n\\x\n\\end{center}\n}{tail}\n",
         )
 
     def test_raw_commands_and_named_environment(self):
         self.assertEqual(compile_text("\\foo{A}\n"), "\\foo{A}\n")
         self.assertEqual(
-            compile_text("@unknownenv[O]: |\n    raw $x$\n"),
+            compile_text("@unknownenv[O]:\n    raw $x$\n"),
             "\\begin{unknownenv}[O]\nraw $x$\n\\end{unknownenv}\n",
         )
 
     def test_command_sequence_consumes_all_values(self):
         self.assertEqual(
-            compile_text("\\foo{COMPACT}:\n    - A\n    - B\n"),
+            compile_text("\\foo{COMPACT}::\n    - A\n    - B\n"),
             "\\foo{COMPACT}{A}{B}\n",
         )
 
     def test_command_block_is_one_long_argument(self):
         self.assertEqual(
-            compile_text("\\foo: |\n    A\n    B\n"),
+            compile_text("\\foo:\n    A\n    B\n"),
             "\\foo{\nA\nB\n}\n",
         )
+
+    def test_command_empty_block_is_one_empty_long_argument(self):
+        self.assertEqual(compile_text("\\foo:\n"), "\\foo{\n}\n")
 
     def test_mixed_inline_and_multiline_arguments(self):
         self.assertEqual(
             compile_text(
-                "\\foo:\n"
+                "\\foo::\n"
                 "    - short\n"
                 "      continuation\n"
                 "    -\n"
@@ -87,13 +90,13 @@ class CompileTests(unittest.TestCase):
     def test_line_count_places_the_argument_braces(self):
         # A value confined to one line keeps its braces tight; a multi-line
         # value gets them on their own lines.
-        self.assertEqual(compile_text("\\foo:\n    - a\n    - b\n"), "\\foo{a}{b}\n")
+        self.assertEqual(compile_text("\\foo::\n    - a\n    - b\n"), "\\foo{a}{b}\n")
         self.assertEqual(
-            compile_text("\\foo:\n    - a\n      b\n"),
+            compile_text("\\foo::\n    - a\n      b\n"),
             "\\foo{\na\nb\n}\n",
         )
         self.assertEqual(
-            compile_text("\\foo:\n    - @center: |\n        x\n"),
+            compile_text("\\foo::\n    - @center:\n        x\n"),
             "\\foo{\n\\begin{center}\nx\n\\end{center}\n}\n",
         )
 
@@ -102,29 +105,29 @@ class CompileTests(unittest.TestCase):
         # braces, so TeXFlux reproduces their exact layout.
         self.assertEqual(
             compile_text(
-                "\\foo:\n    - {a\n      b\n      }\n    - {\n      c\n      d}\n"
+                "\\foo::\n    - {a\n      b\n      }\n    - {\n      c\n      d}\n"
             ),
             "\\foo{a\nb\n}{\nc\nd}\n",
         )
         for text in ("{a\\} b}", "{50\\% off}", "{a{b}c}"):
             with self.subTest(text=text):
-                rendered = compile_text(f"\\foo:\n    - {text}\n").rstrip("\n")
+                rendered = compile_text(f"\\foo::\n    - {text}\n").rstrip("\n")
                 self.assertEqual(rendered, f"\\foo{text}")
 
     def test_unbalanced_braces_fall_back_to_a_generated_pair(self):
         # Visible extra braces beat silently changing the argument count.
-        self.assertEqual(compile_text("\\foo:\n    - {a} {b}\n"), "\\foo{{a} {b}}\n")
+        self.assertEqual(compile_text("\\foo::\n    - {a} {b}\n"), "\\foo{{a} {b}}\n")
 
     def test_a_trailing_comment_keeps_the_closing_brace_safe(self):
         # A fully commented last line would swallow a hugged brace.
-        result = compile_with_map("\\foo:\n    - % commented\n", filename="c.tfx")
+        result = compile_with_map("\\foo::\n    - % commented\n", filename="c.tfx")
 
         self.assertEqual(result.text, "\\foo{% commented\n}\n")
         self.assertEqual(len(result.rendered.warnings), 1)
         self.assertIn("comment line", result.rendered.warnings[0].message)
 
     def test_an_inline_comment_only_warns(self):
-        result = compile_with_map("\\foo:\n    - a % trailing\n", filename="c.tfx")
+        result = compile_with_map("\\foo::\n    - a % trailing\n", filename="c.tfx")
 
         self.assertEqual(result.text, "\\foo{a % trailing}\n")
         self.assertEqual(len(result.rendered.warnings), 1)
@@ -132,9 +135,9 @@ class CompileTests(unittest.TestCase):
 
     def test_author_written_braces_warn_like_generated_ones(self):
         # Identical output has to produce an identical diagnostic.
-        generated = compile_with_map("\\cmd:\n    - a % b\n    - t\n", filename="c.tfx")
+        generated = compile_with_map("\\cmd::\n    - a % b\n    - t\n", filename="c.tfx")
         explicit = compile_with_map(
-            "\\cmd:\n    - {a % b}\n    - t\n",
+            "\\cmd::\n    - {a % b}\n    - t\n",
             filename="c.tfx",
         )
 
@@ -149,7 +152,7 @@ class CompileTests(unittest.TestCase):
         # though the author's '}' sits inside one. The group is broken either
         # way, but the next argument must not be commented out too.
         result = compile_with_map(
-            "\\cmd:\n    - {a\n      % foo}\n    - tail\n",
+            "\\cmd::\n    - {a\n      % foo}\n    - tail\n",
             filename="c.tfx",
         )
 
@@ -158,7 +161,7 @@ class CompileTests(unittest.TestCase):
         self.assertIn("comment line", result.rendered.warnings[0].message)
 
     def test_an_escaped_percent_is_not_a_comment(self):
-        result = compile_with_map("\\foo:\n    - 50\\% off\n", filename="c.tfx")
+        result = compile_with_map("\\foo::\n    - 50\\% off\n", filename="c.tfx")
 
         self.assertEqual(result.text, "\\foo{50\\% off}\n")
         self.assertEqual(result.rendered.warnings, ())
@@ -166,10 +169,10 @@ class CompileTests(unittest.TestCase):
     def test_environment_sequence_uses_last_value_as_body(self):
         self.assertEqual(
             compile_text(
-                "@myenv:\n"
+                "@myenv::\n"
                 "    - ARG1\n"
                 "    - ARG2\n"
-                "    - @: |\n"
+                "    - @:\n"
                 "        BODY1\n"
                 "        BODY2\n"
             ),
@@ -182,9 +185,9 @@ class CompileTests(unittest.TestCase):
     def test_environment_sequence_accepts_a_structural_body_value(self):
         self.assertEqual(
             compile_text(
-                "@myenv:\n"
+                "@myenv::\n"
                 "    - ARG\n"
-                "    - @center: |\n"
+                "    - @center:\n"
                 "        BODY\n"
             ),
             "\\begin{myenv}{ARG}\n"
@@ -197,9 +200,9 @@ class CompileTests(unittest.TestCase):
     def test_environment_block_is_body_only(self):
         self.assertEqual(
             compile_text(
-                "@frame{Title}: |\n"
+                "@frame{Title}:\n"
                 "    Hello\n"
-                "    @center: |\n"
+                "    @center:\n"
                 "        World\n"
             ),
             "\\begin{frame}{Title}\n"
@@ -212,27 +215,27 @@ class CompileTests(unittest.TestCase):
 
     def test_literal_and_transparent_containers(self):
         self.assertEqual(
-            compile_text("@{\\small\\color{red}}: |\n    Hello\n"),
+            compile_text("@{\\small\\color{red}}:\n    Hello\n"),
             "{\n\\small\\color{red}\nHello\n}\n",
         )
-        self.assertEqual(compile_text("@: |\n    A\n    B\n"), "A\nB\n")
-        self.assertEqual(compile_text("@:\n    - A\n    - B\n"), "A\nB\n")
-        self.assertEqual(compile_text("@:\n"), "\n")
-        self.assertEqual(compile_text("@{}:\n"), "{\n}\n")
+        self.assertEqual(compile_text("@:\n    A\n    B\n"), "A\nB\n")
+        self.assertEqual(compile_text("@::\n    - A\n    - B\n"), "A\nB\n")
+        self.assertEqual(compile_text("@::\n"), "\n")
+        self.assertEqual(compile_text("@{}::\n"), "{\n}\n")
         with self.assertRaises(ValidationError):
-            compile_text("@foo:\n")
+            compile_text("@foo::\n")
         self.assertEqual(
-            compile_text("\\foo:\n    - @{}: |\n        A\n"),
+            compile_text("\\foo::\n    - @{}:\n        A\n"),
             "\\foo{\n{\nA\n}\n}\n",
         )
 
     def test_literal_header_groups_are_independent_values(self):
         self.assertEqual(
             compile_text(
-                "@{\\Large}: |\n"
+                "@{\\Large}:\n"
                 "    Large text\n"
                 "\\\\\n"
-                "@{\\small}: |\n"
+                "@{\\small}:\n"
                 "    Small text\n"
             ),
             "{\n"
@@ -272,7 +275,7 @@ class CompileTests(unittest.TestCase):
     def test_open_stack_uses_rightmost_suffix(self):
         self.assertEqual(
             compile_text(
-                "@frame{Title} >> @center >> @{\\small}: |\n"
+                "@frame{Title} >> @center >> @{\\small}:\n"
                 "    BODY\n"
             ),
             "\\begin{frame}{Title}\n"
@@ -286,7 +289,7 @@ class CompileTests(unittest.TestCase):
         )
         self.assertEqual(
             compile_text(
-                "\\outer >> \\inner:\n"
+                "\\outer >> \\inner::\n"
                 "    - A\n"
                 "    - B\n"
             ),
@@ -295,11 +298,11 @@ class CompileTests(unittest.TestCase):
 
     def test_blank_line_semantics(self):
         self.assertEqual(
-            compile_text("\\foo:\n    - A\n\n    - B\n"),
+            compile_text("\\foo::\n    - A\n\n    - B\n"),
             "\\foo{A}{B}\n",
         )
         self.assertEqual(
-            compile_text("\\foo: |\n    A\n\n    B\n"),
+            compile_text("\\foo:\n    A\n\n    B\n"),
             "\\foo{\nA\n\nB\n}\n",
         )
 
@@ -308,11 +311,11 @@ class CompileTests(unittest.TestCase):
         # written as ordinary TeX behind !before or !around, so the compiler
         # holds no handler that knows \\vspace.
         for old in (
-            "!block:\n",
-            "!arg:\n",
-            "!body:\n",
-            "!items:\n    - A\n",
-            "!vpad{-1em}: |\n    contents\n",
+            "!block::\n",
+            "!arg::\n",
+            "!body::\n",
+            "!items::\n    - A\n",
+            "!vpad{-1em}:\n    contents\n",
         ):
             with self.subTest(old=old):
                 with self.assertRaises(DirectiveError):
@@ -320,15 +323,15 @@ class CompileTests(unittest.TestCase):
 
     def test_standard_flow_macros_replace_the_vpad_special(self):
         self.assertEqual(
-            compile_text("!around{\\vspace{-1em}}{\\vspace{2em}}: |\n    contents\n"),
+            compile_text("!around{\\vspace{-1em}}{\\vspace{2em}}:\n    contents\n"),
             "\\vspace{-1em}\ncontents\n\\vspace{2em}\n",
         )
         self.assertEqual(
-            compile_text("!before{\\vspace{-1em}}: |\n    contents\n"),
+            compile_text("!before{\\vspace{-1em}}:\n    contents\n"),
             "\\vspace{-1em}\ncontents\n",
         )
         self.assertEqual(
-            compile_text("!after{\\vspace{2em}}: |\n    contents\n"),
+            compile_text("!after{\\vspace{2em}}:\n    contents\n"),
             "contents\n\\vspace{2em}\n",
         )
 
@@ -366,14 +369,14 @@ class CompileTests(unittest.TestCase):
         # and each escape has to keep working.
         for body, message in (
             ("\\item Summary:", "unexpected token in structural header"),
-            ("\\TextCA{Note}:", "sequence suites require at least one"),
+            ("\\TextCA{Note}::", "sequence suites require at least one"),
             ("@foo{A}", "environment directives require a suite marker"),
         ):
             with self.subTest(body=body):
                 with self.assertRaisesRegex(ParseError, message):
-                    compile_text(f"@itemize: |\n    {body}\n")
+                    compile_text(f"@itemize:\n    {body}\n")
         with self.assertRaisesRegex(DirectiveError, "unknown special"):
-            compile_text("@itemize: |\n    !foo\n")
+            compile_text("@itemize:\n    !foo\n")
 
         for body, expected in (
             ("\\item Summary:{}", "\\item Summary:{}"),
@@ -383,11 +386,11 @@ class CompileTests(unittest.TestCase):
         ):
             with self.subTest(body=body):
                 self.assertEqual(
-                    compile_text(f"@itemize: |\n    {body}\n"),
+                    compile_text(f"@itemize:\n    {body}\n"),
                     f"\\begin{{itemize}}\n{expected}\n\\end{{itemize}}\n",
                 )
         self.assertEqual(
-            compile_text("@itemize: |\n    \\item\n    Summary:\n"),
+            compile_text("@itemize:\n    \\item\n    Summary:\n"),
             "\\begin{itemize}\n\\item\nSummary:\n\\end{itemize}\n",
         )
 
@@ -396,38 +399,38 @@ class CompileTests(unittest.TestCase):
         # both of these at once: the escape above, and a spelling a raw
         # suite used to emit verbatim.
         self.assertEqual(
-            compile_text("@itemize: |\n    \\item >> \\foo\n"),
+            compile_text("@itemize:\n    \\item >> \\foo\n"),
             "\\begin{itemize}\n\\item{\n\\foo\n}\n\\end{itemize}\n",
         )
         self.assertEqual(
-            compile_text("@itemize: |\n    @@@foo{A}\n"),
+            compile_text("@itemize:\n    @@@foo{A}\n"),
             "\\begin{itemize}\n@@foo{A}\n\\end{itemize}\n",
         )
 
         self.assertEqual(
-            compile_text("@itemize: |\n    !!!foo{A}\n"),
+            compile_text("@itemize:\n    !!!foo{A}\n"),
             "\\begin{itemize}\n!!foo{A}\n\\end{itemize}\n",
         )
 
         # A block suite keeps blank lines; the removed handler dropped the
         # blank separators between items.
         self.assertEqual(
-            compile_text("@itemize: |\n    \\item a\n\n    \\item b\n"),
+            compile_text("@itemize:\n    \\item a\n\n    \\item b\n"),
             "\\begin{itemize}\n\\item a\n\n\\item b\n\\end{itemize}\n",
         )
         self.assertEqual(
-            compile_text("@itemize: |\n    \\item a >> b\n"),
+            compile_text("@itemize:\n    \\item a >> b\n"),
             "\\begin{itemize}\n\\item a >> b\n\\end{itemize}\n",
         )
 
     def test_exclamation_raw_line_escape_use_cases(self):
         for source, expected in (
-            ("@verbatim: |\n    !!important\n",
+            ("@verbatim:\n    !!important\n",
              "\\begin{verbatim}\n!important\n\\end{verbatim}\n"),
-            ("@lstlisting: |\n       !!! # { >>:\n",
+            ("@lstlisting:\n       !!! # { >>:\n",
              "\\begin{lstlisting}\n   !! # { >>:\n\\end{lstlisting}\n"),
             ("!!重要\n", "!重要\n"),
-            ("\\foo:\n    - !!bar\n", "\\foo{!bar}\n"),
+            ("\\foo::\n    - !!bar\n", "\\foo{!bar}\n"),
         ):
             with self.subTest(source=source):
                 self.assertEqual(compile_text(source), expected)
@@ -435,14 +438,14 @@ class CompileTests(unittest.TestCase):
     def test_raw_mode_covers_long_verbatim_regions(self):
         for source, expected in (
             (
-                "@verbatim: |\n"
+                "@verbatim:\n"
                 "    !BEGIN_RAW_MODE\n"
                 "    !important\n"
                 "    !END_RAW_MODE\n",
                 "\\begin{verbatim}\n!important\n\\end{verbatim}\n",
             ),
             (
-                "@lstlisting: |\n"
+                "@lstlisting:\n"
                 "    !BEGIN_RAW_MODE\n"
                 "    !! # a listing marker\n"
                 "    !END_RAW_MODE\n",
@@ -462,12 +465,12 @@ class CompileTests(unittest.TestCase):
         with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):
             compile_text("!unknown\n", filename="unknown.tfx")
         with self.assertRaisesRegex(ValidationError, r"mix\.tfx:2:7"):
-            compile_text("@foo:\n    - @bar\n", filename="mix.tfx")
+            compile_text("@foo::\n    - @bar\n", filename="mix.tfx")
 
     def test_source_comments_and_final_lf(self):
         self.assertEqual(
             compile_text(
-                "@foo: |\n    raw\n\n@@at\n",
+                "@foo:\n    raw\n\n@@at\n",
                 filename="slides.tfx",
                 source_comments=True,
             ),
@@ -483,7 +486,7 @@ class CompileTests(unittest.TestCase):
 
     def test_normalized_ast_has_no_syntax_only_nodes(self):
         document = normalize(
-            parse("@frame >>\n@center >> @itemize: |\n    \\item A\n")
+            parse("@frame >>\n@center >> @itemize:\n    \\item A\n")
         )
 
         def walk(value):
@@ -507,7 +510,7 @@ class CompileTests(unittest.TestCase):
         self.assertEqual(document.body.nodes[0].body.nodes[0].span.start.line, 2)
         self.assertEqual(
             render(document),
-            compile_text("@frame >> @center >> @itemize: |\n    \\item A\n"),
+            compile_text("@frame >> @center >> @itemize:\n    \\item A\n"),
         )
 
     def test_custom_handler_remains_ast_to_ast(self):
@@ -516,7 +519,7 @@ class CompileTests(unittest.TestCase):
 
         registry = BUILTIN_DIRECTIVES.copy()
         registry["result"] = result
-        source = "!result: |\n    \\foo{A}\n"
+        source = "!result:\n    \\foo{A}\n"
         document = normalize(parse(source, "h.tfx"), registry)
         self.assertEqual(
             render(document),
@@ -546,7 +549,7 @@ class CompileTests(unittest.TestCase):
 
     def test_compact_groups_remain_before_sequence_values(self):
         self.assertEqual(
-            compile_text("\\doublecolumn[0.48]:\n    - A\n    - B\n"),
+            compile_text("\\doublecolumn[0.48]::\n    - A\n    - B\n"),
             "\\doublecolumn[0.48]{A}{B}\n",
         )
 

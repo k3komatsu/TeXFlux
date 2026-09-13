@@ -1,7 +1,7 @@
-!defmacro{figure}{name}{width}{caption}: |
+!defmacro{figure}{name}{width}{caption}:
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
-    @center: |
-        @minipage{!text{width}}: |
+    @center:
+        @minipage{!text{width}}:
             !param{caption}
-!figure{result}{0.8\textwidth}: |
+!figure{result}{0.8\textwidth}:
     Result of the experiment

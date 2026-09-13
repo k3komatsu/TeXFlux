@@ -180,7 +180,7 @@ scan(text) -> list[Piece] | None
 `frozenset(Reserved) | CONDITIONAL_NAMES` なので、これだけで
 
 ```text
-!defmacro{text}{x}: |
+!defmacro{text}{x}:
 ```
 
 が `'!text' is reserved by TeXFlux` として拒否される。追加のコードは不要。
@@ -429,10 +429,10 @@ B4〜B7 は文字列に `!text{` / `!param{` の綴りが含まれるかを検�
 | コンテキスト | 実際に出るエラー |
 |---|---|
 | `!flag{!text{x}}{on}` | `invalid build flag name '!text{x}'`（`flags._declaration`） |
-| `!defmacro{foo}{!text{x}}: |` | `invalid macro parameter name '!text{x}'`（`macros._parameters`） |
+| `!defmacro{foo}{!text{x}}:` | `invalid macro parameter name '!text{x}'`（`macros._parameters`） |
 | `!defmacro{!text{n}}...` | `invalid macro name '!text{n}'`（`macros._definition`） |
 | `!macroimport{!text{p}}` | モジュール解決のエラー。`resolve_macro_imports` は `expand_macros` より前に走り、ノードを取り除くので expander は見ない |
-| `@!text{env}: |` | `parser` が `!` を環境名に許さず `invalid structural name` |
+| `@!text{env}:` | `parser` が `!` を環境名に許さず `invalid structural name` |
 
 ### 7.4 構造名は生成できない
 
@@ -455,9 +455,9 @@ command / environment / special / macro の名前は `parser.HeaderScanner._segm
 |---|---|---|
 | `!foo{hello}` | `(RawTex("hello"),)` | ✅ `"hello"` |
 | `!foo{}` | `(RawTex(""),)` | ✅ `""`（空文字は正当） |
-| `!foo: |` ＋ 1 行 | `(RawTex("LINE"),)` | ✅ |
-| `!foo: |` ＋ 2 行 | `(RawTex, RawTex)` | ❌ T05 |
-| `!foo: |` ＋ `@center: |` | `(ParsedInvocation,)` | ❌ T05 |
+| `!foo:` ＋ 1 行 | `(RawTex("LINE"),)` | ✅ |
+| `!foo:` ＋ 2 行 | `(RawTex, RawTex)` | ❌ T05 |
+| `!foo:` ＋ `@center:` | `(ParsedInvocation,)` | ❌ T05 |
 | rest パラメータ本体 | `tuple[Value, ...]` | ❌ T04 |
 | `!each` の item が 1 行 | `(RawTex("alpha"),)` | ✅ |
 | `!each` の item が環境 | `(ParsedInvocation,)` | ❌ T05 |
@@ -509,9 +509,9 @@ def _emit_text(emitter, text, parts, span, base_role):
 ### 9.3 期待される provenance（規範例）
 
 ```text
-1: !defmacro{m}{x}: |
+1: !defmacro{m}{x}:
 2:     \foo{pre-!text{x}-post}
-3: !m: |
+3: !m:
 4:     VALUE
 ```
 
@@ -537,7 +537,7 @@ def _emit_text(emitter, text, parts, span, base_role):
   `_scan_command_header`（`parser.py:587-593`）が「閉じた単一 segment の command 行は
   ordinary TeX」と判定して `RawTex` になる。`scan_group` の `[` 走査は brace 深さを
   数えるので `!text{w}` の brace で誤らない。
-- `@hoge{!text{x}}: |` は `scan_group` が brace の入れ子を正しく数え、group の中身は
+- `@hoge{!text{x}}:` は `scan_group` が brace の入れ子を正しく数え、group の中身は
   opaque な `str` のまま残る。
 - `!inner{!text{a}-!text{b}}` も 1 個の required group として scan される。
 
@@ -550,7 +550,7 @@ def _emit_text(emitter, text, parts, span, base_role):
 2 つだけである。どちらも T01 になる。
 
 1. 行頭の `!text{x}` — `_Parser._directive` が `SpecialInvocation(name="text")` を作る。
-2. `:` sequence suite の `- !text{x}` — `parser.py:793-805` が同じノードを作る。
+2. `::` sequence suite の `- !text{x}` — `parser.py:793-805` が同じノードを作る。
 
 ### 10.3 `normalize.py` — 変更は 1 箇所のみ
 
@@ -581,7 +581,7 @@ fragment provenance を素朴に入れると、§9.3 の例で `\foo{pre-` が `
 
 なお `remap._rewrite_link`（`remap.py:423`）は `mapping.source_start.line` **だけ**を
 使う。列の精度は逆引き結果に影響しない。差が出るのは「呼び出し行と値の行が異なる」
-場合、すなわち `: |` suite で値を渡した場合だけである。
+場合、すなわち `:` ブロックスイートで値を渡した場合だけである。
 
 残る曖昧性: 1 つの生成行に**異なるソース行由来の hole が 2 つ以上**並んだ場合
 （`\foo{!text{a}!text{b}}` の `a` と `b` を別々の suite 行で渡した場合）は
@@ -837,11 +837,11 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 
 **構造 group（`InterpolationGroupTests`）**
 
-- `@hoge{!text{x}}: |`。
+- `@hoge{!text{x}}:`。
 - `@foo >> @bar >> @hoge{!text{x}}:`。
 - command の required / optional / overlay group。
 - `@{...}` literal brace header。
-- `!before{!text{gap}}: |`（標準フロー制御の呼び出し値）。
+- `!before{!text{gap}}:`（標準フロー制御の呼び出し値）。
 
 **AST / text の分離（`InterpolationLayerTests`）**
 
@@ -849,7 +849,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 - AST 位置の `!text{x}` は T01。
 - text 位置の `!text{x}` は成功する。
 - text 位置の `!param{x}` は T08。
-- sequence suite の `- !text{x}` も T01。
+- `::` sequence suite の `- !text{x}` も T01。
 
 **control metadata（`InterpolationMetadataTests`）** — いずれも「補間されない」ことの確認。
 
@@ -895,7 +895,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 
 **テンプレート外（`InterpolationOutsideTemplateTests`）**
 
-- トップレベルの `@hoge{!text{x}}: |` → T02。
+- トップレベルの `@hoge{!text{x}}:` → T02。
 - トップレベルの生 TeX 行 `\foo{!text{x}}` → T02。
 - トップレベルの `\foo{!param{x}}` → T08。
 
@@ -907,7 +907,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 - それぞれの `role` が `"content"` / `"scaffold"` であること。
 - `.tfxm` 越しの nested macro でも、すべての fragment がルート `.tfx` の呼び出し行を
   指すこと（テンプレートは常に呼び出し位置へ再ターゲットされるため）。
-- 呼び出し側の値に書かれた escape（`!m: |` の suite に `!!!text{literal}`）の
+- 呼び出し側の値に書かれた escape（`!m:` の suite に `!!!text{literal}`）の
   fragment が `"content"` であり、値の行・列を指すこと。テンプレートのリテラルだけが
   `"scaffold"` になる（§5.1）。
 - `result.text` が fragment の単純連結と一致すること。
@@ -1027,12 +1027,12 @@ diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
 ### 16.1 画像
 
 ```text
-!defmacro{figure}{name}{width}{caption}: |
+!defmacro{figure}{name}{width}{caption}:
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
-    @center: |
-        @minipage{!text{width}}: |
+    @center:
+        @minipage{!text{width}}:
             !param{caption}
-!figure{result}{0.8\textwidth}: |
+!figure{result}{0.8\textwidth}:
     Result of the experiment
 ```
 
@@ -1048,8 +1048,8 @@ Result of the experiment
 ### 16.2 環境引数（text）と本体（AST）の併用
 
 ```text
-!defmacro{styled}{style}{body}: |
-    @foo >> @bar >> @hoge{!text{style}}: |
+!defmacro{styled}{style}{body}:
+    @foo >> @bar >> @hoge{!text{style}}:
         !param{body}
 ```
 
@@ -1058,21 +1058,21 @@ Result of the experiment
 ### 16.3 ラベル生成と macro composition
 
 ```text
-!defmacro{label}{id}: |
+!defmacro{label}{id}:
     \label{!text{id}}
 
-!defmacro{sectionlabel}{prefix}{id}: |
+!defmacro{sectionlabel}{prefix}{id}:
     !label{!text{prefix}:!text{id}}
 ```
 
 ### 16.4 `!each` の item
 
 ```text
-!defmacro{labels}{...items}: |
-    !each{items}{item}: |
+!defmacro{labels}{...items}:
+    !each{items}{item}:
         \label{item:!text{item}}
 
-!labels:
+!labels::
     - alpha
     - beta
 ```
@@ -1080,18 +1080,18 @@ Result of the experiment
 ### 16.5 不正例
 
 ```text
-!defmacro{bad1}{x}: |
-    @hoge{!param{x}}: |        # T08
+!defmacro{bad1}{x}:
+    @hoge{!param{x}}:        # T08
         A
 
-!defmacro{bad2}{flag}{body}: |
-    !when{!text{flag}}: |      # T10
+!defmacro{bad2}{flag}{body}:
+    !when{!text{flag}}:      # T10
         !param{body}
 
-!defmacro{bad3}{x}: |
+!defmacro{bad3}{x}:
     !text{x}                   # T01
 
-!defmacro{bad4}{...items}: |
+!defmacro{bad4}{...items}:
     \foo{!text{items}}         # T04
 ```
 
