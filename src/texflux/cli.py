@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 import sys
 
-from . import compile_with_map
+from . import compile_ast, compile_with_map, serialize_ast
 from .errors import FlagError, TeXFluxError
 from .flags import FLAG_VALUES
 from .paths import same_path
@@ -20,16 +20,16 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="texflux")
     commands = parser.add_subparsers(dest="command", required=True)
     compile_parser = commands.add_parser("compile")
-    compile_parser.add_argument("input", metavar="INPUT")
-    compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT")
     compile_parser.add_argument("--source-comments", action="store_true")
-    compile_parser.add_argument(
-        "--flag",
-        dest="flags",
-        action="append",
-        default=[],
-        metavar="NAME[=on|off]",
-    )
+    ast_parser = commands.add_parser("ast", help="export canonical AST as JSON")
+    ast_parser.add_argument("--pretty", action="store_true")
+    for frontend in (compile_parser, ast_parser):
+        frontend.add_argument("input", metavar="INPUT")
+        frontend.add_argument("-o", "--output", required=True, metavar="OUTPUT")
+        frontend.add_argument(
+            "--flag", dest="flags", action="append", default=[],
+            metavar="NAME[=on|off]",
+        )
     synctex_parser = commands.add_parser("synctex")
     synctex_commands = synctex_parser.add_subparsers(
         dest="synctex_command",
@@ -124,6 +124,39 @@ def _compile(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ast(args: argparse.Namespace) -> int:
+    """Export a session's canonical AST without rendering TeX or a source map."""
+
+    input_path = Path(args.input)
+    if input_path.suffix != ".tfx":
+        return _fail("input must have a .tfx extension")
+    if args.output != "-" and same_path(input_path, args.output):
+        return _fail("input and output must be different paths")
+    try:
+        source_bytes = input_path.read_bytes()
+        result = compile_ast(
+            source_bytes.decode("utf-8"), filename=str(input_path),
+            flags=_flags(args.flags), source_bytes=source_bytes,
+        )
+        text = serialize_ast(result, pretty=args.pretty)
+        if args.output == "-":
+            # Write bytes to bypass platform encoding and newline translation.
+            if hasattr(sys.stdout, "buffer"):
+                sys.stdout.buffer.write(text.encode("utf-8"))
+            else:
+                sys.stdout.write(text)
+        else:
+            Path(args.output).write_bytes(text.encode("utf-8"))
+    except TeXFluxError as error:
+        print(error.diagnostic(), file=sys.stderr)
+        return 1
+    except (FlagError, ValueError, OSError) as error:
+        return _fail(str(error))
+    except RecursionError:
+        return _fail(f"{input_path}: input nests too deeply to compile")
+    return 0
+
+
 def _synctex_remap(args: argparse.Namespace) -> int:
     """Rewrite a SyncTeX file so it points at .tfx sources."""
 
@@ -149,6 +182,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     match args.command, getattr(args, "synctex_command", None):
         case ("compile", _):
             return _compile(args)
+        case ("ast", _):
+            return _ast(args)
         case ("synctex", "remap"):
             return _synctex_remap(args)
         case (command, _):

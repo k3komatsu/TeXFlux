@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TeXFlux External AST v1",
+  "description": "Canonical AST emitted by TeXFlux. Unknown object members are allowed; unknown node types are rejected. Opaque text and invocation names have no backend semantics.",
+  "$comment": "Source IDs must match load-order indices, source files must be unique, every span.source must resolve, and span.start must not follow span.end. These cross-value invariants require consumer checks beyond JSON Schema. The removed Item node is not part of the current canonical AST.",
+  "type": "object",
+  "required": ["format", "version", "producer", "root", "sources", "document"],
+  "properties": {
+    "format": {"const": "texflux-ast"},
+    "version": {"type": "integer", "const": 1},
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "texflux"},
+        "version": {"type": "string"}
+      }
+    },
+    "root": {"type": "integer", "const": 0},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/source"},
+            {"properties": {"id": {"const": 0}}}
+          ]
+        }
+      ],
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "document": {"$ref": "#/$defs/document"}
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["id", "file", "sha256"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 0},
+        "file": {
+          "type": "string",
+          "description": "Diagnostic display spelling with platform separators normalized to '/'; not necessarily absolute."
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the original loaded bytes."
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "description": "One-based Unicode code point position, with line endings counted as LF.",
+      "required": ["line", "column"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "span": {
+      "type": "object",
+      "description": "Half-open [start, end) provenance range. Spans are not unique node identities.",
+      "required": ["source", "start", "end"],
+      "properties": {
+        "source": {"type": "integer", "minimum": 0},
+        "start": {"$ref": "#/$defs/position"},
+        "end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "document": {
+      "type": "object",
+      "required": ["type", "body", "span"],
+      "properties": {
+        "type": {"const": "document"},
+        "body": {"$ref": "#/$defs/block"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    },
+    "block": {
+      "type": "object",
+      "required": ["type", "nodes", "span"],
+      "properties": {
+        "type": {"const": "block"},
+        "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    },
+    "node": {
+      "oneOf": [
+        {"$ref": "#/$defs/raw"},
+        {"$ref": "#/$defs/invocation"},
+        {"$ref": "#/$defs/group"}
+      ]
+    },
+    "raw": {
+      "type": "object",
+      "required": ["type", "text", "span"],
+      "properties": {
+        "type": {"const": "raw"},
+        "text": {"type": "string", "description": "Opaque resolved text, including empty lines."},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "required": ["type", "form", "name", "arguments", "span"],
+      "properties": {
+        "type": {"const": "invocation"},
+        "form": {"enum": ["container", "command"]},
+        "name": {"type": "string", "description": "Normalized name; unknown names are legal."},
+        "arguments": {"type": "array", "items": {"$ref": "#/$defs/argument"}},
+        "body": {"$ref": "#/$defs/block"},
+        "span": {"$ref": "#/$defs/span"}
+      },
+      "if": {"properties": {"form": {"const": "container"}}},
+      "then": {"required": ["body"]},
+      "else": {"not": {"required": ["body"]}}
+    },
+    "argument": {
+      "type": "object",
+      "required": ["kind", "layout", "value", "span"],
+      "properties": {
+        "kind": {"enum": ["required", "optional", "overlay"]},
+        "layout": {"enum": ["inline", "block", "hugged", "explicit"]},
+        "value": {"oneOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/block"}]},
+        "span": {"$ref": "#/$defs/span"}
+      },
+      "if": {"properties": {"layout": {"const": "inline"}}},
+      "then": {"properties": {"value": {"$ref": "#/$defs/text"}}},
+      "else": {"properties": {"value": {"$ref": "#/$defs/block"}}}
+    },
+    "text": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "text"},
+        "text": {"type": "string"}
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["type", "header", "body", "span"],
+      "properties": {
+        "type": {"const": "group"},
+        "header": {"type": "string", "description": "Opaque resolved text inside the header braces, possibly empty."},
+        "body": {"$ref": "#/$defs/block"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    }
+  }
+}

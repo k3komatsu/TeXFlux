@@ -31,6 +31,7 @@ from .errors import (
     ValidationError,
 )
 from .flags import FLAG_VALUES, Flags, collect_flags, declared_flags_hint
+from .external_ast import AstCompilationResult, serialize_ast
 from .macros import (
     MacroDefinition,
     MacroParameter,
@@ -105,6 +106,30 @@ def compile_text(
     ).text
 
 
+def compile_ast(
+    source: str,
+    *,
+    filename: str = "<string>",
+    flags: Flags | None = None,
+    source_bytes: bytes | None = None,
+) -> AstCompilationResult:
+    """Resolve one source to canonical AST through a compilation session.
+
+    ``flags`` overrides only the root module's declarations. ``source_bytes``
+    supplies its original bytes for hashing; when omitted, UTF-8 encoding of
+    ``source`` is used. All loaded content and macro modules are recorded.
+    """
+
+    session = CompilationSession()
+    document = session.compile_root(
+        source,
+        filename=filename,
+        data=source.encode("utf-8") if source_bytes is None else source_bytes,
+        flags=flags,
+    )
+    return AstCompilationResult(document, session.loaded())
+
+
 def compile_with_map(
     source: str,
     *,
@@ -121,23 +146,23 @@ def compile_with_map(
     what is on disk rather than a re-encoding of ``source``.
     """
 
-    session = CompilationSession()
-    document = session.compile_root(
+    result = compile_ast(
         source,
         filename=filename,
-        data=source.encode("utf-8") if source_bytes is None else source_bytes,
         flags=flags,
+        source_bytes=source_bytes,
     )
     rendered = render_with_provenance(
-        document,
+        result.document,
         source_comments=source_comments,
     )
-    return CompilationResult(rendered.text, rendered, session.loaded())
+    return CompilationResult(rendered.text, rendered, result.sources)
 
 
 __all__ = [
     "Argument",
     "ArgumentLayout",
+    "AstCompilationResult",
     "BUILTIN_DIRECTIVES",
     "Block",
     "BraceGroup",
@@ -196,6 +221,7 @@ __all__ = [
     "collect_flags",
     "collect_macros",
     "compile_text",
+    "compile_ast",
     "compile_with_map",
     "declared_flags_hint",
     "desugar",
@@ -211,6 +237,7 @@ __all__ = [
     "render",
     "render_with_provenance",
     "serialize_source_map",
+    "serialize_ast",
     "serialize_synctex",
     "write_synctex_file",
 ]

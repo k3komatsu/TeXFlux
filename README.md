@@ -410,6 +410,18 @@ latex_draft = compile_text(source, filename="example.tfx", flags={"draft": True}
 
 ---
 
+## 外部ASTのJSON出力
+
+HTMLなどのconsumer向けに、マクロ・フラグ・importを解決したcanonical ASTを出力できます。
+
+```bash
+texflux ast slides.tfx -o slides.tfxast.json
+texflux ast slides.tfx -o - --pretty
+```
+
+Python APIは`compile_ast`と`serialize_ast`です。形式と使い方は
+[外部AST出力](doc/external-ast.md)を参照してください。
+
 ## ❓ よくある質問（FAQ）
 
 ### Q. 既存の Beamer テーマやスタイルファイル（`.sty`）は使えますか？
