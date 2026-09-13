@@ -1,4 +1,11 @@
-"""Syntax-AST normalization and built-in TeXFlux specials."""
+"""Syntax-AST normalization: value consumption and the remaining specials.
+
+Flow control is not here. ``!before``, ``!after``, ``!around``, ``!off`` and
+``!drop`` are ordinary source macros, defined in the bundled ``prelude.tfxm``
+and expanded away by the macro pass, so the registry below holds nothing but
+the two module constructs -- which only name themselves for a caller that
+bypassed the compilation session.
+"""
 
 from __future__ import annotations
 
@@ -29,10 +36,11 @@ from .errors import DirectiveError, ModuleError, ParseError, ValidationError
 from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
 from .parser import scan_group
-from .syntax import blank, required_text, sequence_entries
+from .syntax import blank, sequence_entries
 
 
-#: The deliberately small in-process special registry: one handler per name.
+#: The in-process special registry: one handler per name. A reusable
+#: operation expressible as a source macro does not get an entry here.
 DirectiveRegistry: TypeAlias = dict[str, "SpecialHandler"]
 
 SpecialHandler: TypeAlias = Callable[
@@ -371,70 +379,6 @@ def _normalize_special(
     return tuple(_normalize_canonical(item, registry) for item in result)
 
 
-def _vspace(group: Argument) -> GenericInvocation:
-    return GenericInvocation("vspace", (group,), None, group.span)
-
-
-def _off_handler(
-    node: SpecialInvocation,
-    registry: DirectiveRegistry,
-) -> tuple[CanonicalNode, ...]:
-    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
-        raise ValidationError(
-            "!off requires a ': |' block suite or a '>>' payload",
-            node.span,
-        )
-    if len(node.groups) != 1 or required_text(node.groups[0]) is None:
-        raise ValidationError(
-            "!off requires one required inline group",
-            node.span,
-        )
-    return _normalize_block(node.suite, registry).nodes
-
-
-def _drop_handler(
-    node: SpecialInvocation,
-    _registry: DirectiveRegistry,
-) -> tuple[CanonicalNode, ...]:
-    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
-        raise ValidationError(
-            "!drop requires a ': |' block suite or a '>>' payload",
-            node.span,
-        )
-    if node.groups:
-        raise ValidationError("!drop does not accept groups", node.span)
-    return ()
-
-
-def _vpad_handler(
-    node: SpecialInvocation,
-    registry: DirectiveRegistry,
-) -> tuple[CanonicalNode, ...]:
-    if node.suite is None or _suite_mode(node) is not SuiteMode.BLOCK:
-        raise ValidationError("!vpad requires a ': |' block suite", node.span)
-    if not 1 <= len(node.groups) <= 2:
-        raise ValidationError(
-            "!vpad requires one or two required inline groups",
-            node.span,
-        )
-    invalid_group = next(
-        (group for group in node.groups if required_text(group) is None),
-        None,
-    )
-    if invalid_group is not None:
-        raise ValidationError(
-            "!vpad requires one or two required inline groups",
-            invalid_group.span,
-        )
-
-    body = _normalize_block(node.suite, registry)
-    result: list[CanonicalNode] = [_vspace(node.groups[0])]
-    result.extend(body.nodes)
-    if len(node.groups) == 2:
-        result.append(_vspace(node.groups[1]))
-    return tuple(result)
-
-
 def _module_guard(name: str) -> SpecialHandler:
     """Reject a module construct that reached the import-free pipeline.
 
@@ -456,12 +400,12 @@ def _module_guard(name: str) -> SpecialHandler:
     return handler
 
 
+#: Every remaining built-in: the two module constructs, which only name
+#: themselves here. Flow control is written as ordinary macros, which the
+#: compilation session seeds from its bundled standard module.
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
-    "drop": _drop_handler,
     "import": _module_guard("import"),
     "macroimport": _module_guard("macroimport"),
-    "off": _off_handler,
-    "vpad": _vpad_handler,
 }
 
 
@@ -497,6 +441,12 @@ def normalize(
     give. An override raises ``FlagError`` unless it names a declared flag and
     carries a real ``bool``, so a typo or a stray ``"off"`` cannot quietly
     build the other version of the document.
+
+    This is the low-level pass, so its macro environment is exactly what
+    ``document`` defines: the standard flow macros belong to a compilation
+    session, and a source calling ``!before`` here fails as an unknown
+    special. Full-language compilation goes through ``compile_text``,
+    ``compile_with_map``, ``compile_ast`` or the CLI.
     """
 
     validate_macro_forms(document)

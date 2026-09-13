@@ -249,12 +249,10 @@ if position < self.end and self.text[position] not in " :>":
 
 | 構文 | 拒否経路 |
 | --- | --- |
-| `!vpad` / `!off` | `required_text(group) is None` → `ValidationError` |
-| `!drop` | `node.groups` が空でない → `ValidationError` |
 | `!when` / `!unless` | 先頭以外の群は `_flag_names` → `demand_text` → `ValidationError` |
 | `!flag` | 群数 2 の検査か `demand_text` → `ValidationError` |
 | `!defmacro` / `!param` / `!each` | `demand_text` / `_single_name` → `ValidationError` |
-| マクロ呼び出し | `_values` の `required_text(group) is None` → `MacroExpansionError` |
+| マクロ呼び出し（標準フロー制御の `!before` / `!after` / `!around` / `!off` / `!drop` を含む） | `_values` の `required_text(group) is None` → `MacroExpansionError` |
 | `!macroimport` | §7.2 の群検査 → `ModuleError` |
 
 結果として `GroupKind.BINDING` の `Argument` は**正準 AST に到達しない**。
@@ -755,6 +753,14 @@ def merge_imports(
 `.tfx` の「取り込み同士の衝突」は `merge_imports` が M25 で報告し、
 「取り込みとローカルの衝突」は `collect_macros` が既存メッセージで報告する（§7.5.2）。
 
+（この文書を書いた時点の話である。その後、標準フロー制御が同梱マクロモジュールに
+移り、`base` は両者とも**標準マクロ表から始まる**ようになった——`.tfxm` は
+`merge_imports({**standard, **own}, ...)`、`.tfx` は `merge_imports(dict(standard), ...)`
+である。標準名との衝突は `merge_imports` ではなく `collect_macros` の新しい
+`standard=` 引数が定義位置で報告するので、`.tfx` と `.tfxm` で診断が揃う。
+§7.4.2 の環境表にも合成識別子 `texflux:prelude` が登録され、これが同梱マクロの
+`frame.macro.module` を必ず解決可能にしている。dsl.md 14.10 節を参照。）
+
 #### 7.4.2 環境表
 
 セッションは `environments: dict[str, MacroEnvironment]` を 1 つだけ持ち、
@@ -790,6 +796,7 @@ def collect_macros(
     *,
     imported: MacroEnvironment = {},
     module: str = "",
+    standard: Container[str] = (),   # 後から追加。§7.4.1 の補足を参照
 ) -> tuple[Document, dict[str, MacroDefinition]]:
     macros: dict[str, MacroDefinition] = dict(imported)
     ...
@@ -1065,7 +1072,7 @@ except TeXFluxError as error:
 - 入れ子の import では、内側から順に接尾辞が積み上がる。
 
 ```text
-c.tfx:4:5: validation error: !vpad requires a ': |' block suite;
+c.tfx:4:16: validation error: duplicate macro parameter 'x';
 imported from b.tfx:3:1; imported from main.tfx:7:1
 ```
 
@@ -1359,13 +1366,15 @@ def _module_guard(name: str) -> SpecialHandler:
 
 
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
-    "drop": _drop_handler,
     "import": _module_guard("import"),
     "macroimport": _module_guard("macroimport"),
-    "off": _off_handler,
-    "vpad": _vpad_handler,
 }
 ```
+
+（この文書を書いた時点では `drop` / `off` / `vpad` のハンドラも並んでいた。
+その後 `!before` / `!after` / `!around` / `!off` / `!drop` は同梱マクロ
+モジュールの普通のソースマクロになり、`!vpad` は削除されたので、レジストリに
+残るのはモジュール構文の 2 つだけである。dsl.md 11.1 節と 14.10 節を参照。）
 
 副次効果として `import` と `macroimport` が**マクロ名として予約される**
 （`_definition` の `name in builtins` 検査）。これは組み込み特殊名との衝突をエラーとする方針と一致する。

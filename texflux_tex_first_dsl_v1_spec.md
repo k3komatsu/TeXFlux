@@ -354,49 +354,79 @@ the parser produces one ordinary Stack, with no new canonical node type.
 Special handlers are in-process AST-to-AST transformations. They return
 canonical node tuples, never TeX strings. Unknown specials fail.
 
-The v1 built-ins are:
+`!import` and `!macroimport` are the only built-in names left, and neither is
+a handler: both are module constructs, defined in section 12 and resolved by
+the compilation session. Being built-in names, neither may be redefined by
+`!defmacro`.
 
-- !vpad, which accepts one or two required inline groups and a block suite.
-- !off, which ignores one required inline group and splices its block suite.
-- !drop, which accepts no groups and discards its block suite.
+### 9.1 Standard flow controls
 
-!vpad's canonical form is:
+Flow control is not built in. `!before`, `!after`, `!around`, `!off` and
+`!drop` are ordinary source macros (section 10), defined in the one
+compiler-bundled macro module of section 12.9, which every `.tfx` and `.tfxm`
+sees without writing an import. Their names are reserved: defining one, in
+either kind of module, is a validation error rather than a shadowing.
+
+`!before`, `!after` and `!around` place one or two values around a payload:
 
 ~~~text
-!vpad{-1em}{2em}: |
+!before{\smallskip} >> \foo
+!after{\smallskip} >> \foo
+!around{\vspace{-1em}}{\vspace{2em}}: |
     contents
 ~~~
 
-It emits a canonical vspace command before the normalized body and, when the
-second group exists, after it. A sequence suite, invalid group kind/count, or
-missing suite is a validation error.
-
-!off removes one wrapper-like fragment from a composition. Its required inline
-group is opaque and ignored, while its block payload is normalized and spliced
-in place:
+`!around{A}{B}` is what `!before{A} >> !after{B} >>` composes to, and is kept
+because a paired transformation is one operation. `!off` discards its first
+value and keeps the payload, which is how one segment leaves a composition:
 
 ~~~text
 \fuga >> !off{\foo{a}{b}} >> \hoge
 ~~~
 
-is equivalent to `\fuga >> \hoge`. !off requires exactly one required inline
-group and a block payload, supplied either by `': |'` or by the rest of a `>>`
-composition.
-
-!drop emits no nodes and does not normalize its block payload:
+is equivalent to `\fuga >> \hoge`. `!drop` takes the payload alone and emits
+nothing:
 
 ~~~text
 !drop >> \hoge >> \fuga
 ~~~
 
-The example emits no TeX content. !drop accepts no groups and requires a block
-payload, supplied either by `': |'` or by the rest of a `>>` composition. A
-sequence suite, missing payload, or invalid group shape for either construct is
-a validation error.
+Every rule of section 10 applies to these five, and no rule of its own does.
+A payload written `': |'` and a payload written as the rest of a `>>`
+composition are the same single value (section 10.2), and a `':'` sequence
+suite is one value per `-` entry there as anywhere else; a wrong value count is
+the ordinary arity diagnostic; and provenance follows section 15, so each
+value keeps the span of the group or suite the author wrote it in.
 
-`!import` and `!macroimport` are module constructs and are defined in section
-12. They are built-in names, so neither may be redefined by `!defmacro`, and
-both are resolved by the compiler session rather than by a special handler.
+`!drop` needs no primitive and has none. Its template is empty, so the value
+it binds reaches no template position and nothing survives expansion. That is
+also what keeps its phase behaviour: a discarded payload is never normalized
+and never content-import-resolved, so `!drop: |` around an `!import` opens no
+file, and an unknown special or an unconsumable value shape inside one is
+never reported.
+
+A dropped payload is still a macro value, so it is expanded before it is
+discarded. Expansion-stage errors inside one are therefore reported: a call
+with the wrong number of values, a misplaced `!defmacro`, a stray `!param` or
+`!each`, a recursion cycle, an interpolation error. That is deliberately
+weaker than a dropped conditional payload, which section 11.5 never expands
+at all. `!when`/`!unless` is the construct for disabling content that no
+longer compiles; `!drop` discards content that still expands.
+
+The old !vpad special is removed and is not an alias. Spacing is the TeX the
+author chose, placed by the generic combinators:
+
+~~~text
+!before{\vspace{-1em}}: |
+    contents
+!around{\vspace{-1em}}{\vspace{2em}}: |
+    contents
+~~~
+
+so the language holds no handler that knows `\vspace`, and no interpolation
+allow-list exists for one construct's arguments.
+
+### 9.2 Removed constructs
 
 The old !block, !arg, !body, and !items constructs are removed and are not
 aliases. A list is an ordinary environment holding raw `\item` lines, which
@@ -477,9 +507,10 @@ expanded, which makes forward references valid:
 ~~~
 
 Parameter names match `[A-Za-z_][A-Za-z0-9_-]*`. A duplicate parameter, a
-macro name that is reserved (`defmacro`, `param`, `text`, `each`), a name already
-taken by a built-in special, and a duplicate macro definition are all
-validation errors reported at the definition site.
+macro name that is reserved (`defmacro`, `param`, `text`, `each`), a name
+already taken by a built-in special, a name belonging to the standard flow
+macros of section 9.1, and a duplicate macro definition are all validation
+errors reported at the definition site.
 
 ### 10.2 Value binding
 
@@ -586,17 +617,19 @@ Interpolation applies only to opaque text fields in a macro template:
 - RawTex text;
 - inline required, optional, and overlay groups of commands and containers;
 - the header of a literal brace container;
-- required groups of `!vpad`;
 - required compact values passed to a user macro, interpolated in the caller's
-  frame before binding them to the callee.
+  frame before binding them to the callee. The standard flow macros of section
+  9.1 are user macros in this respect, so `!before{\vspace{!text{gap}}}` is an
+  ordinary call value.
 
 `!text` in an AST position is an error; use `!param` for structural insertion.
 An unescaped `!param{` in a text field is an error; use `!text` for text.
 A text hole outside a template is an error, including a macro call's values
 written outside any template. Macro and flag declarations retain their existing
 name validation. Command, environment, and special names are fixed by parsing.
-Condition groups, `!param` / `!each` name groups, binding lists, and groups of
-specials other than `!vpad` reject marker spellings, including escaped ones.
+Condition groups, `!param` / `!each` name groups, binding lists, and the
+groups of every remaining built-in special reject marker spellings, including
+escaped ones: what is left of the registry names compiler metadata only.
 Import paths remain static; interpolation never discovers or generates imports.
 
 Text scanning is left-to-right, after raw-line escapes. A backslash-escaped
@@ -795,7 +828,8 @@ are not re-exported. No `public`, `private` or `export` syntax exists.
 
 A macro module must be self-contained with respect to its own macro-import
 closure: a name used in one of its templates must be a template construct, a
-built-in special, a macro it defines, or a macro it imports. A caller's
+built-in special, a standard flow name (section 9.1), a macro it defines, or
+a macro it imports. A caller's
 unrelated namespace never makes an otherwise invalid macro module valid.
 
 ### 12.3 !macroimport
@@ -825,7 +859,7 @@ identifies a macro there.
 
 Shadowing is not a rule. A duplicate visible macro name is an error, whether
 it arises between two imports, between an import and a local definition, or
-against a reserved or built-in special name. There is no "last import wins".
+against a reserved name, a built-in special name, or a standard flow name. There is no "last import wins".
 
 Cyclic macro imports are allowed while `.tfxm` stays pure. The compiler must
 not traverse such a graph indefinitely.
@@ -891,7 +925,8 @@ normalized filesystem path.
  1. macro, flag and macro-import form validation
  2. pure >> desugaring
  3. build flag collection, then import bindings or --flag overrides
- 4. macro import resolution and lexical environment construction
+ 4. macro import resolution and lexical environment construction, each
+    environment seeded with the standard flow macros of section 12.9
  5. source macro collection
  6. conditional resolution and macro expansion
  7. content import resolution, recursively
@@ -928,6 +963,37 @@ reading order.
 `ModuleError` covers import forms, path resolution, cycles, macro module
 purity and self-containment, macro name conflicts between modules, and flag
 bindings.
+
+### 12.9 The bundled standard macro module
+
+The standard flow macros of section 9.1 live in one macro module that ships
+with the compiler and is versioned with it. It is an ordinary pure `.tfxm`
+and obeys section 12.2 in full: only `!defmacro`, comments and blank lines,
+no flags, no conditionals, no content, no imports of its own.
+
+Every macro environment the session builds is seeded from it -- the root
+module, every `.tfx` reached through `!import`, and every `.tfxm` reached
+through `!macroimport` -- so a macro module's own templates may call these
+names too. The model is an implicit import written before a module's explicit
+ones; the compiler realizes it by seeding the environment, never by placing a
+synthetic `!macroimport` node in a user's AST. There is no `prelude`
+statement, no `std.*` namespace, and no way to select a different one.
+
+Seeding is not a precedence layer. A standard name may not be defined or
+imported into a scope where it is already visible, so there is no
+local-over-import-over-standard order and no import-order effect (sections
+10.1 and 12.3).
+
+The module is resolved inside the compiler distribution, never against the
+user's project, and is read at most once per compilation. Its identity for
+lexical scope is a synthetic one; its filesystem path is not part of language
+semantics, does not appear in source spans, and is not a document source, so
+it is absent from `.tfxmap` and from the external AST's `sources`. Template
+scaffolding it contributes is retargeted onto the call site like any macro's
+(section 15), and its expansion leaves no trace in canonical AST: there is
+no node type for a standard flow call. A bundled module that fails to parse
+or validate is an installation defect rather than a document error, and is
+reported as one.
 
 ## 13. Normalization and renderer boundary
 
@@ -1052,15 +1118,19 @@ before modules existed.
 
 ParseError covers malformed physical structure, headers, groups, suffixes,
 indentation, and sequence markers. ValidationError covers invalid value
-consumption, special/container contracts, and macro definition contracts.
+consumption, special/container contracts, and macro definition contracts,
+including a definition that collides with a standard flow macro name.
 DirectiveError covers unknown specials. MacroExpansionError covers macro
 expansion: arity, unbound or misused parameters, shadowing, and recursion.
 ModuleError covers the module system: import forms, path resolution, content
 import cycles, macro module purity and self-containment, macro name conflicts
 between modules, and import flag bindings. All diagnostics point to the
-originating span. FlagError is the one exception: it
-covers a command-line override that no declaration matches, which has no span
-in the document to point at.
+originating span. Two exceptions carry no span because neither describes a
+place in a document. FlagError covers a command-line override that no
+declaration matches. InternalError covers a broken TeXFlux installation --
+today, the bundled standard macro module of section 12.9 failing to read or
+validate -- and is a RuntimeError rather than a TeXFluxError, because nothing
+the source says can cause it or fix it.
 
 v1 does not include:
 
@@ -1081,6 +1151,9 @@ v1 does not include:
 - YAML/Python embedded authoring
 - implicit extension loading
 - a package registry, version resolution, lockfiles, or remote module fetching
+- a standard library. The bundled module of section 12.9 holds the five
+  backend-independent flow controls and nothing else: presentation helpers,
+  themes and layouts are ordinary user `.tfxm` modules
 - public/private/export declarations, qualified macro names, or re-exports
 - module parameters beyond the declared on/off build flags, dynamic import
   paths, and imports generated from macro templates

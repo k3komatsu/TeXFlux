@@ -280,7 +280,7 @@ class SourceMapTests(TempDirTestCase):
             "raw\n",
             "\\foo: |\n    @{}: |\n        body\n",
             "@frame >> @center: |\n    body\n",
-            "!vpad{1em}{2em}: |\n    body\n",
+            "!around{\\vspace{1em}}{\\vspace{2em}}: |\n    body\n",
         )
         for index, source in enumerate(sources):
             with self.subTest(index=index):
@@ -332,15 +332,13 @@ class SourceMapTests(TempDirTestCase):
                 ],
             ),
             (
-                "!vpad{1em}{2em}: |\n    body\n",
+                "!around{\\vspace{1em}}{\\vspace{2em}}: |\n    body\n",
                 [
-                    ("open", (1, 6, 1, 11)),
-                    ("content", (1, 6, 1, 11)),
-                    ("close", (1, 6, 1, 11)),
+                    # A standard flow macro's values are raw TeX the author
+                    # wrote, so each maps to its own '{...}' group.
+                    ("content", (1, 8, 1, 22)),
                     ("content", (2, 5, 2, 9)),
-                    ("open", (1, 11, 1, 16)),
-                    ("content", (1, 11, 1, 16)),
-                    ("close", (1, 11, 1, 16)),
+                    ("content", (1, 22, 1, 36)),
                 ],
             ),
         )

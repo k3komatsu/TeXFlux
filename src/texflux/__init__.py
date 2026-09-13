@@ -24,6 +24,7 @@ from .ast import (
 from .errors import (
     DirectiveError,
     FlagError,
+    InternalError,
     MacroExpansionError,
     ModuleError,
     ParseError,
@@ -39,12 +40,14 @@ from .macros import (
     expand_macros,
 )
 from .modules import (
+    PRELUDE_MODULE,
     CompilationSession,
     FlagBinding,
     MacroEnvironment,
     MacroImport,
     ModuleKind,
     ModuleSource,
+    load_standard_macros,
 )
 from .normalize import (
     BUILTIN_DIRECTIVES,
@@ -179,6 +182,7 @@ __all__ = [
     "GenericInvocation",
     "GroupKind",
     "HeaderScanner",
+    "InternalError",
     "InvocationKind",
     "LoadedSource",
     "MacroDefinition",
@@ -189,6 +193,7 @@ __all__ = [
     "ModuleError",
     "ModuleKind",
     "ModuleSource",
+    "PRELUDE_MODULE",
     "ParseError",
     "ParsedInvocation",
     "RawTex",
@@ -227,6 +232,7 @@ __all__ = [
     "desugar",
     "expand_macros",
     "load_source_map",
+    "load_standard_macros",
     "normalize",
     "parse",
     "parse_synctex",

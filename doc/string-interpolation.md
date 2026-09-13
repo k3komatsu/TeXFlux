@@ -30,7 +30,7 @@
 | D4 | コンパイラ metadata（flag 名・マクロ名・パラメータ名・import path・構造名）には一切許可しない | 依存グラフと名前解決を静的に保つ |
 | D5 | provenance は fragment 単位。`RawTex` / `Argument` / `BraceGroup` に `parts` を持たせ、renderer が fragment ごとに `emit()` する | `!param` と同等の逆引き品質を保つ。`\foo{pre-!text{x}-post}` で `x` の値が別行にある場合、PDF から値の行へ飛べる |
 | D6 | 新しい `RenderRole` `"scaffold"`（rank 1）をテンプレート側リテラルに与える | §10.4 参照。これが無いと列情報なしの SyncTeX 入力で `remap` が `ambiguous source mappings` を送出する |
-| D7 | built-in special の引数は fail-closed。許可リストは `{vpad}` のみで開始する | `!vpad` の group は `\vspace{...}` としてそのまま出力される唯一の output-oriented special。将来 special が増えても metadata が勝手に動的化しない |
+| D7 | built-in special の引数は fail-closed | 当初の許可リストは `{vpad}` の 1 件だけだった。その後 `!vpad` は削除され、フロー制御は同梱マクロモジュールの普通のソースマクロ（`!before` / `!after` / `!around` / `!off` / `!drop`）になったので、**許可リスト自体が消え、built-in special の group は例外なく metadata 扱い**になった。マクロの値は D-A5 の経路で補間されるので `!before{\vspace{!text{gap}}}` は従来どおり書ける |
 | D8 | マクロテンプレート外のテキストフィールドに marker があればエラーにする | 綴り間違いが黙って TeX に流れる事故を防ぐ。リポジトリ内に literal `!text{` は存在しないため実質的な非互換は無い（§15.4） |
 | D9 | 補間の escape は `!!text{` と `\!text{` の 2 系統。独立した行頭 `!!` raw-line escape と二層になる（§3.3） | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は `@@` と対になる別機能として導入し、parser が先に1文字剥がす |
 
@@ -392,8 +392,7 @@ parse
 | A1 | マクロテンプレート内の `RawTex.text` | `_Expander.node()` の `RawTex` 分岐 |
 | A2 | `ParsedInvocation` のインライン group（`{...}` `[...]` `<...>`、`str` 値） | `_Expander._argument()` |
 | A3 | `@{...}` literal brace container の header group | 同上（`InvocationKind.BRACE`） |
-| A4 | `!vpad` の required group | `_Expander._argument()`（許可リスト） |
-| A5 | ユーザーマクロ呼び出しの required compact group | `_Expander._values()` |
+| A5 | ユーザーマクロ呼び出しの required compact group（標準フロー制御の呼び出しを含む） | `_Expander._values()` |
 
 A2 は `>>` の desugar 後も同じ経路を通るので、`@foo >> @bar >> @hoge{!text{x}}:` は
 自動的に許可される（原案 §6.3）。
@@ -410,7 +409,7 @@ A5 は**束縛の前**に補間する。結果のテキストが従来どおり 
 | B3 | text field 内の `!param{` | `interpolate()` | T08 |
 | B4 | `!when` / `!unless` の group | `_Expander._conditional()` | T10 |
 | B5 | `!param` / `!each` の name group | `_Expander._single_name()` | T11 |
-| B6 | 許可リストに無い built-in special の group（`!import` `!off` `!drop` ほか） | `_Expander._argument()` | T12 |
+| B6 | built-in special の group（`!import` / `!macroimport` と未知の special） | `_Expander._argument()` | T12 |
 | B7 | `(...)` binding list（`GroupKind.BINDING`） | `_Expander._argument()` | T13 |
 
 B4〜B7 は文字列に `!text{` / `!param{` の綴りが含まれるかを検査する。
@@ -558,8 +557,9 @@ def _emit_text(emitter, text, parts, span, base_role):
 削除されたことで、テキストをスライスして新しいノードを作るパスは存在しなくなり、
 `parts` は正準化を素通りする。`_writes_own_braces` は検出のために `.text` を
 連結するだけなので変更不要。
-`_vspace(group)` は `Argument` をそのまま渡すので、`!vpad{!text{gap}}` の provenance は
-保たれる。
+（`_vspace(group)` が `Argument` をそのまま渡して `!vpad{!text{gap}}` の provenance を
+保つ、という当時の記述は `!vpad` の削除とともに不要になった。同じ provenance は
+`!before{\vspace{!text{gap}}}` の呼び出し値として保たれる。）
 
 ### 10.4 `remap.py` — `_ROLE_RANK` に 1 行
 
@@ -673,6 +673,10 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
    #: metadata. Fail-closed: a special not listed here rejects a marker.
    _TEXT_ARGUMENT_SPECIALS: Final = frozenset({"vpad"})
    ```
+
+   （この定数は後に削除された。`!vpad` が無くなり許可リストが空になったので、
+   `_argument()` は `isinstance(node, SpecialInvocation)` だけで fail-closed に
+   判定する。）
 
 3. `_Expander.node()` に分岐を追加する。`Reserved.PARAM` の分岐の**直後**に置く。
 
@@ -832,7 +836,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 - `@foo >> @bar >> @hoge{!text{x}}:`。
 - command の required / optional / overlay group。
 - `@{...}` literal brace header。
-- `!vpad{!text{gap}}: |`。
+- `!before{!text{gap}}: |`（標準フロー制御の呼び出し値）。
 
 **AST / text の分離（`InterpolationLayerTests`）**
 

@@ -322,9 +322,8 @@ class MacroCompositionTests(unittest.TestCase):
 class MacroNamespaceTests(unittest.TestCase):
     def test_builtin_and_reserved_names_are_protected(self):
         cases = {
-            "!defmacro{drop}{x}: |\n    A\n": "built-in special",
-            "!defmacro{off}{x}: |\n    A\n": "built-in special",
-            "!defmacro{vpad}{x}: |\n    A\n": "built-in special",
+            "!defmacro{import}{x}: |\n    A\n": "built-in special",
+            "!defmacro{macroimport}{x}: |\n    A\n": "built-in special",
             "!defmacro{defmacro}{x}: |\n    A\n": "reserved by TeXFlux",
             "!defmacro{param}{x}: |\n    A\n": "reserved by TeXFlux",
             "!defmacro{each}{x}: |\n    A\n": "reserved by TeXFlux",
@@ -334,14 +333,28 @@ class MacroNamespaceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, message):
                     compile_text(source, filename="m.tfx")
 
+    def test_standard_flow_names_collide_rather_than_being_shadowed(self):
+        # Strict collision keeps the prelude out of name resolution: there is
+        # no local-beats-import-beats-standard precedence to reason about.
+        for name in ("before", "after", "around", "off", "drop"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    ValidationError,
+                    f"macro '!{name}' conflicts with a TeXFlux standard flow macro",
+                ):
+                    compile_text(
+                        "!defmacro{%s}{x}: |\n    A\n" % name,
+                        filename="m.tfx",
+                    )
+
     def test_duplicate_macro_definitions_are_rejected(self):
         source = "!defmacro{foo}{x}: |\n    A\n!defmacro{foo}{y}: |\n    B\n"
         with self.assertRaisesRegex(ValidationError, "already defined at m.tfx:1:1"):
             compile_text(source, filename="m.tfx")
 
-    def test_builtin_specials_still_work_and_unknown_ones_still_fail(self):
+    def test_standard_flow_macros_work_and_unknown_specials_still_fail(self):
         self.assertEqual(
-            compile_text("!vpad{1em}: |\n    A\n"),
+            compile_text("!before{\\vspace{1em}}: |\n    A\n"),
             "\\vspace{1em}\nA\n",
         )
         with self.assertRaisesRegex(Exception, "unknown special directive"):
@@ -409,7 +422,7 @@ class InterpolationSourceMapTests(unittest.TestCase):
             ("\\foo{pre-!text{x}-post}", "\\foo{pre-"),
             ("@hoge{pre-!text{x}-post}: |", "pre-"),
             ("@{pre-!text{x}-post}: |", "pre-"),
-            ("!vpad{pre-!text{x}-post}: |", "pre-"),
+            ("!before{pre-!text{x}-post}: |", "pre-"),
         ):
             with self.subTest(body=body):
                 source = "!defmacro{m}{x}: |\n    " + body + "\n!m: |\n    VALUE\n"

@@ -27,7 +27,7 @@ class InterpolationBasicsTests(unittest.TestCase):
             ("\\foo{!text{x}}[!text{y}]<!text{x}>: |\n    C",
              "\\foo{A}[B]<A>{\nC\n}\n"),
             ("@{pre-!text{x}}: |\n    !param{y}", "{\npre-A\nB\n}\n"),
-            ("!vpad{!text{x}}{!text{y}}: |\n    C", "\\vspace{A}\nC\n\\vspace{B}\n"),
+            ("!around{!text{x}}{!text{y}}: |\n    C", "A\nC\nB\n"),
         ):
             with self.subTest(body=body):
                 self.assertEqual(compile_text(macro(body)), expected)
@@ -133,10 +133,8 @@ class InterpolationDiagnosticTests(unittest.TestCase):
             ("!param{!text{x}}", "a !param name group"),
             ("!each{!text{x}}{i}: |", "a !each name group"),
             ("!each{items}{!text{x}}: |", "a !each name group"),
-            ("!off{!text{x}}: |", "!off's arguments"),
-            ("!drop{!text{x}}: |", "!drop's arguments"),
             ("!unknown{!text{x}}", "!unknown's arguments"),
-            ("!vpad{1em}(a=!text{x}): |", "a '(...)' binding list"),
+            ("!unknown{1em}(a=!text{x}): |", "a '(...)' binding list"),
         ):
             with self.subTest(body=body):
                 with self.assertRaises(MacroExpansionError) as caught:
@@ -193,7 +191,7 @@ class InterpolationInvariantTests(unittest.TestCase):
             return node
 
         for body in ("pre !text{x}", "@hoge{!text{x}}: |", "@{!text{x}}: |",
-                     "!vpad{!text{x}}: |", "\\foo:\n    - pre !text{x}"):
+                     "\\foo:\n    - pre !text{x}"):
             with self.subTest(body=body):
                 canonical = normalize(parse(macro(body)))
                 self.assertEqual(render(canonical), render(plain(canonical)))

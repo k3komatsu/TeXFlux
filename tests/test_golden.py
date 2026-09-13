@@ -24,13 +24,13 @@ class GoldenTests(unittest.TestCase):
                 "real-slide",
                 "representative-command",
                 "source-comments",
+                "standard-flow",
                 "stack-sequence",
                 "stack-three-level",
                 "single-long-argument",
                 "structured-command",
                 "structured-environment",
                 "structured-mixed",
-                "vpad",
             },
         )
         for input_path in input_paths:

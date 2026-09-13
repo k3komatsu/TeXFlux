@@ -181,7 +181,7 @@ class LexicalScopeTests(unittest.TestCase):
         # A template only names a special sometimes, so a missing environment
         # has to fail on the lookup rather than on the first call that needs it.
         document, macros = collect(
-            "!defmacro{m}: |\n    !vpad{1em}: |\n        A\n!m\n",
+            "!defmacro{m}: |\n    !before{1em}: |\n        A\n!m\n",
             "main.tfx",
             "",
         )
@@ -626,7 +626,7 @@ class ImportAsMacroValueTests(ModuleTestCase):
 
 class DiagnosticChainTests(ModuleTestCase):
     def test_an_error_keeps_its_own_span_and_names_the_import_chain(self):
-        self.write("broken.tfx", "!vpad{1em}:\n    - x\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}: |\n    A\n")
         self.write("mid.tfx", "!import{broken.tfx}\n")
         self.write("main.tfx", "!import{mid.tfx}\n")
         with self.assertRaises(ValidationError) as caught:

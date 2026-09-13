@@ -63,9 +63,6 @@ _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
 #: here rather than imported, because ``modules`` builds on this module.
 _MODULE_NAMES: Final = frozenset({"import", "macroimport"})
 
-# Only these specials have output text groups; all other groups stay static.
-_TEXT_ARGUMENT_SPECIALS: Final = frozenset({"vpad"})
-
 # A macro must be callable as '!name', so it uses the special-name grammar.
 _MACRO_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _PARAM_NAME_RE: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
@@ -149,6 +146,7 @@ def _definition(
     builtins: Container[str],
     defined: Mapping[str, MacroDefinition],
     module: str,
+    standard: Container[str],
 ) -> MacroDefinition:
     if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
         raise ValidationError(
@@ -167,6 +165,14 @@ def _definition(
     if name in builtins:
         raise ValidationError(
             f"'!{name}' is a built-in special and cannot be redefined",
+            name_group.span,
+        )
+    if name in standard:
+        # Strict collision rather than shadowing: with a handful of standard
+        # names, no precedence layer and no import-order effect is simpler
+        # than a weak-prelude rule nobody would remember.
+        raise ValidationError(
+            f"macro '!{name}' conflicts with a TeXFlux standard flow macro",
             name_group.span,
         )
     if name in defined:
@@ -238,6 +244,7 @@ def collect_macros(
     *,
     imported: Mapping[str, MacroDefinition] = {},
     module: str = "",
+    standard: Container[str] = (),
 ) -> tuple[Document, dict[str, MacroDefinition]]:
     """Strip top-level ``!defmacro`` nodes and validate their signatures.
 
@@ -248,13 +255,18 @@ def collect_macros(
     so a local definition that shadows one is reported against it and the
     result is this module's whole macro environment. ``module`` records which
     module defines the collected macros, for their lexical scope.
+
+    ``standard`` names the bundled standard flow macros, which every module
+    sees without importing them. Redefining one is an error wherever it is
+    written, so the check sits here rather than in the module system: it is
+    what keeps the standard names out of a ``.tfxm``'s public table too.
     """
 
     macros: dict[str, MacroDefinition] = dict(imported)
     nodes: list[Node] = []
     for node in document.body.nodes:
         if isinstance(node, SpecialInvocation) and node.name == Reserved.DEFINE:
-            definition = _definition(node, builtins, macros, module)
+            definition = _definition(node, builtins, macros, module, standard)
             macros[definition.name] = definition
             continue
         nodes.append(node)
@@ -421,13 +433,15 @@ class _Expander:
         node: ParsedInvocation | SpecialInvocation,
         frame: _Frame | None,
     ) -> ParsedInvocation | SpecialInvocation:
+        # Every remaining built-in special names compiler metadata -- a
+        # module path, a binding list -- so none of their groups is a text
+        # field. A macro call's values are read by ``_values`` instead.
         special = isinstance(node, SpecialInvocation)
-        allowed = not special or node.name in _TEXT_ARGUMENT_SPECIALS
         owner = f"!{node.name}" if special else None
         return replace(
             node,
             groups=tuple(
-                self._argument(group, frame, allowed=allowed, owner=owner)
+                self._argument(group, frame, allowed=not special, owner=owner)
                 for group in node.groups
             ),
             suite=None if node.suite is None else self.block(node.suite, frame),

@@ -12,7 +12,12 @@ from texflux.ast import (
     SpecialInvocation,
     Stack,
 )
-from texflux.errors import DirectiveError, ParseError, ValidationError
+from texflux.errors import (
+    DirectiveError,
+    MacroExpansionError,
+    ParseError,
+    ValidationError,
+)
 from texflux.normalize import BUILTIN_DIRECTIVES, normalize
 from texflux.parser import parse
 from texflux.render import render, render_with_provenance
@@ -34,7 +39,7 @@ class CompileTests(unittest.TestCase):
             "@hoge >>\n@fuga >> \\foobar\n",
             "\\outer >>\n\\inner:\n    - A\n    - B\n",
             "@outer: |\n    @center >>\n    \\textbf{A}\n",
-            "!off{unused} >>\n!vpad{1em} >>\n\\x\n",
+            "!off{unused} >>\n!before{\\vspace{1em}} >>\n\\x\n",
             "@center >>\n@itemize: |\n    \\item A\n",
         ):
             with self.subTest(source=source):
@@ -298,22 +303,34 @@ class CompileTests(unittest.TestCase):
             "\\foo{\nA\n\nB\n}\n",
         )
 
-    def test_specials_are_restricted_to_their_new_contracts(self):
-        self.assertEqual(
-            compile_text("!vpad{-1em}{2em}: |\n    contents\n"),
-            "\\vspace{-1em}\ncontents\n\\vspace{2em}\n",
-        )
-        with self.assertRaises(ValidationError):
-            compile_text("!vpad{-1em}:\n    - contents\n")
+    def test_removed_specials_still_fail_as_unknown_ones(self):
+        # !vpad joined the four explicit-mode constructs: TeX spacing is
+        # written as ordinary TeX behind !before or !around, so the compiler
+        # holds no handler that knows \\vspace.
         for old in (
             "!block:\n",
             "!arg:\n",
             "!body:\n",
             "!items:\n    - A\n",
+            "!vpad{-1em}: |\n    contents\n",
         ):
             with self.subTest(old=old):
                 with self.assertRaises(DirectiveError):
                     compile_text(old)
+
+    def test_standard_flow_macros_replace_the_vpad_special(self):
+        self.assertEqual(
+            compile_text("!around{\\vspace{-1em}}{\\vspace{2em}}: |\n    contents\n"),
+            "\\vspace{-1em}\ncontents\n\\vspace{2em}\n",
+        )
+        self.assertEqual(
+            compile_text("!before{\\vspace{-1em}}: |\n    contents\n"),
+            "\\vspace{-1em}\ncontents\n",
+        )
+        self.assertEqual(
+            compile_text("!after{\\vspace{2em}}: |\n    contents\n"),
+            "contents\n\\vspace{2em}\n",
+        )
 
     def test_off_ignores_its_group_and_keeps_the_stack_payload(self):
         self.assertEqual(
@@ -327,16 +344,18 @@ class CompileTests(unittest.TestCase):
             "\n",
         )
 
-    def test_off_and_drop_validate_their_shapes(self):
+    def test_off_and_drop_report_ordinary_macro_arity_errors(self):
+        # Both are ordinary macros now, so a wrong shape is an arity error
+        # from the normal macro path rather than a hand-written contract.
         cases = {
-            "!off >> \\hoge\n": "!off requires one required inline group",
-            "!off{\\foo}\n": "!off requires a ': \\|' block suite",
-            "!drop{unused} >> \\hoge\n": "!drop does not accept groups",
-            "!drop\n": "!drop requires a ': \\|' block suite",
+            "!off >> \\hoge\n": r"'!off' expects \{ignored\}\{body\}, exactly 2 value\(s\), got 1",
+            "!off{\\foo}\n": r"'!off' expects \{ignored\}\{body\}, exactly 2 value\(s\), got 1",
+            "!drop{unused} >> \\hoge\n": r"'!drop' expects \{body\}, exactly 1 value\(s\), got 2",
+            "!drop\n": r"'!drop' expects \{body\}, exactly 1 value\(s\), got 0",
         }
         for source, message in cases.items():
             with self.subTest(source=source):
-                with self.assertRaisesRegex(ValidationError, message):
+                with self.assertRaisesRegex(MacroExpansionError, message):
                     compile_text(source)
 
     def test_an_item_body_is_an_ordinary_raw_line(self):

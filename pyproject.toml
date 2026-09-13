@@ -14,3 +14,8 @@ texflux = "texflux.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The bundled standard flow macros are source, not documentation: the
+# compiler reads prelude.tfxm as a package resource at every compilation.
+[tool.setuptools.package-data]
+texflux = ["*.tfxm"]

@@ -55,11 +55,11 @@ class ExternalAstTests(TempDirTestCase):
             "\\foo:\n    - short\n    - {explicit}\n"
             "    -\n        long\n        value\n"
             "\\bar: |\n    body\n"
-            "!vpad{1em}: |\n    padded\n"
+            "!before{\\vspace{1em}} >> \\padded\n"
         )
         result = compile_ast(source)
         nodes = json.loads(serialize_ast(result))["document"]["body"]["nodes"]
-        container, command, long_command, vspace, raw = nodes
+        container, command, long_command, prefix, padded = nodes
         self.assertEqual((container["form"], container["name"]), ("container", "unknown*"))
         self.assertEqual([a["kind"] for a in container["arguments"]],
                          ["required", "optional", "overlay"])
@@ -75,8 +75,10 @@ class ExternalAstTests(TempDirTestCase):
         self.assertTrue(all(a["value"]["type"] == "block" for a in command["arguments"]))
         self.assertEqual(len(long_command["arguments"]), 1)
         self.assertEqual(long_command["arguments"][0]["layout"], "block")
-        self.assertEqual(vspace["name"], "vspace")
-        self.assertEqual(raw["text"], "padded")
+        # A standard flow macro leaves no trace of its own: its prefix value
+        # is the raw TeX the author wrote, and !before itself exports nothing.
+        self.assertEqual(prefix["text"], "\\vspace{1em}")
+        self.assertEqual((padded["form"], padded["name"]), ("command", "padded"))
 
     def test_session_dependencies_scope_bindings_and_repeated_spans(self):
         core = self.write("core.tfxm", "!defmacro{inner}{x}: |\n    @box{!text{x}}: |\n        !param{x}\n")
@@ -143,7 +145,7 @@ class ExternalAstTests(TempDirTestCase):
 
     def test_serializer_rejects_syntax_nodes_and_noncanonical_arguments(self):
         result = compile_ast("raw")
-        for source in ("@frame: |\n    x", "!vpad{1em}: |\n    x", "@frame >> \\foo"):
+        for source in ("@frame: |\n    x", "!before{1em}: |\n    x", "@frame >> \\foo"):
             with self.subTest(source=source), self.assertRaises((TypeError, ValueError)):
                 serialize_ast(replace(result, document=parse(source)))
         span = result.document.span

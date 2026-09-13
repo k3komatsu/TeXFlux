@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from . import compile_ast, compile_with_map, serialize_ast
-from .errors import FlagError, TeXFluxError
+from .errors import FlagError, InternalError, TeXFluxError
 from .flags import FLAG_VALUES
 from .paths import same_path
 from .remap import RemapError, remap_synctex_file
@@ -115,7 +115,7 @@ def _compile(args: argparse.Namespace) -> int:
     except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
-    except (FlagError, ValueError, OSError) as error:
+    except (FlagError, InternalError, ValueError, OSError) as error:
         return _fail(str(error))
     except RecursionError:
         # Deeply nested composition or macro expansion exhausts the
@@ -150,7 +150,7 @@ def _ast(args: argparse.Namespace) -> int:
     except TeXFluxError as error:
         print(error.diagnostic(), file=sys.stderr)
         return 1
-    except (FlagError, ValueError, OSError) as error:
+    except (FlagError, InternalError, ValueError, OSError) as error:
         return _fail(str(error))
     except RecursionError:
         return _fail(f"{input_path}: input nests too deeply to compile")

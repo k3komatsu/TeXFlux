@@ -23,6 +23,7 @@ from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
+import importlib.resources
 import os
 import re
 from typing import Final, TypeAlias
@@ -40,7 +41,7 @@ from .ast import (
     SpecialInvocation,
     SequenceEntry,
 )
-from .errors import ModuleError, TeXFluxError
+from .errors import InternalError, ModuleError, TeXFluxError
 from .flags import (
     FLAG_NAME_PATTERN,
     FLAG_VALUES,
@@ -85,6 +86,12 @@ class Module(StrEnum):
 
 #: The macro names one module makes visible, as a template sees them.
 MacroEnvironment: TypeAlias = Mapping[str, MacroDefinition]
+
+#: The bundled standard flow macros, and the synthetic identity they are
+#: loaded under. The identity is what their lexical scope and their spans are
+#: keyed by, so the installed package path never becomes language semantics.
+PRELUDE_MODULE: Final = "texflux:prelude"
+_PRELUDE_RESOURCE: Final = "prelude.tfxm"
 
 #: What a ``.tfxm`` may state at its top level, beside comments and blanks.
 _MACRO_MODULE_STATEMENTS: Final = frozenset({Reserved.DEFINE, Module.MACROIMPORT})
@@ -465,6 +472,42 @@ def merge_imports(
     return environment
 
 
+def load_standard_macros(
+    registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
+) -> dict[str, MacroDefinition]:
+    """Collect the compiler-bundled standard flow macros.
+
+    The module ships inside the TeXFlux package and is versioned with it, so
+    it is read as a package resource and never resolved against the user's
+    project. It is an ordinary pure ``.tfxm`` and is validated as one; a
+    failure here is an installation or compiler defect rather than anything
+    a document wrote, so it is not a ``TeXFluxError``.
+    """
+
+    try:
+        text = (
+            importlib.resources.files(__package__)
+            .joinpath(_PRELUDE_RESOURCE)
+            .read_text(encoding="utf-8")
+        )
+        document = parse(text, PRELUDE_MODULE)
+        validate_macro_forms(document)
+        validate_macroimport_forms(document)
+        validate_macro_module_purity(document)
+        document, imports = resolve_macro_imports(desugar(document), PRELUDE_MODULE)
+        if imports:
+            raise ModuleError(
+                "the bundled standard macro module imports no other module",
+                imports[0].span,
+            )
+        _, macros = collect_macros(document, registry, module=PRELUDE_MODULE)
+    except (TeXFluxError, OSError, UnicodeError) as error:
+        raise InternalError(
+            f"internal error: bundled prelude is invalid: {error}"
+        ) from error
+    return macros
+
+
 # --------------------------------------------------------------------------
 # Content imports
 # --------------------------------------------------------------------------
@@ -632,6 +675,11 @@ class CompilationSession:
         self._environments: dict[str, MacroEnvironment] = {}
         #: Where each macro module was first imported from, for diagnostics.
         self._imported_from: dict[str, SourceSpan] = {}
+        #: The standard flow macros, read once and seeded into every module
+        #: environment below. They are immutable, so one table serves them
+        #: all; no module is rewritten to contain a synthetic import.
+        self._standard = load_standard_macros(registry)
+        self._environments[PRELUDE_MODULE] = self._standard
 
     # -- sources -----------------------------------------------------------
 
@@ -755,6 +803,7 @@ class CompilationSession:
                     document,
                     self._registry,
                     module=source.path,
+                    standard=self._standard,
                 )
             except TeXFluxError as error:
                 chained = self._imported(error, macro_import.path)
@@ -778,7 +827,7 @@ class CompilationSession:
                 continue
             try:
                 self._environments[path] = merge_imports(
-                    own,
+                    {**self._standard, **own},
                     self._imports[path],
                     self._public,
                 )
@@ -888,8 +937,9 @@ class CompilationSession:
         document, macros = collect_macros(
             document,
             self._registry,
-            imported=merge_imports({}, imports, self._public),
+            imported=merge_imports(dict(self._standard), imports, self._public),
             module=source.path,
+            standard=self._standard,
         )
         self._environments[source.path] = macros
 
@@ -911,6 +961,7 @@ class CompilationSession:
 
 
 __all__ = [
+    "PRELUDE_MODULE",
     "CompilationSession",
     "FlagBinding",
     "MacroEnvironment",
@@ -919,6 +970,7 @@ __all__ = [
     "ModuleKind",
     "ModuleSource",
     "bind_import_flags",
+    "load_standard_macros",
     "merge_imports",
     "parse_bindings",
     "resolve_content_imports",

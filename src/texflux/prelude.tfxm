@@ -1,0 +1,33 @@
+% TeXFlux standard flow macros.
+%
+% These are ordinary source macros, seeded into every module environment by
+% the compilation session. They manipulate structural flow only: nothing here
+% knows a TeX command, so spacing and styling stay the author's own TeX.
+%
+% The names are frozen; section 17 of the standard flow macro specification
+% states what a new one would have to justify.
+
+% Emit one value before a payload.
+!defmacro{before}{prefix}{body}: |
+    !param{prefix}
+    !param{body}
+
+% Emit one value after a payload.
+!defmacro{after}{suffix}{body}: |
+    !param{body}
+    !param{suffix}
+
+% Wrap a payload in a pair. Composable from !before and !after, and kept
+% because a paired transformation is one conceptual operation.
+!defmacro{around}{prefix}{suffix}{body}: |
+    !param{prefix}
+    !param{body}
+    !param{suffix}
+
+% Drop one segment of a composition and keep the rest of the pipeline.
+!defmacro{off}{ignored}{body}: |
+    !param{body}
+
+% Discard a payload whole. The template is deliberately empty: a value that
+% no template position reads contributes nothing.
+!defmacro{drop}{body}: |
