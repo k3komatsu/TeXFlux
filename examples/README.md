@@ -10,7 +10,7 @@
 
 | 入力ファイル (`.tfx`) | 変換結果 (`.tex`) | 主な見どころ・解説 |
 | :--- | :--- | :--- |
-| [basic.tfx](basic.tfx) | [basic.tex](basic.tex) | **最小限の基本構成**: 生の TeX、`@frame` 環境、`!items` による箇条書き、Beamer オーバーレイ指定（`<2->[A]`） |
+| [basic.tfx](basic.tfx) | [basic.tex](basic.tex) | **最小限の基本構成**: 生の TeX、`@frame` 環境、`@itemize` による箇条書き、Beamer オーバーレイ指定（`<2->[A]`） |
 | [structured.tfx](structured.tfx) | [structured.tex](structured.tex) | **構造化引数と中括弧**: 複数引数（シーケンスモード `:` と `-`）、ブロックモード（`: \|`）、リテラル中括弧コンテナ（`@{...}`） |
 | [stacked-items.tfx](stacked-items.tfx) | [stacked-items.tex](stacked-items.tex) | **パイプライン合成とネスト**: `>>` による1行の環境連結と、多重にネストした箇条書きリスト |
 | [macros.tfx](macros.tfx) | [macros.tex](macros.tex) | **構造マクロ (`!defmacro`)**: ラッパーマクロ、2引数マクロ、可変長引数（`!each`）マクロの実例 |
@@ -39,7 +39,7 @@ diff -u examples/modules.tex /tmp/modules.tex
 ```
 
 ### 実践スライドサンプルのコンパイル
-`content.tfx` は、生の TeX コマンドを透過しつつ、環境の構造化、中括弧グループ、`!items` の展開をフル活用したリアルワールドの実例です。
+`content.tfx` は、生の TeX コマンドを透過しつつ、環境の構造化、中括弧グループをフル活用したリアルワールドの実例です。
 
 ```bash
 PYTHONPATH=src python3 -m texflux compile examples/content.tfx -o /tmp/content.generated.tex

@@ -280,7 +280,6 @@ class SourceMapTests(TempDirTestCase):
             "raw\n",
             "\\foo: |\n    @{}: |\n        body\n",
             "@frame >> @center: |\n    body\n",
-            "!items:\n    - item\n",
             "!vpad{1em}{2em}: |\n    body\n",
         )
         for index, source in enumerate(sources):
@@ -330,15 +329,6 @@ class SourceMapTests(TempDirTestCase):
                     ("content", (2, 5, 2, 9)),
                     ("close", (1, 11, 1, 18)),
                     ("close", (1, 1, 1, 7)),
-                ],
-            ),
-            (
-                "!items:\n    - item\n",
-                [
-                    ("open", (1, 1, 1, 8)),
-                    ("open", (2, 5, 2, 11)),
-                    ("content", (2, 5, 2, 11)),
-                    ("close", (1, 1, 1, 8)),
                 ],
             ),
             (

@@ -182,22 +182,13 @@ class BraceGroup:
 
 
 @dataclass(frozen=True, slots=True)
-class Item:
-    overlay: Argument | None
-    label: Argument | None
-    first_line: str
-    continuation: Block
-    span: SourceSpan
-
-
-@dataclass(frozen=True, slots=True)
 class Document:
     body: Block
     span: SourceSpan
 
 
 SyntaxNode = RawTex | ParsedInvocation | SpecialInvocation | Stack | SequenceEntry
-CanonicalNode = RawTex | GenericInvocation | BraceGroup | Item
+CanonicalNode = RawTex | GenericInvocation | BraceGroup
 Node = SyntaxNode | CanonicalNode
 
 
@@ -213,7 +204,6 @@ __all__ = [
     "GenericInvocation",
     "GroupKind",
     "InvocationKind",
-    "Item",
     "Node",
     "ParsedInvocation",
     "RawTex",

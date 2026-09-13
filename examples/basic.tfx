@@ -3,8 +3,8 @@
 
 @frame{A small example}: |
     \vspace{-.5em}
-    !items:
-        - Keep the TeX-first model
-        -<2->[A] Shorten structural boilerplate only
+    @itemize: |
+        \item Keep the TeX-first model
+        \item<2->[A] Shorten structural boilerplate only
     \medskip
     $\alpha = N/K$

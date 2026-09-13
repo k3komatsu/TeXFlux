@@ -234,7 +234,6 @@ if position < self.end and self.text[position] not in " :>":
 | 環境名走査（`"{[<:> "` で切る） | 不変。`@foo(x): |` は今も環境名 `foo(x)` のまま。 |
 | `\command` セグメント | 不変。`(` が来れば従来どおり `"unexpected token after structural name or group"`。 |
 | `_writes_own_braces` | `text.startswith("{")` のときだけ `scan_group` を呼ぶので不変。 |
-| `_item_prefix` | `<` `[` を直書きで見ているので不変。 |
 | `render._emit_group` | 不変（§4.7）。 |
 
 ### 4.6 後方互換性
@@ -251,7 +250,7 @@ if position < self.end and self.text[position] not in " :>":
 | 構文 | 拒否経路 |
 | --- | --- |
 | `!vpad` / `!off` | `required_text(group) is None` → `ValidationError` |
-| `!items` / `!drop` | `node.groups` が空でない → `ValidationError` |
+| `!drop` | `node.groups` が空でない → `ValidationError` |
 | `!when` / `!unless` | 先頭以外の群は `_flag_names` → `demand_text` → `ValidationError` |
 | `!flag` | 群数 2 の検査か `demand_text` → `ValidationError` |
 | `!defmacro` / `!param` / `!each` | `demand_text` / `_single_name` → `ValidationError` |
@@ -488,9 +487,9 @@ def canonicalize(
 ### 6.3 正準 AST を構文 AST へ差し込む正当性
 
 手順 10 は**構文 AST 上を歩き、`!import` ノードを被 import モジュールの正準ノード列で
-置換する**。手順 11 の `_normalize_node` は `GenericInvocation` / `BraceGroup` / `Item` を
+置換する**。手順 11 の `_normalize_node` は `GenericInvocation` / `BraceGroup` を
 受理し、`_normalize_canonical` で冪等に再正規化する
-（[normalize.py:145-172](../src/texflux/normalize.py#L145-L172)）。
+（`normalize.py` の `_normalize_node` / `_normalize_canonical`）。
 `RawTex` はそのまま通る。したがって差し込みは安全である。
 
 手順 10 の走査器は、**自分が差し込んだ正準ノードを再訪しない**。
@@ -1362,7 +1361,6 @@ def _module_guard(name: str) -> SpecialHandler:
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
     "drop": _drop_handler,
     "import": _module_guard("import"),
-    "items": _items_handler,
     "macroimport": _module_guard("macroimport"),
     "off": _off_handler,
     "vpad": _vpad_handler,

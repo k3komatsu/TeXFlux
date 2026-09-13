@@ -1,7 +1,148 @@
-# 作業メモ — モジュールシステム
+# 作業メモ
 
-最終更新: 2026-09-13。モジュールシステムは `b3e8e33` で `main` に統合済み。
-実装・仕様・ドキュメント・テストは揃っている。本書に残すのは、
+最終更新: 2026-09-13。
+
+| 主題 | 状態 |
+| --- | --- |
+| モジュールシステム | `b3e8e33` で `main` に統合済み（§A） |
+| 文字列 interpolation（`!text`） | **設計完了・実装未着手**（§B） |
+| `!items` の削除 | `feature/remove-items` で実施済み（§C） |
+
+---
+
+# §B 文字列 interpolation（`!text`） — 次の作業
+
+## 状態
+
+- 詳細設計書 `doc/string-interpolation.md` を作成した。**実装はまだ入っていない。**
+- 原案 `texflux_string_interpolation_spec.md`（リポジトリ直下・未追跡）は
+  設計の出発点。設計書と食い違う場合は `doc/string-interpolation.md` が優先する。
+- 設計上の分岐はユーザー確認済みで、決定は設計書 §1 の決定表 D1〜D9 に全件ある。
+
+## 実装を始めるときに読む順序
+
+1. `doc/string-interpolation.md` §1（決定表）と §6（パイプライン上の位置）
+2. §3（字句規則）と §5（`interpolate.py` の API）
+3. §12（変更箇所一覧）と §13（実装チェックリスト）
+4. §11（診断表 T01〜T13）と §14（検証計画）
+
+## 実装前に必ず把握しておくべき非自明な点
+
+- **`RenderRole` に `"scaffold"` を足す変更と `remap._ROLE_RANK` への追加は必ず同時に
+  行う。** 片方だけだと `KeyError` になる。そしてこの role が無いと、列情報を持たない
+  SyncTeX 入力で `RemapError: ambiguous source mappings` が出る（設計書 §10.4）。
+- **エラーの span は再ターゲット前のノード span、provenance の span は再ターゲット後の
+  呼び出し位置**を使う。既存 `!param` の診断（定義行を指す）と挙動を揃えるため
+  （設計書 §5.1）。
+- **静的な事前走査パスを足してはならない。** `AGENTS.md` が定める「dropped payload の
+  内側に踏み込む規則は 4 つだけ」に 5 つ目を作ることになる。すべての検査を
+  `expand_macros` の中（遅延）で行う設計にしてある（設計書 §6）。
+- **`parser.py` と `flags.py` は変更しない。** 変更が要るように見えるが、調査の結果
+  不要と確認済み（設計書 §10.1、§7.3）。
+- 設計書は `!items` 削除後の木を前提にしている。`normalize.py` はもうテキストを
+  スライスしないので、`parts` は正準化を素通りする。
+
+## 実装と同時に必要な規範文書の改訂
+
+設計書 §15 に改訂前後の文言まで書いてある。忘れると、リポジトリが自分自身と矛盾する。
+
+- `AGENTS.md` の v1 boundaries（現状は interpolation を明示的に禁止している）と
+  review checklist。**`AGENTS.md` は `.gitignore` 済みなのでコミットされない。**
+- `doc/dsl.md` §12 冒頭と §12.3（現状は「interpolation は一切行われない」と明記）、
+  および新設する §12.7。
+- `texflux_tex_first_dsl_v1_spec.md` §12。
+
+## 検証
+
+```bash
+python3 -W error::ResourceWarning -m unittest discover
+PYTHONPATH=src python3 -m texflux compile examples/modules.tfx -o /tmp/m.tex
+diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
+```
+
+marker を含まない既存文書の出力がバイト単位で変わらないことが設計目標である
+（設計書 §3.5 の高速パス、不変条件 I11）。
+
+## ブランチ
+
+複数コミットにまたがる作業なので `feature/string-interpolation` を切って進める
+（`AGENTS.md` の branch rule）。`main` へは直接コミットしない。
+
+---
+
+# §C `!items` の削除
+
+## 何をしたか
+
+`!items` ミニ文法を言語から完全に削除した。箇条書きは通常の `@itemize` 環境と
+生の `\item` 行で書く。
+
+削除の理由は、`!items` が**表現力をほとんど増やしていなかった**こと。オーバーレイ、
+ラベル、継続行、入れ子、複数行項目のすべてが `@itemize` + `\item` で既に書けており、
+差はタイプ量（1 行あたり 6 文字）だけだった。その対価として:
+
+- `parser.py` が special の**名前をハードコード**していた（`raw_suite` を決める
+  `segments[-1].name == "items"`）。プレフィックスだけで分類するという中核原則の
+  唯一の例外だった。
+- 正準 AST が 4 種のうち 1 種（`Item`）を itemize 専用に使っていた。
+- `normalize.py` の 325/870 行（37%）が `!items` 専用だった。
+- `itemize` 決め打ちで、`enumerate` / `description` には使えなかった。
+  つまり利用者は結局どちらの書き方も覚えさせられていた。
+
+## 削除が安全だったことの根拠
+
+変換後に再コンパイルして、`examples/` 6 ファイルと golden 4 件の出力が
+**1 バイトも変わらなかった**。`examples/content.tex`（1370 行の実物のスライド）を
+含む。`@itemize` + `\item` が `!items` と同じ TeX を生むことの実証である。
+
+## 移行ハザード
+
+`!items` の suite は **TeXFlux で唯一「中身を一切走査しない生ブロック」**だった。
+失われたのは行末コロンの免除ひとつではなく、**生の行そのもの**である。
+`@itemize` の本文は普通のブロックスイートなので、項目本文は文書のどこに書く生の
+TeX 行とも同じ制約を受ける:
+
+| 行 | `!items` | `@itemize: \|` | 回避 |
+| --- | --- | --- | --- |
+| `まとめ:` / `\item まとめ:` | 項目 | パースエラー | `:{}` |
+| 継続行 `\TextCA{注意}:` | 項目本文 | パースエラー（診断は「`-` エントリーが必要」で、コロン規則と結びつかない） | `:{}` |
+| `@foo{A}` | 生テキスト | パースエラー | `@@foo{A}` |
+| `!foo` | 生テキスト | DirectiveError | **回避策なし** |
+| `\item >> \foo` | 生テキスト | **静かに** `\item{` / `\foo` / `}` の3行になる | 名前と `>>` の間に本文を置く |
+| `@@foo{A}` | 生テキスト | **静かに** `@foo{A}` になる | `@@@foo{A}` |
+
+下2行はエラーにならず出力だけが変わるので、移行時はこちらのほうが危険である。
+`@@` は同時に 3 行目の回避策でもあることに注意。
+
+これとは別に、`_items_handler` は項目間の空行を捨てていたが、ブロックスイートは
+空行を文書の内容として保持する。空行で区切ったリストは生成 TeX にその空行が残る。
+変換前のコーパスに空行区切りの `!items` は 0 件だったので、バイト一致の主張には
+影響しない。
+
+行の規則に関するものは、いずれも生の `\command` 行すべてに元からある規則であって
+新しい制限ではない。
+ただし `!foo` の行は、これで **TeXFlux のどこにも書けなくなった**。`@@` に相当する
+raw-line escape が `!` には存在しないためである。文字列 interpolation の原案 §18.1 は
+行頭 `!!` escape を提案していたが、設計書では D9 で見送っている。必要なら独立した
+機能として再検討すること。
+
+記載先は `doc/dsl.md` 8 章の表、規範仕様 9 章、`README.md` のチートシート。
+`tests/test_compile.py` の `test_an_item_body_is_an_ordinary_raw_line` で固定した。
+
+## 消えた API
+
+`texflux.Item` / `texflux.ast.Item` は公開 API から削除した。`CanonicalNode` は
+`RawTex | GenericInvocation | BraceGroup` の 3 種になった。
+
+`!items` は `!block` / `!arg` / `!body` と同じく unknown special として失敗する。
+`AGENTS.md` の v1 境界に、リスト用ミニ文法をどの綴りでも復活させない旨を記録した。
+
+---
+
+# §A モジュールシステム
+
+モジュールシステムは `b3e8e33` で `main` に統合済み。
+実装・仕様・ドキュメント・テストは揃っている。ここに残すのは、
 **意図的に見送った項目**と**承知の上で放置している残件**だけである。
 
 ## 参照先

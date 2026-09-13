@@ -4,5 +4,5 @@
 
 \outer: |
     \inner: |
-        @bar{X} >> !items:
-            - item
+        @bar{X} >> @itemize: |
+            \item item

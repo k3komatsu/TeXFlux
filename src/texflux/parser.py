@@ -496,8 +496,6 @@ class _Parser:
         self,
         base: int,
         boundary: SourceSpan,
-        *,
-        raw_suite: bool = False,
     ) -> Block:
         nodes = []
         while self.index < len(self.lines):
@@ -518,10 +516,6 @@ class _Parser:
             rest = line.text[base:]
             extra = len(rest) - len(rest.lstrip(" "))
             first = rest[extra : extra + 1]
-
-            if raw_suite:
-                self._emit_raw(nodes, line, base)
-                continue
 
             if first == "@" and rest[extra : extra + 2] == "@@":
                 raw_text = rest[:extra] + rest[extra + 1 :]
@@ -708,13 +702,6 @@ class _Parser:
     ) -> Block:
         suite_base = base + 4
         next_index = self._next_nonblank(self.index)
-        raw_suite = (
-            isinstance(result.segments[-1], SpecialInvocation)
-            and result.segments[-1].name == "items"
-            and result.suite_mode is SuiteMode.SEQUENCE
-        )
-        if raw_suite:
-            return self._block(suite_base, header_span, raw_suite=True)
         if result.suite_mode is SuiteMode.SEQUENCE:
             if (
                 next_index is not None

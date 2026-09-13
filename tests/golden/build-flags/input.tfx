@@ -4,9 +4,9 @@
 
 @frame{Results}: |
     !when[or]{draft}{internal} >> \marginpar{re-measure before the talk}
-    !items:
-        - Throughput doubled
-        - Latency unchanged
+    @itemize: |
+        \item Throughput doubled
+        \item Latency unchanged
     !unless[or]{handout}{internal}: |
         \pause
         @{\small} >> \textit{Ask about the tail latency here.}

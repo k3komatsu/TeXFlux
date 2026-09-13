@@ -15,7 +15,6 @@ from .ast import (
     Document,
     GenericInvocation,
     GroupKind,
-    Item,
     RawTex,
     SourcePosition,
     SourceSpan,
@@ -230,8 +229,6 @@ def _render_block(
                 emitter.line(text, source=node.span, role="content")
             case GenericInvocation():
                 _render_invocation(emitter, node, source_comments)
-            case Item():
-                _render_item(emitter, node, source_comments)
             case BraceGroup(body=body, header_raw=header_raw):
                 emitter.line("{", source=node.span, role="open")
                 if header_raw:
@@ -333,22 +330,6 @@ def _render_invocation(
         source=node.span,
         role="close",
     )
-
-
-def _render_item(
-    emitter: MappedEmitter,
-    node: Item,
-    source_comments: bool,
-) -> None:
-    emitter.emit(r"\item", source=node.span, role="open")
-    if node.overlay is not None:
-        _emit_group(emitter, node.overlay)
-    if node.label is not None:
-        _emit_group(emitter, node.label)
-    if node.first_line:
-        emitter.emit(f" {node.first_line}", source=node.span, role="content")
-    emitter.newline()
-    _render_block(emitter, node.continuation, source_comments)
 
 
 def render_with_provenance(

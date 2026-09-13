@@ -6,17 +6,16 @@ from texflux.ast import (
     Block,
     BraceGroup,
     GenericInvocation,
-    Item,
     ParsedInvocation,
     RawTex,
     SequenceEntry,
     SpecialInvocation,
     Stack,
 )
-from texflux.errors import DirectiveError, ValidationError
+from texflux.errors import DirectiveError, ParseError, ValidationError
 from texflux.normalize import BUILTIN_DIRECTIVES, normalize
 from texflux.parser import parse
-from texflux.render import render
+from texflux.render import render, render_with_provenance
 
 
 class CompileTests(unittest.TestCase):
@@ -36,7 +35,7 @@ class CompileTests(unittest.TestCase):
             "\\outer >>\n\\inner:\n    - A\n    - B\n",
             "@outer: |\n    @center >>\n    \\textbf{A}\n",
             "!off{unused} >>\n!vpad{1em} >>\n\\x\n",
-            "@center >>\n!items:\n    - A\n",
+            "@center >>\n@itemize: |\n    \\item A\n",
         ):
             with self.subTest(source=source):
                 joined = source.replace(">>\n    ", ">> ").replace(">>\n", ">> ")
@@ -301,10 +300,6 @@ class CompileTests(unittest.TestCase):
 
     def test_specials_are_restricted_to_their_new_contracts(self):
         self.assertEqual(
-            compile_text("!items:\n    - A\n    - B\n"),
-            "\\begin{itemize}\n\\item A\n\\item B\n\\end{itemize}\n",
-        )
-        self.assertEqual(
             compile_text("!vpad{-1em}{2em}: |\n    contents\n"),
             "\\vspace{-1em}\ncontents\n\\vspace{2em}\n",
         )
@@ -314,6 +309,7 @@ class CompileTests(unittest.TestCase):
             "!block:\n",
             "!arg:\n",
             "!body:\n",
+            "!items:\n    - A\n",
         ):
             with self.subTest(old=old):
                 with self.assertRaises(DirectiveError):
@@ -343,36 +339,61 @@ class CompileTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, message):
                     compile_text(source)
 
-    def test_items_overlay_labels_nested_and_multiline(self):
-        source = (
-            "!items:\n"
-            "    -<2->[A] first\n"
-            "      continuation\n"
-            "        - nested\n"
-            "    -\n"
-            "        long first\n"
-            "        continuation\n"
-        )
+    def test_an_item_body_is_an_ordinary_raw_line(self):
+        # The removed !items grammar read its suite as raw text, the one
+        # construct that scanned nothing, so item bodies were exempt from
+        # every line rule. An environment body is an ordinary block suite,
+        # so each of these has to keep behaving like the raw line it is --
+        # and each escape has to keep working.
+        for body, message in (
+            ("\\item Summary:", "unexpected token in structural header"),
+            ("\\TextCA{Note}:", "sequence suites require at least one"),
+            ("@foo{A}", "environment directives require a suite marker"),
+        ):
+            with self.subTest(body=body):
+                with self.assertRaisesRegex(ParseError, message):
+                    compile_text(f"@itemize: |\n    {body}\n")
+        with self.assertRaisesRegex(DirectiveError, "unknown special"):
+            compile_text("@itemize: |\n    !foo\n")
+
+        for body, expected in (
+            ("\\item Summary:{}", "\\item Summary:{}"),
+            ("\\TextCA{Note}:{}", "\\TextCA{Note}:{}"),
+            ("@@foo{A}", "@foo{A}"),
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(
+                    compile_text(f"@itemize: |\n    {body}\n"),
+                    f"\\begin{{itemize}}\n{expected}\n\\end{{itemize}}\n",
+                )
         self.assertEqual(
-            compile_text(source),
-            "\\begin{itemize}\n"
-            "\\item<2->[A] first\n"
-            "continuation\n"
-            "\\begin{itemize}\n"
-            "\\item nested\n"
-            "\\end{itemize}\n"
-            "\\item long first\n"
-            "continuation\n"
-            "\\end{itemize}\n",
+            compile_text("@itemize: |\n    \\item\n    Summary:\n"),
+            "\\begin{itemize}\n\\item\nSummary:\n\\end{itemize}\n",
         )
 
-    def test_items_keep_raw_tex_and_reject_structural_item_nodes(self):
+        # The two shapes that change the output rather than failing, which
+        # is what makes them the ones a migration has to look for. '@@' is
+        # both of these at once: the escape above, and a spelling a raw
+        # suite used to emit verbatim.
         self.assertEqual(
-            compile_text("!items:\n    - text @foo{A}\n"),
-            "\\begin{itemize}\n\\item text @foo{A}\n\\end{itemize}\n",
+            compile_text("@itemize: |\n    \\item >> \\foo\n"),
+            "\\begin{itemize}\n\\item{\n\\foo\n}\n\\end{itemize}\n",
         )
-        with self.assertRaises(ValidationError):
-            compile_text("!items:\n    @foo: |\n        BODY\n")
+        self.assertEqual(
+            compile_text("@itemize: |\n    @@@foo{A}\n"),
+            "\\begin{itemize}\n@@foo{A}\n\\end{itemize}\n",
+        )
+
+        # A block suite keeps blank lines; the removed handler dropped the
+        # blank separators between items.
+        self.assertEqual(
+            compile_text("@itemize: |\n    \\item a\n\n    \\item b\n"),
+            "\\begin{itemize}\n\\item a\n\n\\item b\n\\end{itemize}\n",
+        )
+        self.assertEqual(
+            compile_text("@itemize: |\n    \\item a >> b\n"),
+            "\\begin{itemize}\n\\item a >> b\n\\end{itemize}\n",
+        )
 
     def test_special_and_container_errors_have_spans(self):
         with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):
@@ -399,7 +420,7 @@ class CompileTests(unittest.TestCase):
 
     def test_normalized_ast_has_no_syntax_only_nodes(self):
         document = normalize(
-            parse("@frame >>\n@center >> !items:\n    - A\n")
+            parse("@frame >>\n@center >> @itemize: |\n    \\item A\n")
         )
 
         def walk(value):
@@ -411,8 +432,6 @@ class CompileTests(unittest.TestCase):
                 return (
                     value.body is None or walk(value.body)
                 ) and all(walk(argument) for argument in value.arguments)
-            if isinstance(value, Item):
-                return walk(value.continuation)
             if isinstance(value, Block):
                 return all(walk(child) for child in value.nodes)
             if isinstance(value, Argument):
@@ -425,7 +444,7 @@ class CompileTests(unittest.TestCase):
         self.assertEqual(document.body.nodes[0].body.nodes[0].span.start.line, 2)
         self.assertEqual(
             render(document),
-            compile_text("@frame >> @center >> !items:\n    - A\n"),
+            compile_text("@frame >> @center >> @itemize: |\n    \\item A\n"),
         )
 
     def test_custom_handler_remains_ast_to_ast(self):
@@ -434,11 +453,24 @@ class CompileTests(unittest.TestCase):
 
         registry = BUILTIN_DIRECTIVES.copy()
         registry["result"] = result
-        document = normalize(parse("!result: |\n    \\foo{A}\n"), registry)
+        source = "!result: |\n    \\foo{A}\n"
+        document = normalize(parse(source, "h.tfx"), registry)
         self.assertEqual(
             render(document),
             "\\begin{infobox}\n\\foo{A}\n\\end{infobox}\n",
         )
+
+        # A node a handler synthesized carries the special's own span, so
+        # expansion never loses the line an author has to be sent back to.
+        rendered = render_with_provenance(document)
+        spans = {
+            fragment.text: fragment.source
+            for fragment in rendered.fragments
+            if fragment.source is not None
+        }
+        self.assertEqual(spans["\\begin{infobox}"].start.line, 1)
+        self.assertEqual(spans["\\end{infobox}"].start.line, 1)
+        self.assertEqual(spans["\\foo{A}"].start.line, 2)
 
     def test_custom_handler_must_return_canonical_tuple(self):
         def invalid(_node, _registry):

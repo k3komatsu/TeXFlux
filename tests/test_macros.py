@@ -323,7 +323,6 @@ class MacroNamespaceTests(unittest.TestCase):
     def test_builtin_and_reserved_names_are_protected(self):
         cases = {
             "!defmacro{drop}{x}: |\n    A\n": "built-in special",
-            "!defmacro{items}{x}: |\n    A\n": "built-in special",
             "!defmacro{off}{x}: |\n    A\n": "built-in special",
             "!defmacro{vpad}{x}: |\n    A\n": "built-in special",
             "!defmacro{defmacro}{x}: |\n    A\n": "reserved by TeXFlux",
@@ -342,8 +341,8 @@ class MacroNamespaceTests(unittest.TestCase):
 
     def test_builtin_specials_still_work_and_unknown_ones_still_fail(self):
         self.assertEqual(
-            compile_text("!items:\n    - A\n"),
-            "\\begin{itemize}\n\\item A\n\\end{itemize}\n",
+            compile_text("!vpad{1em}: |\n    A\n"),
+            "\\vspace{1em}\nA\n",
         )
         with self.assertRaisesRegex(Exception, "unknown special directive"):
             compile_text("!nope: |\n    A\n")
@@ -471,13 +470,16 @@ class MacroFormTests(unittest.TestCase):
 class MacroSourceMapArtifactTests(TempDirTestCase):
     """A macro document's .tfxmap must survive the remapper's validation."""
 
-    # A retargeted template span is shorter than the raw item text it covers,
-    # which is what once produced reversed source ranges.
+    # Reversed ranges once came from normalization slicing raw text and
+    # offsetting into a retargeted call-site span. Nothing offsets a span
+    # any more, so this is a guard against that returning, not a live
+    # regression test.
     SOURCES = (
-        "!defmacro{d}: |\n    !items:\n        - a\n            - b\n\n!d\n",
-        "!defmacro{d}: |\n    !items:\n        -\n            multi\n"
-        "            line\n\n!d\n",
-        "!defmacro{d}: |\n    !items:\n        - a\n          cont\n\n!d\n",
+        "!defmacro{d}: |\n    @itemize: |\n        \\item a\n"
+        "        @itemize: |\n            \\item b\n\n!d\n",
+        "!defmacro{d}: |\n    @itemize: |\n"
+        "        \\item a line far longer than the call site that names it\n"
+        "\n!d\n",
         ITEMS + "!items_simple:\n    - A\n    - B\n",
     )
 
@@ -498,32 +500,29 @@ class MacroSourceMapArtifactTests(TempDirTestCase):
                 map_path, _ = self.compile_to_disk(source)
                 self.assertTrue(load_source_map(map_path).mappings)
 
-    def test_items_inside_a_template_maps_onto_the_call_site(self):
-        source = "!defmacro{d}: |\n    !items:\n        - a\n            - b\n\n!d\n"
+    def test_itemize_inside_a_template_maps_onto_the_call_site(self):
+        source = (
+            "!defmacro{d}: |\n    @itemize: |\n        \\item a\n"
+            "        @itemize: |\n            \\item b\n\n!d\n"
+        )
         result = compile_with_map(source, filename="m.tfx")
 
-        # Every itemize fragment comes from the template, so line 6 ('!d').
+        # Every itemize fragment comes from the template, so line 7 ('!d').
         lines = {
             fragment.source.start.line
             for fragment in result.rendered.fragments
             if fragment.source is not None and "item" in fragment.text
         }
-        self.assertEqual(lines, {6})
+        self.assertEqual(lines, {7})
 
 
 class MacroAcceptanceTests(unittest.TestCase):
     def test_a_user_macro_can_build_a_simple_itemize(self):
         macro = compile_text(ITEMS + "!items_simple:\n    - A\n    - B\n")
-        builtin = compile_text("!items:\n    - A\n    - B\n")
 
         self.assertEqual(
             macro,
             "\\begin{itemize}\n\\item\nA\n\\item\nB\n\\end{itemize}\n",
-        )
-        # The built-in keeps its own richer item layout and is not replaced.
-        self.assertEqual(
-            builtin,
-            "\\begin{itemize}\n\\item A\n\\item B\n\\end{itemize}\n",
         )
 
 

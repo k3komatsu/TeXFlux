@@ -13,7 +13,6 @@ class GoldenTests(unittest.TestCase):
             {
                 "build-flags",
                 "generic-groups",
-                "items-nested",
                 "macro-each",
                 "macro-variadic",
                 "macro-wrapper",
@@ -24,7 +23,7 @@ class GoldenTests(unittest.TestCase):
                 "real-slide",
                 "representative-command",
                 "source-comments",
-                "stack-items",
+                "stack-sequence",
                 "stack-three-level",
                 "single-long-argument",
                 "structured-command",

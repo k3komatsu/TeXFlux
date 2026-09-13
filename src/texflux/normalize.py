@@ -16,12 +16,10 @@ from .ast import (
     GenericInvocation,
     GroupKind,
     InvocationKind,
-    Item,
     Node,
     ParsedInvocation,
     RawTex,
     SequenceEntry,
-    SourcePosition,
     SourceSpan,
     SpecialInvocation,
     Stack,
@@ -43,7 +41,7 @@ SpecialHandler: TypeAlias = Callable[
 ]
 
 
-_CANONICAL_TYPES = (RawTex, GenericInvocation, BraceGroup, Item)
+_CANONICAL_TYPES = (RawTex, GenericInvocation, BraceGroup)
 
 
 def _desugar_stack(
@@ -142,7 +140,7 @@ def _normalize_node(
                 "sequence entries are only valid inside a ':' suite",
                 node.span,
             )
-        case GenericInvocation() | BraceGroup() | Item():
+        case GenericInvocation() | BraceGroup():
             return (_normalize_canonical(node, registry),)
         case _:
             raise TypeError(f"unsupported AST node: {type(node).__name__}")
@@ -163,11 +161,6 @@ def _normalize_canonical(
             )
         case BraceGroup(body=body):
             return replace(node, body=_normalize_block(body, registry))
-        case Item(continuation=continuation):
-            return replace(
-                node,
-                continuation=_normalize_block(continuation, registry),
-            )
         case _:
             raise TypeError(f"unsupported canonical node: {type(node).__name__}")
 
@@ -441,333 +434,6 @@ def _vpad_handler(
     return tuple(result)
 
 
-def _items_handler(
-    node: SpecialInvocation,
-    _registry: DirectiveRegistry,
-) -> tuple[CanonicalNode, ...]:
-    if (
-        node.groups
-        or node.suite is None
-        or _suite_mode(node, SuiteMode.SEQUENCE) is not SuiteMode.SEQUENCE
-    ):
-        raise ValidationError(
-            "!items requires a ':' sequence suite and no groups",
-            node.span,
-        )
-    invalid = next(
-        (child for child in node.suite.nodes if not isinstance(child, RawTex)),
-        None,
-    )
-    if invalid is not None:
-        raise ValidationError(
-            "!items suites may contain item lines only",
-            invalid.span,
-        )
-
-    raw_lines = node.suite.nodes
-    if not any(line.text for line in raw_lines):
-        raise ValidationError(
-            "!items suite must contain at least one item",
-            node.span,
-        )
-    items, index = _parse_item_level(raw_lines, 0, 0)
-    if index != len(raw_lines):
-        line = raw_lines[index]
-        raise ValidationError("invalid !items indentation", line.span)
-    body = Block(tuple(items), node.suite.span)
-    return (GenericInvocation("itemize", (), body, node.span),)
-
-
-def _next_item_line(lines: tuple[RawTex, ...], index: int) -> int | None:
-    """The first non-blank line at or after ``index``, or ``None``."""
-
-    return next((i for i in range(index, len(lines)) if lines[i].text), None)
-
-
-def _span_from(span: SourceSpan, offset: int) -> SourceSpan:
-    """The tail of ``span`` starting ``offset`` columns in.
-
-    A macro template's nodes are retargeted onto their call site, whose span is
-    shorter than the raw item text it covers, so an offset derived from that
-    text can run past the end. The whole call site is then the best origin
-    available, and a span must never come out reversed.
-    """
-
-    start = SourcePosition(span.start.line, span.start.column + offset)
-    if start > span.end:
-        return span
-    return SourceSpan(span.file, start, span.end)
-
-
-def _span_at(span: SourceSpan, offset: int) -> SourceSpan:
-    """One column of ``span``, ``offset`` columns in, clamped to its end."""
-
-    start = SourcePosition(span.start.line, span.start.column + offset)
-    end = SourcePosition(start.line, start.column + 1)
-    if end > span.end:
-        return span
-    return SourceSpan(span.file, start, end)
-
-
-def _leading_spaces(text: str) -> int:
-    return len(text) - len(text.lstrip(" "))
-
-
-def _char_at(text: str, index: int) -> str:
-    """The character at ``index``, or ``""`` past the end of ``text``."""
-
-    return text[index : index + 1]
-
-
-def _item_group(
-    line: RawTex,
-    cursor: int,
-    kind: GroupKind,
-) -> tuple[Argument, int]:
-    """Scan one item prefix group and return it with the following cursor."""
-
-    span = _span_at(line.span, cursor)
-    end, value = scan_group(line.text, cursor, span=span)
-    span = SourceSpan(
-        span.file,
-        span.start,
-        SourcePosition(span.start.line, span.start.column + end - cursor),
-    )
-    return Argument(kind, value, ArgumentLayout.INLINE, span), end
-
-
-def _item_prefix(
-    line: RawTex,
-    depth: int,
-) -> tuple[Argument | None, Argument | None, str]:
-    """Split one item line into its overlay, label, and first content line."""
-
-    text = line.text
-    marker_span = _span_at(line.span, depth)
-    if _char_at(text, depth) != "-":
-        raise ValidationError("expected an item marker '-'", marker_span)
-
-    cursor = depth + 1
-    if _char_at(text, cursor) not in {"", " ", "<", "["}:
-        raise ValidationError(
-            "item marker must be followed by a space, group, or end",
-            marker_span,
-        )
-
-    overlay: Argument | None = None
-    label: Argument | None = None
-    if _char_at(text, cursor) == "<":
-        overlay, cursor = _item_group(line, cursor, GroupKind.OVERLAY)
-        if _char_at(text, cursor) == "<":
-            raise ValidationError("duplicate item overlay prefix", overlay.span)
-
-    if _char_at(text, cursor) == "[":
-        label, cursor = _item_group(line, cursor, GroupKind.OPTIONAL)
-    elif _char_at(text, cursor) == "]":
-        raise ValidationError("invalid item label prefix", marker_span)
-
-    if overlay is None and label is not None and _char_at(text, cursor) == "<":
-        raise ValidationError("item label must not precede its overlay", label.span)
-    if _char_at(text, cursor) in {"<", "["}:
-        raise ValidationError("duplicate item prefix", _span_at(line.span, cursor))
-
-    match _char_at(text, cursor):
-        case "":
-            pass
-        case " ":
-            cursor += 1
-        case _:
-            # Only a consumed overlay or label can leave the cursor here: the
-            # character right after the marker was restricted above.
-            raise ValidationError(
-                "item prefix must be followed by a space or end",
-                marker_span,
-            )
-    return overlay, label, text[cursor:]
-
-
-def _nested_itemize(
-    lines: tuple[RawTex, ...],
-    index: int,
-    depth: int,
-) -> tuple[GenericInvocation, int]:
-    nested_items, end = _parse_item_level(lines, index, depth)
-    span = nested_items[0].span if nested_items else lines[index].span
-    return GenericInvocation(
-        "itemize",
-        (),
-        Block(tuple(nested_items), span),
-        span,
-    ), end
-
-
-def _block_item_lines(
-    lines: tuple[RawTex, ...],
-    index: int,
-    depth: int,
-) -> tuple[str, list[RawTex], int]:
-    """Consume the contents of a bare multiline item marker."""
-
-    content: list[RawTex] = []
-    while index < len(lines):
-        current = lines[index]
-        if current.text != "":
-            indent = _leading_spaces(current.text)
-            if indent <= depth:
-                break
-            if indent < depth + 4:
-                raise ValidationError(
-                    "multiline item content requires four spaces",
-                    current.span,
-                )
-            stripped = current.text[depth + 4 :]
-            content.append(RawTex(stripped, _span_from(current.span, depth + 4)))
-        else:
-            next_index = _next_item_line(lines, index)
-            if (
-                next_index is not None
-                and _leading_spaces(lines[next_index].text) <= depth
-            ):
-                break
-            content.append(current)
-        index += 1
-    first = content[0].text if content else ""
-    return first, content[1:], index
-
-
-def _item_continuation(
-    lines: tuple[RawTex, ...],
-    index: int,
-    depth: int,
-) -> tuple[list[CanonicalNode], int]:
-    """Consume one item's continuation lines and nested lists."""
-
-    continuation: list[CanonicalNode] = []
-    while index < len(lines):
-        current = lines[index]
-        if current.text == "":
-            next_index = _next_item_line(lines, index)
-            if next_index is None:
-                continuation.extend(lines[index:])
-                index = len(lines)
-                break
-            next_line = lines[next_index]
-            next_indent = _leading_spaces(next_line.text)
-            if next_indent == depth:
-                index = next_index
-                break
-            if next_indent < depth:
-                break
-            if (
-                next_indent == depth + 4
-                and _char_at(next_line.text, depth + 4) == "-"
-            ):
-                continuation.extend(lines[index:next_index])
-                nested, index = _nested_itemize(lines, next_index, depth + 4)
-                continuation.append(nested)
-                continue
-            if next_indent < depth + 2:
-                raise ValidationError(
-                    "item continuation requires at least two spaces",
-                    next_line.span,
-                )
-            continuation.extend(lines[index:next_index])
-            index = next_index
-            continue
-
-        indent = _leading_spaces(current.text)
-        if indent <= depth:
-            break
-        if indent == depth + 4 and _char_at(current.text, depth + 4) == "-":
-            nested, index = _nested_itemize(lines, index, depth + 4)
-            continuation.append(nested)
-            continue
-        if indent >= depth + 4 and _char_at(current.text, indent) == "-":
-            raise ValidationError(
-                "nested item indentation skips a list level",
-                current.span,
-            )
-        if indent < depth + 2:
-            raise ValidationError(
-                "item continuation requires at least two spaces",
-                current.span,
-            )
-        continuation.append(
-            RawTex(
-                current.text[depth + 2 :],
-                _span_from(current.span, depth + 2),
-            )
-        )
-        index += 1
-    return continuation, index
-
-
-def _parse_item_level(
-    lines: tuple[RawTex, ...],
-    index: int,
-    depth: int,
-) -> tuple[list[Item], int]:
-    items: list[Item] = []
-    while True:
-        while index < len(lines) and lines[index].text == "":
-            next_index = _next_item_line(lines, index)
-            if next_index is None:
-                return items, len(lines)
-            next_indent = _leading_spaces(lines[next_index].text)
-            if next_indent == depth:
-                index = next_index
-                break
-            if next_indent < depth:
-                return items, index
-            raise ValidationError(
-                "item indentation skips the current list level",
-                lines[next_index].span,
-            )
-
-        if index >= len(lines):
-            return items, index
-        line = lines[index]
-        indent = _leading_spaces(line.text)
-        if indent < depth:
-            return items, index
-        if indent > depth:
-            raise ValidationError(
-                "item indentation skips the current list level",
-                line.span,
-            )
-
-        overlay, label, first_line = _item_prefix(line, depth)
-        item_span = _span_from(line.span, depth)
-        index += 1
-
-        # A bare marker owns the deeper lines below it; anything else owns
-        # only its continuation. Both spellings build the same Item.
-        content: list[CanonicalNode] | None = None
-        if first_line == "" and overlay is None and label is None:
-            following = _next_item_line(lines, index)
-            if (
-                following is not None
-                and _leading_spaces(lines[following].text) >= depth + 4
-            ):
-                first_line, content, index = _block_item_lines(
-                    lines,
-                    index,
-                    depth,
-                )
-        if content is None:
-            content, index = _item_continuation(lines, index, depth)
-
-        items.append(
-            Item(
-                overlay,
-                label,
-                first_line,
-                Block(tuple(content), item_span),
-                item_span,
-            )
-        )
-
-
 def _module_guard(name: str) -> SpecialHandler:
     """Reject a module construct that reached the import-free pipeline.
 
@@ -792,7 +458,6 @@ def _module_guard(name: str) -> SpecialHandler:
 BUILTIN_DIRECTIVES: Final[DirectiveRegistry] = {
     "drop": _drop_handler,
     "import": _module_guard("import"),
-    "items": _items_handler,
     "macroimport": _module_guard("macroimport"),
     "off": _off_handler,
     "vpad": _vpad_handler,
@@ -812,8 +477,6 @@ def _assert_canonical_block(block: Block) -> None:
                         _assert_canonical_block(argument.value)
                 if body is not None:
                     _assert_canonical_block(body)
-            case Item(continuation=continuation):
-                _assert_canonical_block(continuation)
             case _:
                 raise TypeError(
                     "normalization produced a non-canonical AST node: "

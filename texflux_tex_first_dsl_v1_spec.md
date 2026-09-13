@@ -338,8 +338,8 @@ four spaces from the header's structural base as usual.
 In a sequence entry beginning `- @hoge >>`, continuation lines align with the
 `-` marker, without repeating it; the suite base remains four spaces deeper
 than that marker. Such a value spans multiple physical lines, so the existing
-multiline argument-brace layout applies. Raw TeX, escaped `@@` lines, and raw
-`!items` content do not acquire continuation syntax. Groups cannot be split
+multiline argument-brace layout applies. Raw TeX and escaped `@@` lines do
+not acquire continuation syntax. Groups cannot be split
 across lines. Segments, groups, and suffixes retain their physical source spans;
 the parser produces one ordinary Stack, with no new canonical node type.
 
@@ -350,23 +350,9 @@ canonical node tuples, never TeX strings. Unknown specials fail.
 
 The v1 built-ins are:
 
-- !items, which accepts a sequence suite and converts item values to itemize.
 - !vpad, which accepts one or two required inline groups and a block suite.
 - !off, which ignores one required inline group and splices its block suite.
 - !drop, which accepts no groups and discards its block suite.
-
-!items preserves overlay, optional label, continuation, nested-list, and raw
-item behavior. Its canonical suffix is plain colon. A bare '-' followed by
-deeper lines is a multiline raw item value, with the next sibling '-' as its
-boundary.
-
-~~~text
-!items:
-    - A
-    -<2->[Label] item
-    -
-        multiline item
-~~~
 
 !vpad's canonical form is:
 
@@ -406,7 +392,46 @@ a validation error.
 12. They are built-in names, so neither may be redefined by `!defmacro`, and
 both are resolved by the compiler session rather than by a special handler.
 
-The old !block, !arg, and !body constructs are removed and are not aliases.
+The old !block, !arg, !body, and !items constructs are removed and are not
+aliases. A list is an ordinary environment holding raw `\item` lines, which
+already carries every overlay, optional label, continuation, and nesting the
+removed mini-grammar supported:
+
+~~~text
+@itemize: |
+    \item<2->[Label] item
+    @itemize: |
+        \item nested
+~~~
+
+An environment body is an ordinary block suite, so every rule in sections 2
+through 7 applies to the lines inside it, `\item` included. The removed
+mini-grammar read its suite as raw text -- the one construct in the language
+that scanned nothing -- so item bodies were exempt from all of them. Nothing
+is exempt now, and four shapes that `!items` accepted are rejected or read
+differently:
+
+- A depth-zero trailing colon makes the line a structural command candidate
+  (section 3), so `\item Summary:` fails. A continuation line that scans as a
+  complete header, such as `\TextCA{Note}:`, fails through the other branch
+  and reports a missing `-` entry instead. An empty trailing group --
+  `\item Summary:{}` -- writes either one, and changes no TeX: an empty group
+  leaves `\spacefactor` alone, so the colon's end-of-sentence space survives.
+- A line beginning `@` is an environment header; `@@` escapes it.
+- A line beginning `!` is a special. No escape exists, here or anywhere else
+  in the language.
+
+Two shapes change the output instead of failing, which makes them the ones a
+migration has to look for:
+
+- `\item >> \foo` is a stack, and section 14's brace placement renders it over
+  three lines, `\item{` then `\foo` then `}`. Text between the name and the
+  operator keeps the line raw.
+- `@@foo{A}` is the escape above, so it emits `@foo{A}`. A raw suite emitted it
+  verbatim. `@@@foo{A}` writes the two characters.
+
+A block suite also keeps blank lines as document content, while the removed
+handler dropped the blank separators between items.
 
 ## 10. Source macros
 
@@ -479,9 +504,8 @@ parameter is a sequence rather than a value, so it is reached only with
 `!each`.
 
 Because a group's contents stay opaque raw TeX, a parameter cannot be
-interpolated into one. The same opacity applies to an `!items` suite, whose
-item text is raw, so a `!param` written there stays literal. Structural form
-is used instead:
+interpolated into one. The same opacity applies inside a raw TeX line, so a
+`!param` written there stays literal. Structural form is used instead:
 
 ~~~text
 @infobox:
@@ -663,9 +687,7 @@ value is dropped remains an entry, and renders as an empty argument:
     - tail
 ~~~
 
-renders `\cmd{}{tail}` while `draft` is off. An `!items` entry payload is raw
-item text, so no `!` construct -- a conditional included -- is read inside one;
-a conditional list is written by wrapping the whole `!items`.
+renders `\cmd{}{tail}` while `draft` is off.
 
 ## 12. Modules
 
@@ -856,9 +878,9 @@ physical lines
  -> renderer
 ~~~
 
-The canonical AST is RawTex, GenericInvocation, Argument, Block, BraceGroup,
-and Item. GenericInvocation with body=None is a command; body=Block is a named
-environment. BraceGroup always renders literal braces.
+The canonical AST is RawTex, GenericInvocation, Argument, Block, and
+BraceGroup. GenericInvocation with body=None is a command; body=Block is a
+named environment. BraceGroup always renders literal braces.
 
 No ParsedInvocation, SpecialInvocation, Stack, SequenceEntry, suite mode, or
 special name may reach the renderer. The renderer knows only canonical AST.

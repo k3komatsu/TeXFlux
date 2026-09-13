@@ -47,15 +47,15 @@ class ParserTests(unittest.TestCase):
     def test_raw_tex_does_not_continue_on_trailing_arrows(self):
         source = "raw >>\n\\foo{A >>}\n\\verb|x| >>\n@@literal >>\n"
         self.assertTrue(all(isinstance(n, RawTex) for n in parse(source).body.nodes))
-        items = parse("!items:\n    - literal >>\n    - next\n").body.nodes[0]
-        self.assertEqual(len(items.suite.nodes), 2)
+        entries = parse("\\foo:\n    - literal >>\n    - next\n").body.nodes[0]
+        self.assertEqual(len(entries.suite.nodes), 2)
 
     def test_prefixes_and_suite_modes_are_lexical(self):
         document = parse(
             "\\foo{A}\n"
             "@foo{A}: |\n"
             "    BODY\n"
-            "!items:\n"
+            "!foo:\n"
             "    - A\n",
             "x.tfx",
         )
