@@ -32,7 +32,7 @@
 | D6 | 新しい `RenderRole` `"scaffold"`（rank 1）をテンプレート側リテラルに与える | §10.4 参照。これが無いと列情報なしの SyncTeX 入力で `remap` が `ambiguous source mappings` を送出する |
 | D7 | built-in special の引数は fail-closed | 当初の許可リストは `{vpad}` の 1 件だけだった。その後 `!vpad` は削除され、フロー制御は同梱マクロモジュールの普通のソースマクロ（`!before` / `!after` / `!around` / `!off` / `!drop`）になったので、**許可リスト自体が消え、built-in special の group は例外なく metadata 扱い**になった。マクロの値は D-A5 の経路で補間されるので `!before{\vspace{!text{gap}}}` は従来どおり書ける |
 | D8 | マクロテンプレート外のテキストフィールドに marker があればエラーにする | 綴り間違いが黙って TeX に流れる事故を防ぐ。リポジトリ内に literal `!text{` は存在しないため実質的な非互換は無い（§15.4） |
-| D9 | 補間の escape は `!!text{` と `\!text{` の 2 系統。独立した行頭 `!!` raw-line escape と二層になる（§3.3） | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は `@@` と対になる別機能として導入し、parser が先に1文字剥がす |
+| D9 | 補間の escape は `!!text{` と `\!text{` の 2 系統。独立した行頭 `!!` raw-line escape と二層になる（§3.3）。raw mode 領域は補間しない | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は `@@` と対になる別機能として parser が先に1文字剥がす。raw mode は行全体を verbatim にするため、補間走査の対象外になる |
 
 ---
 
@@ -108,6 +108,11 @@ escape の判定順序は **`!!` を先に、`\` の判定をその前に**行�
 !!text{x}   → parser が ! を1つ剥がす → RawTex "!text{x}" → 補間される
 !!!text{x}  → "!!text{x}" → 走査器が escape → リテラル "!text{x}"
 ```
+
+`!BEGIN_RAW_MODE` と対応する `!END_RAW_MODE` の間の raw mode 領域は、テキスト
+フィールドであっても補間走査の対象外である。領域内の `!text{...}` はリテラルの
+まま出力され、`!!` / `@@` の行頭 escape も働かない。領域は parser が物理行層で
+消費し、`RawTex.verbatim` によってこの規則を macro expansion に伝える。
 
 エスケープせず AST 位置に書いた `!text{x}` は引き続き T01 エラーになる。
 テンプレート外の `!!text{x}` は parser 後に未エスケープの hole となるため T02 になる。

@@ -1,0 +1,8 @@
+@lstlisting: |
+    !BEGIN_RAW_MODE
+    def f(x):
+    	return !x
+    @foo{bar
+    !!baz
+      !END_RAW_MODE
+    !END_RAW_MODE

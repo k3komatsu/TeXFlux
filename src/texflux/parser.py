@@ -26,7 +26,12 @@ from .ast import (
     SuiteMode,
 )
 from .errors import ParseError
-from .syntax import is_escaped
+from .syntax import (
+    RAW_BEGIN_MARKER,
+    RAW_END_MARKER,
+    RAW_MODE_NAMES,
+    is_escaped,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +56,63 @@ class _PhysicalLine:
     @property
     def blank(self) -> bool:
         return not self.text.strip(" ")
+
+
+def _marker_span(filename: str, line: _PhysicalLine) -> SourceSpan:
+    text = line.text.strip(" ")
+    start = SourcePosition(line.number, line.indent + 1)
+    return SourceSpan(
+        filename,
+        start,
+        SourcePosition(line.number, line.indent + 1 + len(text)),
+    )
+
+
+def _line_marker(line: _PhysicalLine) -> str | None:
+    """The raw-mode marker a whole line consists of, or None.
+
+    A marker carries no group, no suite suffix and no comment, so matching the
+    entire line is the whole rule.
+    """
+
+    text = line.text.strip(" ")
+    return text if text in (RAW_BEGIN_MARKER, RAW_END_MARKER) else None
+
+
+def _scan_raw_regions(
+    lines: tuple[_PhysicalLine, ...],
+    filename: str,
+) -> dict[int, int]:
+    """Pair the raw-region markers, as ``begin index -> end index``.
+
+    Pairing is a line-level property, so it is resolved before parsing: the
+    tab prohibition has to know which lines are verbatim, and an unpaired
+    marker leaves the rest of the file's line structure meaningless.
+    """
+
+    regions: dict[int, int] = {}
+    begin: int | None = None
+    indent = 0
+    for index, line in enumerate(lines):
+        marker = _line_marker(line)
+        if marker is None:
+            continue
+        if begin is None:
+            if marker == RAW_END_MARKER:
+                raise ParseError(
+                    f"'{RAW_END_MARKER}' has no matching '{RAW_BEGIN_MARKER}'",
+                    _marker_span(filename, line),
+                )
+            begin, indent = index, line.indent
+        elif marker == RAW_END_MARKER and line.indent == indent:
+            regions[begin] = index
+            begin = None
+    if begin is not None:
+        raise ParseError(
+            f"'{RAW_BEGIN_MARKER}' is not closed by '{RAW_END_MARKER}'",
+            _marker_span(filename, lines[begin]),
+        )
+    return regions
 
 
 def _block_span(boundary: SourceSpan, nodes: list[Node]) -> SourceSpan:
@@ -358,6 +420,11 @@ class HeaderScanner:
         name = self.text[name_start:position]
         if not name:
             raise self._error("invalid structural name", name_start)
+        if prefix == "!" and name in RAW_MODE_NAMES:
+            raise self._error(
+                f"'!{name}' must stand alone on its own line",
+                segment_start,
+            )
 
         groups: list[Argument] = []
         while position < self.end and self.text[position] in GROUP_OPENERS:
@@ -433,7 +500,15 @@ class _Parser:
             for number, text in enumerate(physical, 1)
         )
         self.index = 0
-        for line in self.lines:
+        self.raw_regions = _scan_raw_regions(self.lines, filename)
+        verbatim = {
+            index
+            for begin, end in self.raw_regions.items()
+            for index in range(begin + 1, end)
+        }
+        for index, line in enumerate(self.lines):
+            if index in verbatim:
+                continue
             tab = line.text.find("\t")
             if tab >= 0:
                 raise ParseError(
@@ -538,6 +613,9 @@ class _Parser:
                 continue
 
             if first in {"@", "!"}:
+                if rest.rstrip(" ") == RAW_BEGIN_MARKER:
+                    nodes.extend(self._raw_region(base))
+                    continue
                 nodes.append(self._directive(line, base))
                 continue
 
@@ -562,6 +640,25 @@ class _Parser:
         raw_text = line.text[base:]
         nodes.append(RawTex(raw_text, self._line_span(line, base + 1, raw_text)))
         self.index += 1
+
+    def _raw_region(self, base: int) -> list[Node]:
+        """Consume one '!BEGIN_RAW_MODE' region and return its verbatim lines.
+
+        The region's extent was fixed before parsing, so nothing here scans a
+        header, honours an escape, or lets a dedent close the enclosing block.
+        """
+
+        end = self.raw_regions[self.index]
+        nodes: list[Node] = []
+        for index in range(self.index + 1, end):
+            line = self.lines[index]
+            cut = min(base, line.indent)
+            text = line.text[cut:]
+            nodes.append(
+                RawTex(text, self._line_span(line, cut + 1, text), verbatim=True)
+            )
+        self.index = end + 1
+        return nodes
 
     def _indent_error(self, line: _PhysicalLine) -> ParseError:
         return ParseError(

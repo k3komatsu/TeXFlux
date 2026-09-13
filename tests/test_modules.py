@@ -550,6 +550,34 @@ class MacroModulePurityTests(ModuleTestCase):
             with self.subTest(macro_module=macro_module):
                 self.check(macro_module, "may contain only !defmacro")
 
+    def test_a_top_level_raw_mode_with_content_is_not_macro_module_content(self):
+        self.write("a.tfxm", "!BEGIN_RAW_MODE\nM\n!END_RAW_MODE\n")
+        self.write("main.tfx", "!macroimport{a.tfxm}\n")
+        error = self.failure()
+        self.assertRegex(
+            str(error),
+            r"a\.tfxm:2:1: module error: a \.tfxm macro module may contain only !defmacro, !macroimport, comment lines and blank lines",
+        )
+
+    def test_a_comment_only_top_level_raw_mode_region_keeps_macro_purity(self):
+        self.write(
+            "a.tfxm",
+            "!BEGIN_RAW_MODE\n% comment\n\n!END_RAW_MODE\n",
+        )
+        self.write("main.tfx", "!macroimport{a.tfxm}\n")
+        self.assertEqual(self.build(), "\n")
+
+    def test_a_raw_mode_region_inside_a_macro_template_is_allowed(self):
+        self.write(
+            "a.tfxm",
+            "!defmacro{m}: |\n"
+            "    !BEGIN_RAW_MODE\n"
+            "    !text{x}\n"
+            "    !END_RAW_MODE\n",
+        )
+        self.write("main.tfx", "!macroimport{a.tfxm}\n\n!m\n")
+        self.assertEqual(self.build(), "\n!text{x}\n")
+
     def test_comments_and_blank_lines_are_allowed(self):
         self.write(
             "a.tfxm",

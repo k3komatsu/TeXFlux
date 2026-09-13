@@ -333,6 +333,18 @@ class MacroNamespaceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValidationError, message):
                     compile_text(source, filename="m.tfx")
 
+    def test_raw_mode_marker_names_are_reserved(self):
+        for name in ("BEGIN_RAW_MODE", "END_RAW_MODE"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                    ValidationError,
+                    rf"m\.tfx:1:10: validation error: '!{name}' is reserved by TeXFlux",
+                ):
+                    compile_text(
+                        "!defmacro{%s}: |\n    A\n" % name,
+                        filename="m.tfx",
+                    )
+
     def test_standard_flow_names_collide_rather_than_being_shadowed(self):
         # Strict collision keeps the prelude out of name resolution: there is
         # no local-beats-import-beats-standard precedence to reason about.
@@ -414,6 +426,26 @@ class MacroSourceMapTests(unittest.TestCase):
 
         self.assertTrue(all(span.file == "m.tfx" for span in sources.values()))
         self.assertEqual(result.text, "{\n\\small\\color{red}\nHello\n}\n")
+
+    def test_raw_template_lines_are_verbatim_and_retargeted(self):
+        source = (
+            "!defmacro{m}: |\n"
+            "    !BEGIN_RAW_MODE\n"
+            "    !text{x}\n"
+            "    !END_RAW_MODE\n"
+            "!m\n"
+        )
+        result = compile_with_map(source, filename="m.tfx")
+        self.assertEqual(result.text, "!text{x}\n")
+        fragment = next(
+            fragment for fragment in result.rendered.fragments
+            if fragment.text == "!text{x}"
+        )
+        self.assertEqual(fragment.role, "content")
+        self.assertEqual(
+            (fragment.source.start.line, fragment.source.start.column),
+            (5, 1),
+        )
 
 
 class InterpolationSourceMapTests(unittest.TestCase):

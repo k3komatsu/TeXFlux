@@ -54,10 +54,10 @@ special names fail with DirectiveError.
 
 ## 2. Physical lines and indentation
 
-CRLF and CR are normalized to LF. Tabs are rejected. Four ASCII spaces are the
-structural indentation unit. A structural child must be at the suite base;
-extra indentation is retained only for raw TeX lines. Structural candidates at
-invalid indentation are parse errors.
+CRLF and CR are normalized to LF. Tabs are rejected outside a raw-mode region.
+Four ASCII spaces are the structural indentation unit. A structural child must
+be at the suite base; extra indentation is retained only for raw TeX lines.
+Structural candidates at invalid indentation are parse errors.
 
 Blank lines in a sequence suite are separators and do not create values. Blank
 lines inside a sequence value block or a block suite are content. A trailing
@@ -67,9 +67,25 @@ At the start of a block line (after spaces), `@@` and `!!` remove exactly
 one leading character and emit the rest as raw TeX, without header scanning.
 They are handled before the structural extra-indentation check, preserving
 spaces beyond the block base. The same escapes apply at the start of a
-sequence marker payload: `- !!bar` supplies raw `!bar`. Tabs remain invalid.
+sequence marker payload: `- !!bar` supplies raw `!bar`. Tabs remain invalid
+outside raw-mode regions.
 Thus `!!` emits `!`, `!!!foo` emits `!!foo`, and `!!重要` emits `!重要`.
 Unbalanced braces and trailing `:` or `>>` remain literal on escaped lines.
+
+The two whole-line markers `!BEGIN_RAW_MODE` and `!END_RAW_MODE` delimit a
+raw-mode region. A marker is recognized only when the line consists of that
+marker after removing surrounding ASCII spaces. `!BEGIN_RAW_MODE` must be at
+the current block base. The physical lines after BEGIN and before the matching
+END at the same indentation are emitted as raw TeX lines; a line may be
+shallower or deeper than the base, and at most the base's leading spaces are
+removed. Tabs are allowed inside the region. The region does not scan headers,
+expand `@@` / `!!`, close on dedentation, rewind blank lines, or interpolate
+`!text{...}`. Its marker lines produce no nodes. A BEGIN/END marker spelling
+inside the region, or an END at a different indentation, is literal text.
+Raw-mode regions can be written where a block can be written, including a
+sequence entry's continuation block and a macro template; they are not a
+sequence payload or a `>>` segment, and a top-level `.tfxm` region remains
+subject to macro-module purity.
 
 ## 3. Header scanner
 
@@ -507,7 +523,8 @@ expanded, which makes forward references valid:
 ~~~
 
 Parameter names match `[A-Za-z_][A-Za-z0-9_-]*`. A duplicate parameter, a
-macro name that is reserved (`defmacro`, `param`, `text`, `each`), a name
+macro name that is reserved (`defmacro`, `param`, `text`, `each`,
+`BEGIN_RAW_MODE`, `END_RAW_MODE`), a name
 already taken by a built-in special, a name belonging to the standard flow
 macros of section 9.1, and a duplicate macro definition are all validation
 errors reported at the definition site.

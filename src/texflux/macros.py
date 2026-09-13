@@ -44,7 +44,14 @@ from .flags import (
     evaluate_conditional,
 )
 from .interpolate import interpolate, reject_markers
-from .syntax import demand_text, required_text, sequence_entries, stacks, walk
+from .syntax import (
+    RAW_MODE_NAMES,
+    demand_text,
+    required_text,
+    sequence_entries,
+    stacks,
+    walk,
+)
 
 
 class Reserved(StrEnum):
@@ -57,7 +64,7 @@ class Reserved(StrEnum):
 
 
 #: Reserved names may be neither redefined nor used as macro names.
-_RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
+_RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES | RAW_MODE_NAMES
 
 #: The module constructs, which a template may not contain. They are spelled
 #: here rather than imported, because ``modules`` builds on this module.
@@ -404,9 +411,10 @@ class _Expander:
                 return (self._entry(node, frame),)
             case RawTex():
                 target = self._span(node.span, frame)
-                # Existing fragments are final, including literal escaped markers.
+                # Existing fragments are final, including literal escaped markers;
+                # a raw-region line is verbatim and is never a text field at all.
                 parts = node.parts
-                if parts is None:
+                if parts is None and not node.verbatim:
                     parts = interpolate(
                         node.text, origin=node.span, target=target, offset=0, lookup=frame,
                     )

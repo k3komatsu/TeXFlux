@@ -22,6 +22,19 @@ from .support import TempDirTestCase
 
 
 class ExternalAstTests(TempDirTestCase):
+    def test_raw_mode_verbatim_is_not_an_external_ast_field(self):
+        result = compile_ast(
+            "!BEGIN_RAW_MODE\n"
+            "!text{x}\n"
+            "!END_RAW_MODE\n",
+            filename="raw.tfx",
+        )
+        node = json.loads(serialize_ast(result))["document"]["body"]["nodes"][0]
+        self.assertEqual(node["type"], "raw")
+        self.assertEqual(node["text"], "!text{x}")
+        self.assertNotIn("verbatim", node)
+        self.assertNotIn("parts", node)
+
     def test_exact_unicode_raw_envelope_and_original_byte_hash(self):
         data = "日本😀\r\n\r\n".encode("utf-8")
         result = compile_ast(data.decode(), filename="slides.tfx", source_bytes=data)

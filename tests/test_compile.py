@@ -432,6 +432,32 @@ class CompileTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual(compile_text(source), expected)
 
+    def test_raw_mode_covers_long_verbatim_regions(self):
+        for source, expected in (
+            (
+                "@verbatim: |\n"
+                "    !BEGIN_RAW_MODE\n"
+                "    !important\n"
+                "    !END_RAW_MODE\n",
+                "\\begin{verbatim}\n!important\n\\end{verbatim}\n",
+            ),
+            (
+                "@lstlisting: |\n"
+                "    !BEGIN_RAW_MODE\n"
+                "    !! # a listing marker\n"
+                "    !END_RAW_MODE\n",
+                "\\begin{lstlisting}\n!! # a listing marker\n\\end{lstlisting}\n",
+            ),
+            (
+                "!BEGIN_RAW_MODE\n"
+                "!重要\n"
+                "!END_RAW_MODE\n",
+                "!重要\n",
+            ),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(compile_text(source), expected)
+
     def test_special_and_container_errors_have_spans(self):
         with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):
             compile_text("!unknown\n", filename="unknown.tfx")

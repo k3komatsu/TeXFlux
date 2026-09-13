@@ -240,7 +240,13 @@ TeXFlux の文法は極めてシンプルです。**「3つの接頭辞」** と
 | `@` | **構造コンテナ / 環境** | `@frame`, `@columns`, `@center`, `@{...}`（中括弧グループ） |
 | `!` | **TeXFlux 特殊機能** | `!when`, `!unless`, `!flag`, `!defmacro`, `!import`, `!macroimport` と、標準フロー制御の `!before`, `!after`, `!around`, `!off`, `!drop` |
 
-※ 行頭の `@` / `!` を生の TeX として出力するには `@@` / `!!` と書きます（`!!foo` → `!foo`、`!!!foo` → `!!foo`）。環境本文やシーケンスの payload（`- !!bar`）でも使え、ブロック基準より余分な字下げを保持します。
+※ 行頭の `@` / `!` を1行だけ生の TeX として出力するには `@@` / `!!` と書きます（`!!foo` → `!foo`、`!!!foo` → `!!foo`）。環境本文やシーケンスの payload（`- !!bar`）でも使え、ブロック基準より余分な字下げを保持します。長い領域は次の raw mode で囲みます（領域内はタブと `!text{...}` を含む完全な verbatim です）。
+
+~~~text
+!BEGIN_RAW_MODE
+literal @ / ! / : / >>
+!END_RAW_MODE
+~~~
 
 ※ 接頭辞のない行や数式行（`$ ... $`）は、**生の TeX（raw TeX）** としてそのまま透過されます。
 
@@ -471,6 +477,7 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 - [TeXFlux DSL v1 利用者向け言語仕様書 (doc/dsl.md)](doc/dsl.md)（日本語）
 - [TeXFlux Normative Specification (texflux_tex_first_dsl_v1_spec.md)](texflux_tex_first_dsl_v1_spec.md)（規範的仕様書・英語）
 - [モジュールシステム詳細設計書 (doc/module-system.md)](doc/module-system.md)（日本語）
+- [行単位 raw mode 実装設計書 (doc/raw-mode.md)](doc/raw-mode.md)（日本語）
 
 ---
 

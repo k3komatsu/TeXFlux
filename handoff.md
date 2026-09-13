@@ -8,6 +8,7 @@
 | 文字列 interpolation（`!text`） | **実装・検証済み**（§B） |
 | `!items` の削除 | `feature/remove-items` で実施済み（§C） |
 | 行頭 `!!` raw escape | 実装済み（§D は導入前の設計メモ） |
+| 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`） | **実装・検証済み**（§E） |
 
 ---
 
@@ -130,6 +131,29 @@ python3 -W error::ResourceWarning -m unittest discover
 `!!` で書けるようになることを固定する。golden は `tests/golden/source-comments`
 が `@@` を含むだけなので、`!!` 専用の golden を足すかは AGENTS.md の
 「既存ケースが覆う形を重ねない」規則で判断する。
+
+---
+
+# §E 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`） — 実装済み
+
+行頭 `!!` は1行を救う escape であり、verbatim / lstlisting のような長い領域では
+全行に `!!` または `@@` を付ける必要が残る。そのため、`!BEGIN_RAW_MODE` の次の物理行
+から、同じインデントの `!END_RAW_MODE` の直前までを行単位の raw 領域として扱う機能を
+追加した。
+
+- マーカーは前後の半角スペースを除いて単独でなければならず、BEGIN はブロック基準位置に置く。
+- 領域内はヘッダースキャン、`@@` / `!!` escape、dedent による終了、空行の巻き戻し、
+  `!text{...}` 補間を行わない。タブも許可する。
+- 本文は基準位置まで最大で先頭スペースを除去した `RawTex(verbatim=True)` として出力する。
+  マーカーはノードを生まず、インデントの違う END は本文になる。
+- 実装は `syntax.py` / `parser.py` / `ast.py` / `macros.py` に閉じ、正準 AST のノード種別、
+  normalize、renderer、external AST、source map、flags、modules は変更しない。
+- パーサがこの2つの特殊名を物理行層で決め打ちするのは意図的な例外であり、正準 AST・
+  normalize・renderer に raw mode 固有の知識は追加しない。
+
+詳細設計は `doc/raw-mode.md`、利用者向け説明は `doc/dsl.md` §3、規範定義は
+`texflux_tex_first_dsl_v1_spec.md` §2。`tests/golden/raw-mode` を含む parser、compile、
+macro、module、golden のテストと、全スイートを検証済み。
 
 ---
 

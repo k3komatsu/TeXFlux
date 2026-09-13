@@ -148,6 +148,8 @@ class RawTex:
     text: str
     span: SourceSpan
     parts: SourceText | None = None
+    #: A raw-region line, which macro expansion must not interpolate.
+    verbatim: bool = False
 
     def __post_init__(self) -> None:
         if self.parts is not None and plain_text(self.parts) != self.text:

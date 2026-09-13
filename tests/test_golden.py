@@ -27,6 +27,7 @@ class GoldenTests(unittest.TestCase):
                 "standard-flow",
                 "stack-sequence",
                 "stack-three-level",
+                "raw-mode",
                 "single-long-argument",
                 "structured-command",
                 "structured-environment",

@@ -169,6 +169,166 @@ class ParserTests(unittest.TestCase):
                     self.assertEqual(entry.value.nodes[0].text, prefix + tail)
                     self.assertEqual(entry.value.nodes[0].span.start.column, 7)
 
+    def test_raw_mode_region_emits_verbatim_lines_without_scanning(self):
+        source = (
+            "@lstlisting: |\n"
+            "    !BEGIN_RAW_MODE\n"
+            "    @foo{A\n"
+            "    !foo: |\n"
+            "    \\foo:\n"
+            "    \\foo >> \\bar\n"
+            "    % comment\n"
+            "    !!foo\n"
+            "    !END_RAW_MODE\n"
+        )
+        node = parse(source, "raw.tfx").body.nodes[0]
+        lines = node.suite.nodes
+
+        self.assertEqual([line.text for line in lines], [
+            "@foo{A",
+            "!foo: |",
+            "\\foo:",
+            "\\foo >> \\bar",
+            "% comment",
+            "!!foo",
+        ])
+        self.assertTrue(all(line.verbatim for line in lines))
+        self.assertTrue(all(line.parts is None for line in lines))
+        self.assertEqual(
+            [(line.span.start.line, line.span.start.column) for line in lines],
+            [(3, 5), (4, 5), (5, 5), (6, 5), (7, 5), (8, 5)],
+        )
+
+    def test_raw_mode_region_dedents_by_at_most_the_block_base(self):
+        source = (
+            "@outer: |\n"
+            "    !BEGIN_RAW_MODE\n"
+            "  shallow\n"
+            "      deep\n"
+            "    !END_RAW_MODE\n"
+        )
+        lines = parse(source, "raw.tfx").body.nodes[0].suite.nodes
+
+        self.assertEqual([line.text for line in lines], ["shallow", "  deep"])
+        self.assertEqual(lines[0].span.start.column, 3)
+        self.assertEqual(lines[1].span.start.column, 5)
+
+    def test_raw_mode_preserves_blank_lines_and_markers_only_create_no_nodes(self):
+        source = (
+            "!BEGIN_RAW_MODE\n"
+            "A\n"
+            "\n"
+            "!END_RAW_MODE\n"
+        )
+        nodes = parse(source, "raw.tfx").body.nodes
+        self.assertEqual([node.text for node in nodes], ["A", ""])
+        self.assertTrue(all(node.verbatim for node in nodes))
+        self.assertEqual(
+            parse("@center: |\n    !BEGIN_RAW_MODE\n    !END_RAW_MODE\n", "raw.tfx")
+            .body.nodes[0].suite.nodes,
+            (),
+        )
+
+    def test_raw_mode_allows_tabs_only_inside_the_region(self):
+        node = parse(
+            "!BEGIN_RAW_MODE\n"
+            "\tinside\n"
+            "!END_RAW_MODE\n",
+            "raw.tfx",
+        ).body.nodes[0]
+        self.assertEqual(node.text, "\tinside")
+
+        with self.assertRaisesRegex(
+            ParseError,
+            r"raw\.tfx:4:8: parse error: tab characters are not allowed",
+        ):
+            parse(
+                "!BEGIN_RAW_MODE\n"
+                "\tinside\n"
+                "!END_RAW_MODE\n"
+                "outside\t\n",
+                "raw.tfx",
+            )
+
+    def test_raw_mode_ignores_nested_begin_and_misaligned_end(self):
+        nodes = parse(
+            "!BEGIN_RAW_MODE\n"
+            "  !END_RAW_MODE\n"
+            "    !BEGIN_RAW_MODE\n"
+            "!END_RAW_MODE\n",
+            "raw.tfx",
+        ).body.nodes
+        self.assertEqual(
+            [node.text for node in nodes], ["  !END_RAW_MODE", "    !BEGIN_RAW_MODE"]
+        )
+
+    def test_raw_mode_can_be_a_sequence_continuation_block(self):
+        entry = parse(
+            "\\foo:\n"
+            "    -\n"
+            "        !BEGIN_RAW_MODE\n"
+            "        !item{A\n"
+            "        !END_RAW_MODE\n",
+            "raw.tfx",
+        ).body.nodes[0].suite.nodes[0]
+        self.assertEqual([node.text for node in entry.value.nodes], ["!item{A"])
+        self.assertTrue(entry.value.nodes[0].verbatim)
+
+    def test_raw_mode_diagnostics_cover_unpaired_and_non_standalone_markers(self):
+        cases = (
+            (
+                "!BEGIN_RAW_MODE\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' is not closed by '!END_RAW_MODE'",
+            ),
+            (
+                "!END_RAW_MODE\n",
+                r"x\.tfx:1:1: parse error: '!END_RAW_MODE' has no matching '!BEGIN_RAW_MODE'",
+            ),
+            (
+                "\\foo:\n    - !BEGIN_RAW_MODE\n",
+                r"x\.tfx:2:7: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!BEGIN_RAW_MODE >> @center\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!END_RAW_MODE: |\n",
+                r"x\.tfx:1:1: parse error: '!END_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!BEGIN_RAW_MODE{x}\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!BEGIN_RAW_MODE % comment\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!BEGIN_RAW_MODE%comment\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!BEGIN_RAW_MODE{\n",
+                r"x\.tfx:1:1: parse error: '!BEGIN_RAW_MODE' must stand alone on its own line",
+            ),
+            (
+                "!END_RAW_MODE%comment\n",
+                r"x\.tfx:1:1: parse error: '!END_RAW_MODE' must stand alone on its own line",
+            ),
+        )
+        for source, message in cases:
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ParseError, message):
+                    parse(source, "x.tfx")
+
+    def test_raw_mode_requires_the_existing_structural_indentation(self):
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:1:5: parse error: invalid structural indentation",
+        ):
+            parse("    !BEGIN_RAW_MODE\n    !END_RAW_MODE\n", "x.tfx")
+
     def test_plain_sequence_rejects_unmarked_children(self):
         with self.assertRaisesRegex(ParseError, "sequence suites"):
             parse("\\foo:\n    A\n", "x.tfx")

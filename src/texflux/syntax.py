@@ -8,6 +8,7 @@ can raise the diagnostic that fits its own stage.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Final
 
 from .ast import (
     Argument,
@@ -22,6 +23,17 @@ from .ast import (
     Stack,
 )
 from .errors import ValidationError
+
+
+#: The two whole-line markers that delimit a raw region. The physical-line
+#: layer matches them as complete lines before any header scanning, so they
+#: are the only two names below the prefix-only classification rule.
+RAW_BEGIN_MARKER: Final = "!BEGIN_RAW_MODE"
+RAW_END_MARKER: Final = "!END_RAW_MODE"
+
+#: The same two, spelled as special names, for the checks that see a scanned
+#: name rather than a line.
+RAW_MODE_NAMES: Final = frozenset({RAW_BEGIN_MARKER[1:], RAW_END_MARKER[1:]})
 
 
 def is_escaped(text: str, index: int) -> bool:
@@ -137,6 +149,9 @@ __all__ = [
     "demand_text",
     "is_escaped",
     "optional_text",
+    "RAW_BEGIN_MARKER",
+    "RAW_END_MARKER",
+    "RAW_MODE_NAMES",
     "required_text",
     "sequence_entries",
     "stacks",
