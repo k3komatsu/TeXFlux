@@ -97,7 +97,7 @@ _MACRO_MODULE_FORBIDDEN: Final = frozenset(
 )
 
 #: Template-only constructs, which need no definition to be valid.
-_TEMPLATE_NAMES: Final = frozenset({Reserved.PARAM, Reserved.EACH})
+_TEMPLATE_NAMES: Final = frozenset({Reserved.PARAM, Reserved.EACH, Reserved.TEXT})
 
 # A binding is written on one header line, so it stays as flat as the flag
 # names and the two literals it joins. Both names are flag names, so the

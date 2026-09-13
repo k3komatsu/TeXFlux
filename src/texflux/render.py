@@ -18,11 +18,12 @@ from .ast import (
     RawTex,
     SourcePosition,
     SourceSpan,
+    SourceText,
 )
 
 
 #: The provenance role of one rendered fragment.
-RenderRole: TypeAlias = Literal["content", "open", "close", "synthetic"]
+RenderRole: TypeAlias = Literal["content", "open", "close", "synthetic", "scaffold"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +175,24 @@ class MappedEmitter:
         self._warnings.append(RenderWarning(message, span))
 
 
+def _emit_text(
+    emitter: MappedEmitter,
+    text: str,
+    parts: SourceText | None,
+    span: SourceSpan,
+    base_role: RenderRole,
+) -> None:
+    if parts is None:
+        emitter.emit(text, source=span, role=base_role)
+        return
+    for fragment in parts:
+        emitter.emit(
+            fragment.text,
+            source=fragment.span,
+            role="scaffold" if fragment.scaffold else base_role,
+        )
+
+
 def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
     if argument.kind is GroupKind.BINDING:
         # A binding list configures an import; it is never TeX to emit.
@@ -185,7 +204,7 @@ def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
         raise TypeError("renderer received a non-inline argument in an inline position")
     opener, closer = argument.kind.delimiters
     emitter.emit(opener, source=argument.span, role="open")
-    emitter.emit(argument.value, source=argument.span, role="content")
+    _emit_text(emitter, argument.value, argument.parts, argument.span, "content")
     emitter.emit(closer, source=argument.span, role="close")
 
 
@@ -226,13 +245,15 @@ def _render_block(
             case RawTex(text=""):
                 emitter.emit("\n", source=node.span, role="content")
             case RawTex(text=text):
-                emitter.line(text, source=node.span, role="content")
+                _emit_text(emitter, text, node.parts, node.span, "content")
+                emitter.newline()
             case GenericInvocation():
                 _render_invocation(emitter, node, source_comments)
             case BraceGroup(body=body, header_raw=header_raw):
                 emitter.line("{", source=node.span, role="open")
                 if header_raw:
-                    emitter.line(header_raw, source=node.span, role="content")
+                    _emit_text(emitter, header_raw, node.header_parts, node.span, "content")
+                    emitter.newline()
                 _render_block(emitter, body, source_comments)
                 emitter.line("}", source=node.span, role="close")
             case _:

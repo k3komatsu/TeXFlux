@@ -569,7 +569,7 @@ contents
 
 ## 12. ソースマクロ（Source macro）
 
-ソースマクロは、単なる文字列置換マクロではなく、**値・コンテナ・スタック合成（`>>`）の上に構築された構造的な AST マクロ（structural AST macro）**である。テンプレートは構文 AST として保存され、マクロ呼び出し側で渡された値をパラメータにバインドしてクローン（複製）される。ソーステキストの単純な置換や、レンダリング後の TeX の再パース、生の TeX グループ内部への文字列展開（interpolation）などは一切行われない。
+ソースマクロは、単なる文字列置換マクロではなく、**値・コンテナ・スタック合成（`>>`）の上に構築された構造的な AST マクロ（structural AST macro）**である。テンプレートは構文 AST として保存され、マクロ呼び出し側で渡された値をパラメータにバインドしてクローン（複製）される。ソーステキストの単純な置換や、レンダリング後の TeX の再パースは一切行われない。テキストフィールドへの文字列展開は `!text` に限って行われ、挿入された文字列は再走査も再パースもされない（12.7節）。
 
 ### 12.1 !defmacro
 
@@ -589,7 +589,7 @@ contents
     @{\small} >> !param{body}
 ~~~
 
-パラメータ名には `[A-Za-z_][A-Za-z0-9_-]*` の文字パターンが使用できる。パラメータ名の重複、予約名（`defmacro`、`param`、`each`、`flag`、`when`、`unless`）の使用、組み込みの special と同名の使用、およびマクロ自体の多重定義は、いずれも定義位置（definition site）を指し示すバリデーションエラーとなる。
+パラメータ名には `[A-Za-z_][A-Za-z0-9_-]*` の文字パターンが使用できる。パラメータ名の重複、予約名（`defmacro`、`param`、`text`、`each`、`flag`、`when`、`unless`）の使用、組み込みの special と同名の使用、およびマクロ自体の多重定義は、いずれも定義位置（definition site）を指し示すバリデーションエラーとなる。
 
 ### 12.2 値のバインド（Value binding）
 
@@ -610,7 +610,7 @@ contents
 
 `!param{name}` は、テンプレート内でバインドされた値の AST をその位置に挿入する。必須グループをちょうど1個だけ取り、suite は取らない。テンプレート外での使用、未バインドのパラメータ名の指定、および rest parameter の指定は、すべてマクロエラーとなる。rest parameter は単一の値ではなくシーケンスであるため、後述の `!each` を通じてのみアクセスできる。
 
-TeX グループの内部は解釈されない不透明な生 TeX（opaque raw TeX）であるため、グループ内にパラメータを展開（interpolate）することはできない。同じ理由で、生の TeX 行の途中に書かれた `!param` もマクロ展開されず、文字どおりのテキストとして残る。パラメータを渡したい場合は、以下のような構造化された形式を使用する。
+`!param` は AST を挿入するため、不透明な TeX グループの内部には展開できない。テキスト中の `!param{...}` はエラーになる。グループ内へ文字列を差し込むには `!text` を使う（12.7節）。AST を渡す場合は、以下のような構造化された形式を使用する。
 
 ~~~text
 @infobox:
@@ -656,6 +656,76 @@ recursive macro expansion detected: foo -> bar -> foo
 ### 12.6 ソースマッピング（Source mapping）
 
 `!param` から出力されたコードは、マクロ呼び出し側（call site）で渡された元の値の位置情報（source span）を保持する。一方、テンプレート自体に由来する構造・枠組み（scaffolding）の位置情報は、定義位置ではなく**マクロ呼び出し位置（macro call site）**へとリターゲットされる。これにより、逆方向検索（SyncTeX inverse search）を行った際、ユーザーが書いた本文をクリックした場合はその本文の記述位置へ、マクロが生成した枠組みをクリックした場合はマクロ呼び出し行へと正確に戻ることができる。
+
+### 12.7 文字列 interpolation（`!text`）
+
+`!text{name}` は、テンプレート内のテキストフィールドに、バインドされた値の文字列を
+差し込む。名前はパラメータ名と同じ `[A-Za-z_][A-Za-z0-9_-]*` で、`text` は
+マクロ名として予約される。`!param` は AST の挿入、`!text` は文字列の挿入を行う。
+
+~~~text
+!defmacro{figure}{name}{width}{caption}: |
+    \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
+    @center: |
+        @minipage{!text{width}}: |
+            !param{caption}
+!figure{result}{0.8\textwidth}: |
+    Result of the experiment
+~~~
+
+展開後:
+
+~~~tex
+\includegraphics[width=0.8\textwidth]{fig/result.pdf}
+\begin{center}
+\begin{minipage}{0.8\textwidth}
+Result of the experiment
+\end{minipage}
+\end{center}
+~~~
+
+補間できるのは、生の TeX 行、コマンド・環境のインライン `{...}` / `[...]` / `<...>`、
+`@{...}` のヘッダー、`!vpad` の引数、ユーザーマクロへ渡す必須インライングループである。
+別マクロの引数は、呼び出し側テンプレートの束縛を使って補間してから渡す。
+挿入された文字列は再走査も再パースもせず、`!text{x}` や `@frame`、`>>` という
+綴りを含んでも構文にはならない。`>>` 合成でも同じ規則が適用される。
+
+値が**ちょうど1個の `RawTex` ノードからなる場合のみ**、文字列として取り出せる。
+`!m{hello}`、`!m{}`、1行だけの本文は使える。2行以上の本文、空の本文、環境などの
+構造値は使えない。構造値を挿入する場合は `!param` を使う。rest parameter 全体は
+補間できないが、`!each` の item が1個の `RawTex` なら補間できる。
+
+~~~text
+!defmacro{labels}{...items}: |
+    !each{items}{item}: |
+        \label{item:!text{item}}
+!labels{alpha}{beta}
+~~~
+
+コンパイラが読む情報（フラグ名、マクロ名・パラメータ名、import path、構造名、
+`(...)` 束縛リスト）には補間できない。`!off` / `!drop` を含む `!vpad` 以外の
+組み込み special の引数も対象外である。これらの引数では、エスケープを付けても
+marker の綴りを許可しない。
+
+テンプレート外の `!text{...}`、AST 位置の `!text`、テキスト中の `!param{...}` は
+マクロエラーになる。不正な名前・閉じていない hole・未知のパラメータもエラーになる。
+テンプレート内の診断は定義位置を指し、呼び出し位置と展開経路も示す。
+捨てられた `!when` / `!unless` の payload は補間も検査もされない。
+
+文字どおりの marker を書くには、テキストフィールド中で `!!text{x}` / `!!param{x}` と
+書くと、それぞれ `!text{x}` / `!param{x}` が出力される。`\!text{x}` はそのまま残る
+（`\!` は TeX コマンド）。`!text {x}` / `!textbf{x}` / `!text` は marker ではない。
+行頭では先に raw-line escape が働くため、二層になる:
+
+| ソースの行頭 | parser 後 | 補間後 |
+| --- | --- | --- |
+| `!!text{x}` | `!text{x}` | パラメータ `x` の文字列（テンプレート外ではエラー） |
+| `!!!text{x}` | `!!text{x}` | リテラル `!text{x}` |
+
+文字列の由来は断片ごとに保持する。値の断片は元の値の位置、テンプレートのリテラル部は
+マクロ呼び出し位置を指す。列情報のない SyncTeX では値を優先する。ただし、1つの出力行に
+異なるソース行由来の値が複数ある場合は、従来同様に逆引き先が曖昧としてエラーになる。
+詳細な診断と実装設計は [文字列 interpolation 設計書](string-interpolation.md) を参照。
 
 ## 13. ビルドフラグ（Build flag）
 

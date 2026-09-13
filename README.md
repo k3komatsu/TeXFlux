@@ -334,6 +334,22 @@ TeXFlux の文法は極めてシンプルです。**「3つの接頭辞」** と
     締め切りは厳守してください。
 ```
 
+#### ⑦ マクロ内の文字列補間（`!text`）
+
+テンプレートの生の TeX やインライン引数には `!text{name}` で文字列を差し込めます。
+値はちょうど1個の生の TeX ノードに限ります。本文などの AST の挿入には `!param` を使います。
+
+```text
+!defmacro{image}{name}{width}: |
+    \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
+!image{result}{0.8\textwidth}
+```
+
+出力は `\includegraphics[width=0.8\textwidth]{fig/result.pdf}` です。
+挿入文字列は再走査せず、フラグ名・import path などのコンパイラ情報は補間できません。
+文字どおりの marker はテキスト中で `!!text{x}`、行頭では `!!!text{x}` と書きます。
+詳細は [言語仕様書 12.7 節](doc/dsl.md#127-文字列-interpolationtext) を参照してください。
+
 ---
 
 ## 🛠️ おすすめ実践ワークフロー

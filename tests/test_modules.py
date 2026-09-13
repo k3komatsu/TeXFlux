@@ -31,6 +31,28 @@ def collect(source, filename, module):
     )
 
 
+class InterpolationModuleTests(TempDirTestCase):
+    def test_nested_macro_text_preserves_transitive_fragment_sources(self):
+        self.write("inner.tfxm", "!defmacro{inner}{id}: |\n    \\label{!text{id}}\n")
+        self.write("outer.tfxm", "!macroimport{inner.tfxm}\n"
+                   "!defmacro{outer}{prefix}{id}: |\n    !inner{!text{prefix}-!text{id}}\n")
+        source = "!macroimport{outer.tfxm}\n!outer:\n    - sec\n    - intro\n"
+        root = self.write("main.tfx", source)
+        result = compile_with_map(source, filename=str(root))
+        self.assertEqual(result.text, "\\label{sec-intro}\n")
+        fragments = {f.text: f for f in result.rendered.fragments if f.source is not None}
+        self.assertEqual(fragments["sec"].source.start.line, 3)
+        self.assertEqual(fragments["intro"].source.start.line, 4)
+        self.assertEqual(fragments["-"].source.start.line, 2)
+        self.assertEqual(fragments["-"].role, "scaffold")
+        self.assertTrue(all(f.source.file == str(root) for f in fragments.values()))
+        self.assertEqual(result.text, "".join(f.text for f in result.rendered.fragments))
+
+    def test_ast_text_in_macro_module_gets_template_diagnostic(self):
+        self.write("style.tfxm", "!defmacro{m}{x}: |\n    !text{x}\n")
+        with self.assertRaisesRegex(MacroExpansionError, "!text is only valid inside a textual field"):
+            compile_text("!macroimport{style.tfxm}\n!m{A}\n", filename=str(self.root / "main.tfx"))
+
 class GuardTests(unittest.TestCase):
     """The import-free pipeline names the module constructs it cannot run."""
 
@@ -103,7 +125,7 @@ class LexicalScopeTests(unittest.TestCase):
 
     def test_same_name_in_two_modules_is_not_recursion(self):
         _, inner = collect(
-            "!defmacro{same}{b}: |\n    \\inner{!param{b}}\n",
+            "!defmacro{same}{b}: |\n    \\inner{!text{b}}\n",
             "b.tfxm",
             "/b.tfxm",
         )
@@ -126,7 +148,7 @@ class LexicalScopeTests(unittest.TestCase):
             environments=environments,
             module="/main.tfx",
         )
-        self.assertIn("inner", render(normalize(expanded)))
+        self.assertEqual("\\inner{X}\n", render(normalize(expanded)))
 
     def test_recursion_across_modules_names_each_defining_file(self):
         _, inner = collect(

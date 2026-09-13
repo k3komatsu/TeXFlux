@@ -403,6 +403,28 @@ class MacroSourceMapTests(unittest.TestCase):
         self.assertEqual(result.text, "{\n\\small\\color{red}\nHello\n}\n")
 
 
+class InterpolationSourceMapTests(unittest.TestCase):
+    def test_holes_keep_value_spans_and_literals_point_to_call(self):
+        for body, literal in (
+            ("\\foo{pre-!text{x}-post}", "\\foo{pre-"),
+            ("@hoge{pre-!text{x}-post}: |", "pre-"),
+            ("@{pre-!text{x}-post}: |", "pre-"),
+            ("!vpad{pre-!text{x}-post}: |", "pre-"),
+        ):
+            with self.subTest(body=body):
+                source = "!defmacro{m}{x}: |\n    " + body + "\n!m: |\n    VALUE\n"
+                result = compile_with_map(source, filename="m.tfx")
+                fragments = {f.text: f for f in result.rendered.fragments}
+                value, scaffold = fragments["VALUE"], fragments[literal]
+                self.assertEqual((value.source.start.line, value.source.start.column), (4, 5))
+                self.assertEqual(value.role, "content")
+                self.assertEqual((scaffold.source.start.line, scaffold.source.start.column), (3, 1))
+                self.assertEqual(scaffold.role, "scaffold")
+                self.assertTrue(all(f.source is None or f.source.file == "m.tfx"
+                                    for f in result.rendered.fragments))
+                self.assertEqual(result.text, "".join(f.text for f in result.rendered.fragments))
+
+
 class MacroFormTests(unittest.TestCase):
     """A template construct needs a ': |' suite that is actually written."""
 

@@ -5,69 +5,42 @@
 | 主題 | 状態 |
 | --- | --- |
 | モジュールシステム | `b3e8e33` で `main` に統合済み（§A） |
-| 文字列 interpolation（`!text`） | **設計完了・実装未着手**（§B） |
+| 文字列 interpolation（`!text`） | **実装・検証済み**（§B） |
 | `!items` の削除 | `feature/remove-items` で実施済み（§C） |
-| 行頭 `!!` raw escape | **設計決定済み・実装未着手**（§D） |
+| 行頭 `!!` raw escape | 実装済み（§D は導入前の設計メモ） |
 
 ---
 
-# §B 文字列 interpolation（`!text`） — 次の作業
+# §B 文字列 interpolation（`!text`） — 実装済み
 
-## 状態
+`feature/string-interpolation` で実装した。利用者向け説明は `doc/dsl.md` §12.7、
+規範定義は `texflux_tex_first_dsl_v1_spec.md` §10.6、詳細設計は
+`doc/string-interpolation.md`。原案の未追跡ファイルは変更していない。
 
-- 詳細設計書 `doc/string-interpolation.md` を作成した。**実装はまだ入っていない。**
-- 原案 `texflux_string_interpolation_spec.md`（リポジトリ直下・未追跡）は
-  設計の出発点。設計書と食い違う場合は `doc/string-interpolation.md` が優先する。
-- 設計上の分岐はユーザー確認済みで、決定は設計書 §1 の決定表 D1〜D9 に全件ある。
+- テキストフィールドの `!text{name}` は、ちょうど1個の `RawTex` の値のみを補間する。
+  `!param` は AST 位置専用。挿入文字列は再走査も再パースもしない。
+- 補間は macro expander 内で遅延処理し、捨てた条件分岐の中には入らない。
+  parser、flag 処理、import graph、lexical scope は変更していない。
+- fragment の由来を nested macro と `.tfxm` 越しにも保持する。テンプレートの
+  リテラルは呼び出し位置と `scaffold` role、値は元の span を保持する。
+- `RenderRole` と remapper の rank に `scaffold` を同時追加した。列なし SyncTeX は
+  値の行を優先する。異なる行の値を1行に複数差し込む場合の曖昧性は既存の制約として残る。
+- `AGENTS.md` の禁止リストと checklist も更新済み（gitignored のためローカルのみ）。
+- 設計書の疑似コードで欠けていた `text` / `value` の同時更新、マクロ章の参照先、
+  golden に必要な inline group 例を訂正した。既存 lexical scope テスト1件の
+  テキスト中 `!param` は `!text` に移行した。
 
-## 実装を始めるときに読む順序
-
-1. `doc/string-interpolation.md` §1（決定表）と §6（パイプライン上の位置）
-2. §3（字句規則）と §5（`interpolate.py` の API）
-3. §12（変更箇所一覧）と §13（実装チェックリスト）
-4. §11（診断表 T01〜T13）と §14（検証計画）
-
-## 実装前に必ず把握しておくべき非自明な点
-
-- **`RenderRole` に `"scaffold"` を足す変更と `remap._ROLE_RANK` への追加は必ず同時に
-  行う。** 片方だけだと `KeyError` になる。そしてこの role が無いと、列情報を持たない
-  SyncTeX 入力で `RemapError: ambiguous source mappings` が出る（設計書 §10.4）。
-- **エラーの span は再ターゲット前のノード span、provenance の span は再ターゲット後の
-  呼び出し位置**を使う。既存 `!param` の診断（定義行を指す）と挙動を揃えるため
-  （設計書 §5.1）。
-- **静的な事前走査パスを足してはならない。** `AGENTS.md` が定める「dropped payload の
-  内側に踏み込む規則は 4 つだけ」に 5 つ目を作ることになる。すべての検査を
-  `expand_macros` の中（遅延）で行う設計にしてある（設計書 §6）。
-- **`parser.py` と `flags.py` は変更しない。** 変更が要るように見えるが、調査の結果
-  不要と確認済み（設計書 §10.1、§7.3）。
-- 設計書は `!items` 削除後の木を前提にしている。`normalize.py` はもうテキストを
-  スライスしないので、`parts` は正準化を素通りする。
-
-## 実装と同時に必要な規範文書の改訂
-
-設計書 §15 に改訂前後の文言まで書いてある。忘れると、リポジトリが自分自身と矛盾する。
-
-- `AGENTS.md` の v1 boundaries（現状は interpolation を明示的に禁止している）と
-  review checklist。**`AGENTS.md` は `.gitignore` 済みなのでコミットされない。**
-- `doc/dsl.md` §12 冒頭と §12.3（現状は「interpolation は一切行われない」と明記）、
-  および新設する §12.7。
-- `texflux_tex_first_dsl_v1_spec.md` §12。
-
-## 検証
+検証:
 
 ```bash
 python3 -W error::ResourceWarning -m unittest discover
-PYTHONPATH=src python3 -m texflux compile examples/modules.tfx -o /tmp/m.tex
-diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
 ```
 
-marker を含まない既存文書の出力がバイト単位で変わらないことが設計目標である
-（設計書 §3.5 の高速パス、不変条件 I11）。
+補間・診断・drop・escape・fragment・module・列なし SyncTeX・golden を検証済み。
+`examples/` 6件は再コンパイル結果と `.tex` がバイト単位で一致した。
 
-## ブランチ
-
-複数コミットにまたがる作業なので `feature/string-interpolation` を切って進める
-（`AGENTS.md` の branch rule）。`main` へは直接コミットしない。
+以下の §D・§C は raw-line escape 導入前の設計判断の履歴であり、当時の
+「未実装」「回避策なし」という記述は現在の仕様ではない。
 
 ---
 

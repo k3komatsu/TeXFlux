@@ -3,6 +3,8 @@
 ## 0. ステータス
 
 - 種別: 実装設計書（詳細設計）。
+- 実装済み: `feature/string-interpolation`（2026-09-13）。規範定義は
+  `texflux_tex_first_dsl_v1_spec.md` §10.6、利用者向け説明は `doc/dsl.md` §12.7。
 - 位置づけ: `texflux_string_interpolation_spec.md` の原案を精査し、実装可能な形に
   確定させたもの。原案と本書が食い違う場合は**本書が優先**する。
 - 前提コミット: `112eff5`（2026-09-13）。
@@ -100,7 +102,7 @@
 escape の判定順序は **`!!` を先に、`\` の判定をその前に**行う（§3.5 の擬似コード参照）。
 
 行頭では parser の raw-line escape と補間走査器の escape の二層になる。
-本設計の補間を実装した場合、マクロテンプレート内では次の順で処理する:
+マクロテンプレート内では次の順で処理する:
 
 ```text
 !!text{x}   → parser が ! を1つ剥がす → RawTex "!text{x}" → 補間される
@@ -108,7 +110,7 @@ escape の判定順序は **`!!` を先に、`\` の判定をその前に**行�
 ```
 
 エスケープせず AST 位置に書いた `!text{x}` は引き続き T01 エラーになる。
-補間実装前の現在は parser の処理のみで、`!!text{x}` はリテラル `!text{x}` を出力する。
+テンプレート外の `!!text{x}` は parser 後に未エスケープの hole となるため T02 になる。
 
 ### 3.4 marker と見なさないもの
 
@@ -243,7 +245,7 @@ class BraceGroup:
 
 違反時は `ValueError`（利用者向けの診断ではなく実装バグなので `TeXFluxError` ではない）。
 
-### 4.4 `RenderRole` の移設
+### 4.4 `RenderRole` の拡張
 
 `render.RenderRole` に `"scaffold"` を足す。`TextFragment` は role 値を持たない
 （`scaffold: bool` だけを持つ）ので、`ast.py` が `render.py` に依存する必要はない。
@@ -277,7 +279,7 @@ def interpolate(
     origin: SourceSpan,      # 診断とオフセット計算に使う「書かれた場所」
     target: SourceSpan,      # リテラル部が名乗る span（retarget 済みの呼び出し位置）
     offset: int,             # origin.start.column から text の先頭までの文字数
-    lookup: TextLookup | None,  # None はマクロテンプレート外を意味する
+    lookup: _Frame | None,  # None はマクロテンプレート外を意味する
 ) -> SourceText | None:
     """Interpolate one text field, or return None when it has no marker."""
 
@@ -405,6 +407,10 @@ A5 は**束縛の前**に補間する。結果のテキストが従来どおり 
 | B6 | 許可リストに無い built-in special の group（`!import` `!off` `!drop` ほか） | `_Expander._argument()` | T12 |
 | B7 | `(...)` binding list（`GroupKind.BINDING`） | `_Expander._argument()` | T13 |
 
+B4〜B7 は文字列に `!text{` / `!param{` の綴りが含まれるかを検査する。
+これらは補間対象のテキストではなく、escape の処理も行わないため、
+`!!text{` / `\!text{` でメタデータに marker を書くことも許可しない。
+
 ### 7.3 既存経路で自然にエラーになるもの（専用診断を設けない）
 
 いずれも top-level 限定の宣言であり、dropped payload の問題も起きない。
@@ -486,7 +492,8 @@ def _emit_text(emitter, text, parts, span, base_role):
 | `_emit_group` | `emitter.emit(argument.value, ...)` を `_emit_text(..., base_role="content")` に置換。opener / closer は従来どおり `argument.span` |
 | `_render_block` の `BraceGroup` 分岐 | `header_raw` の出力を `_emit_text(..., header_parts, node.span, "content"); emitter.newline()` に置換 |
 
-`RawTex(text="")` の分岐（空行）は変更しない。空文字に `parts` は付かない。
+`RawTex(text="")` の分岐（空行）は変更しない。空文字を補間した結果にも `parts` は
+付き得るが、文字を持つ fragment はなく、従来どおり空行を出力する。
 
 ### 9.3 期待される provenance（規範例）
 
@@ -569,7 +576,7 @@ fragment provenance を素朴に入れると、§9.3 の例で `\foo{pre-` が `
 依然として ambiguous になる。compact group 呼び出しでは起こらない。これは
 `!param` が既に持つ制約と同種であり、本機能で新たに対策はしない。
 
-### 10.5 `modules.py` — 2 箇所
+### 10.5 `modules.py` — 1 箇所
 
 | 箇所 | 変更 |
 |---|---|
@@ -646,6 +653,10 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 
 ### 12.1 `src/texflux/macros.py` の詳細
 
+以下は初回処理の概略である。`parts is not None` のフィールドは補間済みなので
+`interpolate()` を再度呼ばず、既存の fragment をそのまま保持する。
+`parts` を変更するときは `text` / `value` も `plain_text(parts)` に更新する。
+
 1. `Reserved` に `TEXT = "text"` を追加。
 2. モジュール定数を追加。`_MODULE_NAMES` と同じく、`normalize` に依存しないよう
    名前を直接綴る。
@@ -682,7 +693,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
        )
        if parts is None:
            return (replace(node, span=target),)
-       return (replace(node, span=target, parts=parts),)
+       return (replace(node, text=plain_text(parts), span=target, parts=parts),)
    ```
 
 5. `_Expander._invocation()` から `_argument()` へ「所有者」を渡せるようにする。
@@ -721,7 +732,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
        )
        if parts is None:
            return replace(argument, span=target)
-       return replace(argument, span=target, parts=parts)
+       return replace(argument, value=plain_text(parts), span=target, parts=parts)
    ```
 
    `reject_markers` が投げる `MacroExpansionError` は `_error()` 経由で chain を
@@ -735,7 +746,7 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
    texts = []
    for group in node.groups:
        text = demand_text(group, f"{label} name")
-       reject_markers(text, group.span, f"{label} name group")
+       reject_markers(text, group.span, f"a {label} name group")
        texts.append(text)
    ```
 
@@ -976,16 +987,19 @@ diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
 綴り・許可される場所・text-extractable な値・escape・代表例（§16）を書く。実装の
 詳細は本書へ参照を張る。
 
-### 15.3 `texflux_tex_first_dsl_v1_spec.md` §12
+### 15.3 `texflux_tex_first_dsl_v1_spec.md` §10
 
 `doc/dsl.md` と同じ 2 箇所を、規範文書の語彙で同様に改訂する。
-§12 に `!text` の規範定義（§3 の字句規則、§7 の許可／禁止表、§8 の値の条件）を追加する。
+§10.6 に `!text` の規範定義（§3 の字句規則、§7 の許可／禁止表、§8 の値の条件）を追加する。
 
 ### 15.4 非互換
 
 `!text{` という綴りを text field に literal で含む既存文書は T02 でエラーになる。
-リポジトリ内の `examples/` `tests/` `doc/` `README.md` `texflux_tex_first_dsl_v1_spec.md`
-を grep した結果、該当は **0 件**である。回避手段は `!!text{` または `\!text{`。
+リテラルの `!param{` も T08 になる。既存の lexical scope テスト1件が生の TeX 中に
+`!param{b}` を書いていたため、`!text{b}` に変更し、同名マクロの非再帰判定という
+テストの目的を維持した。既存 examples 6件の出力はバイト単位で不変である。
+リテラルの回避手段はテキスト中の `!!text{` / `!!param{` または backslash escape。
+行頭の raw-line escape と重なる場合は `!!!text{` / `!!!param{` と書く。
 
 ---
 
@@ -997,8 +1011,8 @@ diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
 !defmacro{figure}{name}{width}{caption}: |
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
     @center: |
-        !param{caption}
-
+        @minipage{!text{width}}: |
+            !param{caption}
 !figure{result}{0.8\textwidth}: |
     Result of the experiment
 ```
@@ -1006,7 +1020,9 @@ diff -u examples/modules.tex /tmp/m.tex     # 差分が無いこと
 ```tex
 \includegraphics[width=0.8\textwidth]{fig/result.pdf}
 \begin{center}
+\begin{minipage}{0.8\textwidth}
 Result of the experiment
+\end{minipage}
 \end{center}
 ```
 

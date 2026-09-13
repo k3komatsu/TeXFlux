@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, Self
+from typing import Final, Self, TypeAlias
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -37,6 +37,23 @@ class SourceSpan:
         """This span's start as the ``file:line:column`` diagnostics prefix."""
 
         return f"{self.file}:{self.start.line}:{self.start.column}"
+
+
+@dataclass(frozen=True, slots=True)
+class TextFragment:
+    """One provenance-tagged run of a text field."""
+
+    text: str
+    span: SourceSpan
+    #: Template literals rank below caller content in columnless SyncTeX.
+    scaffold: bool = False
+
+
+SourceText: TypeAlias = tuple[TextFragment, ...]
+
+
+def plain_text(parts: SourceText) -> str:
+    return "".join(fragment.text for fragment in parts)
 
 
 class GroupKind(StrEnum):
@@ -117,12 +134,24 @@ class Argument:
     value: str | Block
     layout: ArgumentLayout
     span: SourceSpan
+    parts: SourceText | None = None
+
+    def __post_init__(self) -> None:
+        if self.parts is not None and (
+            not isinstance(self.value, str) or plain_text(self.parts) != self.value
+        ):
+            raise ValueError("Argument parts must match its string value")
 
 
 @dataclass(frozen=True, slots=True)
 class RawTex:
     text: str
     span: SourceSpan
+    parts: SourceText | None = None
+
+    def __post_init__(self) -> None:
+        if self.parts is not None and plain_text(self.parts) != self.text:
+            raise ValueError("RawTex parts must match its text")
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +208,14 @@ class BraceGroup:
     body: Block
     span: SourceSpan
     header_raw: str = ""
+    header_parts: SourceText | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.header_parts is not None
+            and plain_text(self.header_parts) != self.header_raw
+        ):
+            raise ValueError("BraceGroup header_parts must match its header_raw")
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,4 +251,7 @@ __all__ = [
     "Stack",
     "SuiteMode",
     "SyntaxNode",
+    "SourceText",
+    "TextFragment",
+    "plain_text",
 ]

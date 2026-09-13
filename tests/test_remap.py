@@ -99,6 +99,13 @@ class SyncTeXRemapTests(TempDirTestCase):
             synctex_path=self.root / "out.synctex",
         )
 
+    def test_interpolation_without_columns_prefers_the_value_line(self):
+        map_path, _ = self.compile_to_disk(
+            "!defmacro{m}{x}: |\n    \\foo{pre-!text{x}-post}\n!m: |\n    VALUE\n"
+        )
+        rewritten = self.remap(_sync(b"v1,1:100,200:3,4,5"), map_path)
+        self.assertIn(b"v3,4:100,200:3,4,5\n", rewritten)
+
     def test_remaps_generated_input_to_tfx_source(self):
         generated = b"\\hbox{Generated}\n"
         source = b"first\nsecond\n"

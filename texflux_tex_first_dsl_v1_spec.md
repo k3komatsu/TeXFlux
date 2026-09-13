@@ -445,8 +445,9 @@ handler dropped the blank separators between items.
 A source macro is a structural AST macro, not a textual one. `!defmacro`
 stores one template block of syntax AST; a call binds its values to the
 template's parameters and instantiates a clone of it. TeXFlux never
-substitutes source text, never re-parses rendered TeX, and never interpolates
-a parameter into a raw TeX group.
+substitutes source text or re-parses rendered TeX. Only explicit `!text` holes
+interpolate bound text into opaque fields; inserted text is never rescanned
+or parsed (section 10.6).
 
 ### 10.1 Definition
 
@@ -476,7 +477,7 @@ expanded, which makes forward references valid:
 ~~~
 
 Parameter names match `[A-Za-z_][A-Za-z0-9_-]*`. A duplicate parameter, a
-macro name that is reserved (`defmacro`, `param`, `each`), a name already
+macro name that is reserved (`defmacro`, `param`, `text`, `each`), a name already
 taken by a built-in special, and a duplicate macro definition are all
 validation errors reported at the definition site.
 
@@ -510,9 +511,9 @@ an unbound parameter, or naming a rest parameter is a macro error. A rest
 parameter is a sequence rather than a value, so it is reached only with
 `!each`.
 
-Because a group's contents stay opaque raw TeX, a parameter cannot be
-interpolated into one. The same opacity applies inside a raw TeX line, so a
-`!param` written there stays literal. Structural form is used instead:
+`!param` inserts AST and cannot splice into an opaque TeX group. An unescaped
+`!param{` in a text field is an error; use `!text` for text interpolation
+(section 10.6). For AST insertion, use structural form:
 
 ~~~text
 @infobox:
@@ -569,6 +570,66 @@ recursive macro expansion detected: foo -> bar -> foo
 Expansion is an AST-to-AST pass that runs after `>>` desugaring and before
 value consumption, so no macro construct reaches normalization or the
 renderer. `!splice` is not part of v1.
+
+### 10.6 Text interpolation
+
+`text` is reserved. `!text{NAME}` is a text hole, whose name must fully match
+`[A-Za-z_][A-Za-z0-9_-]*`. It reads one bound parameter in the current macro
+frame. This does not change parameter declarations or the AST value model.
+A value is text-extractable if and only if it consists of exactly one RawTex
+node. Empty compact text is valid; an empty block, multiple nodes, or a
+structural node is not. A rest parameter is not text-extractable; an `!each`
+item is extractable when it satisfies the same one-RawTex rule.
+
+Interpolation applies only to opaque text fields in a macro template:
+
+- RawTex text;
+- inline required, optional, and overlay groups of commands and containers;
+- the header of a literal brace container;
+- required groups of `!vpad`;
+- required compact values passed to a user macro, interpolated in the caller's
+  frame before binding them to the callee.
+
+`!text` in an AST position is an error; use `!param` for structural insertion.
+An unescaped `!param{` in a text field is an error; use `!text` for text.
+A text hole outside a template is an error, including a macro call's values
+written outside any template. Macro and flag declarations retain their existing
+name validation. Command, environment, and special names are fixed by parsing.
+Condition groups, `!param` / `!each` name groups, binding lists, and groups of
+specials other than `!vpad` reject marker spellings, including escaped ones.
+Import paths remain static; interpolation never discovers or generates imports.
+
+Text scanning is left-to-right, after raw-line escapes. A backslash-escaped
+exclamation mark is ignored according to the existing backslash parity rule.
+Otherwise `!!text{` and `!!param{` emit literal `!text{` and `!param{`, without
+rescanning the emitted prefix. `!text{` closes at the first following `}`;
+a missing close or invalid name is a macro error. `!param{` fails whether or
+not it has a closing brace. Spaced `!text {x}`, `!textbf{x}`, and bare `!text`
+are not markers. At the start of a source line, `!!text{x}` becomes RawTex
+`!text{x}` and is interpolated; `!!!text{x}` becomes `!!text{x}` and emits
+literal `!text{x}`. These two escape layers also apply to sequence payloads.
+
+Expansion replaces holes with the bound text's fragments verbatim. Inserted
+text is never scanned again or parsed, even if it spells markers or structural
+operators. Existing fragments are final on subsequent expansion passes.
+There is no AST rendering-to-string conversion. Checks occur only as expansion
+visits a node: a dropped conditional payload is neither interpolated nor checked
+for markers. No additional static traversal enters dropped payloads.
+
+RawTex and inline Argument nodes may carry `parts`, and BraceGroup may carry
+`header_parts`: tuples of TextFragment(text, span, scaffold=False). Concatenating
+fragments must equal the associated string; Argument parts require a string
+value. Invalid combinations raise ValueError. An absent parts field preserves
+the previous whole-field provenance. Bound fragments keep their original spans
+and scaffold flags through nested macro calls and module boundaries. Template
+literals point at the call site with the `scaffold` rendering role. Errors in a
+template point at its definition and include the expansion chain and call site.
+
+Rendering fragments must produce exactly the same text as rendering their
+concatenation. The source-map version remains 1; `scaffold` has rank 1, below
+`content` at rank 0 for columnless SyncTeX. Distinct source lines contributing
+multiple content fragments to one generated line remain ambiguous. Documents
+without holes or escapes retain their previous output byte for byte.
 
 ## 11. Build flags
 
@@ -1014,7 +1075,8 @@ v1 does not include:
   admits no parentheses, no fold inside a fold, and no negation of a single
   operand. Composing whole conditionals with >> is how anything deeper is
   written, and is not restricted
-- textual macros, parameter interpolation into raw TeX, and !splice
+- source-to-source textual macros (m4/cpp), rescanning inserted text, token
+  pasting, generated text sent back to the parser, and !splice
 - optional, default, or keyword macro parameters, and macro recursion
 - YAML/Python embedded authoring
 - implicit extension loading

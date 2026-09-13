@@ -73,6 +73,7 @@ _ROLES: Final = frozenset(get_args(RenderRole))
 #: Without a column, content outranks a delimiter, which outranks filler.
 _ROLE_RANK: Final[dict[str, int]] = {
     "content": 0,
+    "scaffold": 1,
     "open": 1,
     "close": 1,
     "synthetic": 2,

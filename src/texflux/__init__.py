@@ -19,6 +19,7 @@ from .ast import (
     SpecialInvocation,
     Stack,
     SuiteMode,
+    TextFragment,
 )
 from .errors import (
     DirectiveError,
@@ -179,6 +180,7 @@ __all__ = [
     "SpecialInvocation",
     "Stack",
     "SuiteMode",
+    "TextFragment",
     "SyncTeXDocument",
     "SyncTeXError",
     "SyncTeXInput",

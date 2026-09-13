@@ -330,6 +330,7 @@ def _normalize_invocation(
                             _container_body(node, suite, registry),
                             node.span,
                             raw,
+                            node.groups[0].parts,
                         ),
                     )
                 case _:

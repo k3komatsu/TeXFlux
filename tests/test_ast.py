@@ -11,6 +11,8 @@ from texflux.ast import (
     RawTex,
     SourcePosition,
     SourceSpan,
+    TextFragment,
+    plain_text,
 )
 
 
@@ -51,6 +53,24 @@ class AstTests(unittest.TestCase):
 
         self.assertEqual(group.span, span)
         self.assertEqual(group.body.nodes[0].text, "BODY")
+
+    def test_text_fragments_must_match_their_field(self):
+        span = SourceSpan("m.tfx", SourcePosition(1, 1), SourcePosition(1, 4))
+        parts = (TextFragment("pre", span, True), TextFragment("A", span))
+        self.assertEqual(plain_text(parts), "preA")
+        self.assertEqual(RawTex("preA", span, parts).parts, parts)
+        self.assertEqual(Argument(GroupKind.REQUIRED, "preA", ArgumentLayout.INLINE,
+                                  span, parts).parts, parts)
+        self.assertEqual(BraceGroup(Block((), span), span, "preA", parts).header_parts, parts)
+        for create in (
+            lambda: RawTex("wrong", span, parts),
+            lambda: Argument(GroupKind.REQUIRED, "wrong", ArgumentLayout.INLINE, span, parts),
+            lambda: Argument(GroupKind.REQUIRED, Block((), span), ArgumentLayout.BLOCK, span, parts),
+            lambda: BraceGroup(Block((), span), span, "wrong", parts),
+        ):
+            with self.subTest(create=create):
+                with self.assertRaises(ValueError):
+                    create()
 
     def test_invocation_kind_is_explicit_in_syntax_ast(self):
         self.assertEqual(InvocationKind.COMMAND.value, "command")

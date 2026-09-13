@@ -3,7 +3,8 @@
 A macro is not a textual substitution. ``!defmacro`` stores one template
 block of syntax AST; a call binds its values to parameters and instantiates
 that template by cloning it, so raw TeX is never re-parsed and no parameter
-is interpolated into a TeX group.
+is implicitly interpolated into a TeX group. Explicit ``!text`` holes read
+one bound raw value without rescanning its text.
 
 Expansion runs after ``>>`` desugaring and before normalization, so the
 renderer never sees a macro. Instantiated template nodes are retargeted onto
@@ -23,6 +24,7 @@ from .ast import (
     Argument,
     Block,
     Document,
+    GroupKind,
     Node,
     ParsedInvocation,
     RawTex,
@@ -32,6 +34,7 @@ from .ast import (
     Stack,
     SuiteMode,
     SyntaxNode,
+    plain_text,
 )
 from .errors import MacroExpansionError, ValidationError
 from .flags import (
@@ -40,6 +43,7 @@ from .flags import (
     Flags,
     evaluate_conditional,
 )
+from .interpolate import interpolate, reject_markers
 from .syntax import demand_text, required_text, sequence_entries, stacks, walk
 
 
@@ -48,6 +52,7 @@ class Reserved(StrEnum):
 
     DEFINE = "defmacro"
     PARAM = "param"
+    TEXT = "text"
     EACH = "each"
 
 
@@ -57,6 +62,9 @@ _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES
 #: The module constructs, which a template may not contain. They are spelled
 #: here rather than imported, because ``modules`` builds on this module.
 _MODULE_NAMES: Final = frozenset({"import", "macroimport"})
+
+# Only these specials have output text groups; all other groups stay static.
+_TEXT_ARGUMENT_SPECIALS: Final = frozenset({"vpad"})
 
 # A macro must be callable as '!name', so it uses the special-name grammar.
 _MACRO_NAME_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
@@ -365,6 +373,13 @@ class _Expander:
                 )
             case SpecialInvocation(name=Reserved.PARAM):
                 return self._param(node, frame)
+            case SpecialInvocation(name=Reserved.TEXT):
+                raise _error(
+                    "!text is only valid inside a textual field; "
+                    "use !param for an AST position",
+                    node.span,
+                    frame,
+                )
             case SpecialInvocation(name=Reserved.EACH):
                 return self._each(node, frame)
             case SpecialInvocation(name=Conditional.WHEN | Conditional.UNLESS):
@@ -376,7 +391,19 @@ class _Expander:
             case SequenceEntry():
                 return (self._entry(node, frame),)
             case RawTex():
-                return (replace(node, span=self._span(node.span, frame)),)
+                target = self._span(node.span, frame)
+                # Existing fragments are final, including literal escaped markers.
+                parts = node.parts
+                if parts is None:
+                    parts = interpolate(
+                        node.text, origin=node.span, target=target, offset=0, lookup=frame,
+                    )
+                return (replace(
+                    node,
+                    text=node.text if parts is None else plain_text(parts),
+                    span=target,
+                    parts=parts,
+                ),)
             case Stack():
                 raise TypeError("macro expansion requires a desugared syntax AST")
             case _:
@@ -394,9 +421,15 @@ class _Expander:
         node: ParsedInvocation | SpecialInvocation,
         frame: _Frame | None,
     ) -> ParsedInvocation | SpecialInvocation:
+        special = isinstance(node, SpecialInvocation)
+        allowed = not special or node.name in _TEXT_ARGUMENT_SPECIALS
+        owner = f"!{node.name}" if special else None
         return replace(
             node,
-            groups=tuple(self._argument(group, frame) for group in node.groups),
+            groups=tuple(
+                self._argument(group, frame, allowed=allowed, owner=owner)
+                for group in node.groups
+            ),
             suite=None if node.suite is None else self.block(node.suite, frame),
             span=self._span(node.span, frame),
             suite_span=(
@@ -406,11 +439,43 @@ class _Expander:
             ),
         )
 
-    def _argument(self, argument: Argument, frame: _Frame | None) -> Argument:
+    def _reject(
+        self, text: str, span: SourceSpan, where: str, frame: _Frame | None,
+    ) -> None:
+        try:
+            reject_markers(text, span, where)
+        except MacroExpansionError as error:
+            raise _error(error.message, error.span, frame) from None
+
+    def _argument(
+        self,
+        argument: Argument,
+        frame: _Frame | None,
+        *,
+        allowed: bool,
+        owner: str | None,
+    ) -> Argument:
         value = argument.value
+        target = self._span(argument.span, frame)
         if isinstance(value, Block):
-            value = self.block(value, frame)
-        return replace(argument, value=value, span=self._span(argument.span, frame))
+            return replace(argument, value=self.block(value, frame), span=target)
+        if argument.kind is GroupKind.BINDING:
+            self._reject(value, argument.span, "a '(...)' binding list", frame)
+            return replace(argument, span=target)
+        if not allowed:
+            self._reject(value, argument.span, f"{owner}'s arguments", frame)
+            return replace(argument, span=target)
+        parts = argument.parts
+        if parts is None:
+            parts = interpolate(
+                value, origin=argument.span, target=target, offset=1, lookup=frame,
+            )
+        return replace(
+            argument,
+            value=value if parts is None else plain_text(parts),
+            span=target,
+            parts=parts,
+        )
 
     def _entry(self, node: SequenceEntry, frame: _Frame | None) -> SequenceEntry:
         return replace(
@@ -427,15 +492,19 @@ class _Expander:
         node: SpecialInvocation,
         label: str,
         count: int,
+        frame: _Frame,
     ) -> tuple[str, ...]:
         if len(node.groups) != count:
             raise ValidationError(
                 f"{label} requires exactly {count} required group(s)",
                 node.span,
             )
-        return tuple(
-            demand_text(group, f"{label} name") for group in node.groups
-        )
+        texts = []
+        for group in node.groups:
+            text = demand_text(group, f"{label} name")
+            self._reject(text, group.span, f"a {label} name group", frame)
+            texts.append(text)
+        return tuple(texts)
 
     def _template_frame(
         self,
@@ -459,7 +528,7 @@ class _Expander:
         frame = self._template_frame(node, frame)
         if node.suite is not None:
             raise ValidationError("!param does not accept a suite", node.span)
-        (name,) = self._single_name(node, "!param", 1)
+        (name,) = self._single_name(node, "!param", 1, frame)
 
         if name in frame.sequences:
             raise _error(
@@ -481,7 +550,7 @@ class _Expander:
         frame = self._template_frame(node, frame)
         if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError("!each requires a ': |' template suite", node.span)
-        sequence_name, item_name = self._single_name(node, "!each", 2)
+        sequence_name, item_name = self._single_name(node, "!each", 2, frame)
         if _PARAM_NAME_RE.fullmatch(item_name) is None:
             raise ValidationError(
                 f"invalid !each item name '{item_name}'",
@@ -522,6 +591,12 @@ class _Expander:
     ) -> tuple[Node, ...]:
         """Keep or drop one ``!when``/``!unless`` payload, whole."""
 
+        for group in node.groups:
+            if isinstance(group.value, str):
+                self._reject(
+                    group.value, group.span,
+                    f"a !{node.name} flag group; flag names are static", frame,
+                )
         keep = evaluate_conditional(node, self._flags)
         if node.suite is None:
             raise ValidationError(
@@ -585,7 +660,15 @@ class _Expander:
                     group.span,
                     frame,
                 )
-            values.append((RawTex(text, self._span(group.span, frame)),))
+            target = self._span(group.span, frame)
+            parts = group.parts
+            if parts is None:
+                parts = interpolate(
+                    text, origin=group.span, target=target, offset=1, lookup=frame,
+                )
+            values.append((RawTex(
+                text if parts is None else plain_text(parts), target, parts,
+            ),))
 
         if node.suite is not None:
             suite = self.block(node.suite, frame)

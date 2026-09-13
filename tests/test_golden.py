@@ -14,6 +14,7 @@ class GoldenTests(unittest.TestCase):
                 "build-flags",
                 "generic-groups",
                 "macro-each",
+                "macro-interpolation",
                 "macro-variadic",
                 "macro-wrapper",
                 "module-import",
