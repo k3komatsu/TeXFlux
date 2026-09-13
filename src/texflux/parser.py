@@ -517,7 +517,7 @@ class _Parser:
             extra = len(rest) - len(rest.lstrip(" "))
             first = rest[extra : extra + 1]
 
-            if first == "@" and rest[extra : extra + 2] == "@@":
+            if first in {"@", "!"} and rest[extra : extra + 2] == first * 2:
                 raw_text = rest[:extra] + rest[extra + 1 :]
                 nodes.append(
                     RawTex(raw_text, self._line_span(line, base + 1, rest))
@@ -775,7 +775,7 @@ class _Parser:
         nodes: list[Node] = []
         if payload:
             payload_span = self._line_span(line, payload_start + 1, payload)
-            if payload.startswith("@@"):
+            if payload[:2] in {"@@", "!!"}:
                 nodes.append(RawTex(payload[1:], payload_span))
             elif payload[0] in "\\@!":
                 # Only a command payload may turn out to be ordinary TeX; an

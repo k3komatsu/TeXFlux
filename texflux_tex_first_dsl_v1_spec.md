@@ -63,7 +63,13 @@ Blank lines in a sequence suite are separators and do not create values. Blank
 lines inside a sequence value block or a block suite are content. A trailing
 blank run is returned to the enclosing block when the suite closes.
 
-At a structural position, @@ emits one raw @ and does not create a directive.
+At the start of a block line (after spaces), `@@` and `!!` remove exactly
+one leading character and emit the rest as raw TeX, without header scanning.
+They are handled before the structural extra-indentation check, preserving
+spaces beyond the block base. The same escapes apply at the start of a
+sequence marker payload: `- !!bar` supplies raw `!bar`. Tabs remain invalid.
+Thus `!!` emits `!`, `!!!foo` emits `!!foo`, and `!!重要` emits `!重要`.
+Unbalanced braces and trailing `:` or `>>` remain literal on escaped lines.
 
 ## 3. Header scanner
 
@@ -338,7 +344,7 @@ four spaces from the header's structural base as usual.
 In a sequence entry beginning `- @hoge >>`, continuation lines align with the
 `-` marker, without repeating it; the suite base remains four spaces deeper
 than that marker. Such a value spans multiple physical lines, so the existing
-multiline argument-brace layout applies. Raw TeX and escaped `@@` lines do
+multiline argument-brace layout applies. Raw TeX and escaped `@@` / `!!` lines do
 not acquire continuation syntax. Groups cannot be split
 across lines. Segments, groups, and suffixes retain their physical source spans;
 the parser produces one ordinary Stack, with no new canonical node type.
@@ -418,8 +424,8 @@ differently:
   `\item Summary:{}` -- writes either one, and changes no TeX: an empty group
   leaves `\spacefactor` alone, so the colon's end-of-sentence space survives.
 - A line beginning `@` is an environment header; `@@` escapes it.
-- A line beginning `!` is a special. No escape exists, here or anywhere else
-  in the language.
+- A line beginning `!` is a special; `!!` escapes it, just as `@@` escapes `@`.
+  This also applies inside `@verbatim` and `@lstlisting` bodies.
 
 Two shapes change the output instead of failing, which makes them the ones a
 migration has to look for:
@@ -427,8 +433,9 @@ migration has to look for:
 - `\item >> \foo` is a stack, and section 14's brace placement renders it over
   three lines, `\item{` then `\foo` then `}`. Text between the name and the
   operator keeps the line raw.
-- `@@foo{A}` is the escape above, so it emits `@foo{A}`. A raw suite emitted it
-  verbatim. `@@@foo{A}` writes the two characters.
+- `@@foo{A}` / `!!foo{A}` are the escapes above, so they emit `@foo{A}` /
+  `!foo{A}`. A raw suite emitted them verbatim. `@@@foo{A}` / `!!!foo{A}`
+  write the doubled characters.
 
 A block suite also keeps blank lines as document content, while the removed
 handler dropped the blank separators between items.

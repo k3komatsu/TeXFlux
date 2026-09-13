@@ -7,6 +7,7 @@
 | モジュールシステム | `b3e8e33` で `main` に統合済み（§A） |
 | 文字列 interpolation（`!text`） | **設計完了・実装未着手**（§B） |
 | `!items` の削除 | `feature/remove-items` で実施済み（§C） |
+| 行頭 `!!` raw escape | **設計決定済み・実装未着手**（§D） |
 
 ---
 
@@ -67,6 +68,95 @@ marker を含まない既存文書の出力がバイト単位で変わらない�
 
 複数コミットにまたがる作業なので `feature/string-interpolation` を切って進める
 （`AGENTS.md` の branch rule）。`main` へは直接コミットしない。
+
+---
+
+# §D 行頭 `!!` raw escape — 次の作業
+
+## 決定
+
+行頭の `!!` を、`@@` と同じ規則の raw-line escape として追加する。`!!foo` は
+`!foo` という生の TeX 行を出力する。
+
+## なぜ要るか
+
+`@` には `@@` があるが `!` には対応する escape が無い、という**元からある非対称**。
+`!items` の raw suite が項目本文についてだけ穴を塞いでいたが、それを削除して
+露出した。実測で今日失敗するもの:
+
+| 入力 | 結果 |
+| --- | --- |
+| `@verbatim: \|` の本文行 `!important` | `DirectiveError` |
+| `@lstlisting: \|` の `!! # ...` | `ParseError: invalid structural name` |
+| 散文 `!重要` | `ParseError`（`!` の次は ASCII 英字でないと名前にならない） |
+| シーケンス payload `- !bar` | `DirectiveError` |
+
+## なぜ `!raw{...}` ではないか
+
+1. **`!raw{...}` はインデントできない。** `!` 始まりの行はブロック基準位置ちょうど
+   にしか書けない（`first in {"@", "!"} and line.indent != base` → indent error）。
+   字下げされた listing 本文という最も必要な場面で使えない。`@@` の分岐は
+   **インデント検査より前**にあり `rest[:extra]` で字下げを保存するので、`!!` は
+   その性質を継承する。
+2. 不均衡な `{` を書けない（`scan_group` が balance を要求する）。
+3. 行単位で効く `!raw: |` が欲しくなるが、それは parser が special 名をハードコード
+   して suite を raw にする仕組み、すなわち §C で削除した `raw_suite` の復活である。
+
+## 変更箇所（2 箇所だけ）
+
+`src/texflux/parser.py` のみ。他のモジュールは変更しない。
+
+1. `_block`（現 520 行付近）
+   ```python
+   if first == "@" and rest[extra : extra + 2] == "@@":
+   ```
+   → `if first in {"@", "!"} and rest[extra : extra + 2] == first * 2:`
+   本体（`rest[:extra] + rest[extra + 1 :]`）は変更不要。
+
+2. `_sequence_entry`（現 778 行付近）
+   ```python
+   if payload.startswith("@@"):
+   ```
+   → `if payload[:2] in {"@@", "!!"}:`
+   直後の `elif payload[0] in "\\@!":` はそのまま残す。
+
+## 決めておくべき細部
+
+- `!!` 単独 → `!`、`!!!foo` → `!!foo`。`@@` と同じ doubling。
+- `!!literal >>` は生の行なので行末 `>>` は継続にならない（`@@` と同じ。
+  `tests/test_parser.py:48` の対応物）。
+- 非 ASCII が続く場合（`!!重要` → `!重要`）も通る。これが散文のケースを救う。
+
+## 文字列 interpolation 設計との衝突（必ず対応する）
+
+`doc/string-interpolation.md` の **D9 は「行頭 `!!` の raw-line escape は導入しない」
+と書いてある。この決定は覆る**ので D9 を書き換えること。あわせて §3.3 に、二層に
+なることを明記する:
+
+```text
+!!text{x}   → parser が ! を1つ剥がす → RawTex "!text{x}" → 補間される
+!!!text{x}  → "!!text{x}" → 走査器が escape → リテラル "!text{x}"
+```
+
+実際には踏まない（テンプレート行頭の `!text{` は設計上すでに T01 エラー）が、
+記録しないと実装者が混乱する。
+
+## 文書の更新先
+
+`@@` が書かれている場所と対にする:
+
+- `doc/dsl.md:55-58`（`@@` の説明）、`:378-381`（§8 の表）、`:521`、`:1072`
+- `texflux_tex_first_dsl_v1_spec.md:66`、`:341`、`:420`、`:430-431`
+- `AGENTS.md` の source-of-truth 規則（`@@` に触れている箇所）と review checklist
+- `README.md` のチートシート注記
+
+## テスト
+
+`@@` のテストと対にする: `tests/test_parser.py:48`, `:128-129`,
+`tests/test_compile.py:362`, `:383`。加えて §D の「なぜ要るか」表の 4 ケースが
+`!!` で書けるようになることを固定する。golden は `tests/golden/source-comments`
+が `@@` を含むだけなので、`!!` 専用の golden を足すかは AGENTS.md の
+「既存ケースが覆う形を重ねない」規則で判断する。
 
 ---
 

@@ -30,7 +30,7 @@
 | D6 | 新しい `RenderRole` `"scaffold"`（rank 1）をテンプレート側リテラルに与える | §10.4 参照。これが無いと列情報なしの SyncTeX 入力で `remap` が `ambiguous source mappings` を送出する |
 | D7 | built-in special の引数は fail-closed。許可リストは `{vpad}` のみで開始する | `!vpad` の group は `\vspace{...}` としてそのまま出力される唯一の output-oriented special。将来 special が増えても metadata が勝手に動的化しない |
 | D8 | マクロテンプレート外のテキストフィールドに marker があればエラーにする | 綴り間違いが黙って TeX に流れる事故を防ぐ。リポジトリ内に literal `!text{` は存在しないため実質的な非互換は無い（§15.4） |
-| D9 | escape は `!!text{` と `\!text{` の 2 系統。行頭 `!!` の raw-line escape は導入しない | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は core semantics から独立した別機能 |
+| D9 | 補間の escape は `!!text{` と `\!text{` の 2 系統。独立した行頭 `!!` raw-line escape と二層になる（§3.3） | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は `@@` と対になる別機能として導入し、parser が先に1文字剥がす |
 
 ---
 
@@ -89,6 +89,8 @@
 
 ### 3.3 escape
 
+次の表の入力は、parser による raw-line escape 処理後のテキストフィールドである。
+
 | 入力 | 出力 | 備考 |
 |---|---|---|
 | `!!text{NAME}` | literal `!text{NAME}` | 生成した `!text{` は再走査しない |
@@ -96,6 +98,17 @@
 | `\!text{NAME}` | そのまま（marker と見なさない） | `syntax.is_escaped` による。`\!` は TeX の負の細空白 |
 
 escape の判定順序は **`!!` を先に、`\` の判定をその前に**行う（§3.5 の擬似コード参照）。
+
+行頭では parser の raw-line escape と補間走査器の escape の二層になる。
+本設計の補間を実装した場合、マクロテンプレート内では次の順で処理する:
+
+```text
+!!text{x}   → parser が ! を1つ剥がす → RawTex "!text{x}" → 補間される
+!!!text{x}  → "!!text{x}" → 走査器が escape → リテラル "!text{x}"
+```
+
+エスケープせず AST 位置に書いた `!text{x}` は引き続き T01 エラーになる。
+補間実装前の現在は parser の処理のみで、`!!text{x}` はリテラル `!text{x}` を出力する。
 
 ### 3.4 marker と見なさないもの
 
@@ -510,7 +523,9 @@ def _emit_text(emitter, text, parts, span, base_role):
   opaque な `str` のまま残る。
 - `!inner{!text{a}-!text{b}}` も 1 個の required group として scan される。
 
-したがって一般文法の変更は不要である。`!!` の行頭 raw-line escape も導入しない（D9）。
+したがって補間の実装に伴う一般文法の変更は不要である。独立機能として導入した
+`!!` の行頭 raw-line escape は parser が処理し、補間走査器はその後の文字列を読む
+（D9、§3.3）。
 
 ### 10.2 `!text` が AST 位置に現れる経路
 

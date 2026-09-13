@@ -360,6 +360,7 @@ class CompileTests(unittest.TestCase):
             ("\\item Summary:{}", "\\item Summary:{}"),
             ("\\TextCA{Note}:{}", "\\TextCA{Note}:{}"),
             ("@@foo{A}", "@foo{A}"),
+            ("!!foo{A}", "!foo{A}"),
         ):
             with self.subTest(body=body):
                 self.assertEqual(
@@ -384,6 +385,11 @@ class CompileTests(unittest.TestCase):
             "\\begin{itemize}\n@@foo{A}\n\\end{itemize}\n",
         )
 
+        self.assertEqual(
+            compile_text("@itemize: |\n    !!!foo{A}\n"),
+            "\\begin{itemize}\n!!foo{A}\n\\end{itemize}\n",
+        )
+
         # A block suite keeps blank lines; the removed handler dropped the
         # blank separators between items.
         self.assertEqual(
@@ -394,6 +400,18 @@ class CompileTests(unittest.TestCase):
             compile_text("@itemize: |\n    \\item a >> b\n"),
             "\\begin{itemize}\n\\item a >> b\n\\end{itemize}\n",
         )
+
+    def test_exclamation_raw_line_escape_use_cases(self):
+        for source, expected in (
+            ("@verbatim: |\n    !!important\n",
+             "\\begin{verbatim}\n!important\n\\end{verbatim}\n"),
+            ("@lstlisting: |\n       !!! # { >>:\n",
+             "\\begin{lstlisting}\n   !! # { >>:\n\\end{lstlisting}\n"),
+            ("!!重要\n", "!重要\n"),
+            ("\\foo:\n    - !!bar\n", "\\foo{!bar}\n"),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(compile_text(source), expected)
 
     def test_special_and_container_errors_have_spans(self):
         with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):

@@ -45,7 +45,7 @@ class ParserTests(unittest.TestCase):
                     parse(source, "x.tfx")
 
     def test_raw_tex_does_not_continue_on_trailing_arrows(self):
-        source = "raw >>\n\\foo{A >>}\n\\verb|x| >>\n@@literal >>\n"
+        source = "raw >>\n\\foo{A >>}\n\\verb|x| >>\n@@literal >>\n!!literal >>\n"
         self.assertTrue(all(isinstance(n, RawTex) for n in parse(source).body.nodes))
         entries = parse("\\foo:\n    - literal >>\n    - next\n").body.nodes[0]
         self.assertEqual(len(entries.suite.nodes), 2)
@@ -125,10 +125,12 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(second.groups[0].value, "\\texttt{A: B}")
 
     def test_ordinary_commands_remain_raw(self):
-        block = parse("@foo: |\n    @@literal\n", "x.tfx").body.nodes[0]
-        sequence = parse("\\foo:\n    - @@literal\n", "x.tfx").body.nodes[0]
-        self.assertEqual(block.suite.nodes[0].text, "@literal")
-        self.assertEqual(sequence.suite.nodes[0].value.nodes[0].text, "@literal")
+        for prefix in ("@", "!"):
+            with self.subTest(prefix=prefix):
+                block = parse(f"@foo: |\n    {prefix * 2}literal\n", "x.tfx").body.nodes[0]
+                sequence = parse(f"\\foo:\n    - {prefix * 2}literal\n", "x.tfx").body.nodes[0]
+                self.assertEqual(block.suite.nodes[0].text, prefix + "literal")
+                self.assertEqual(sequence.suite.nodes[0].value.nodes[0].text, prefix + "literal")
 
         document = parse(
             "\\foo{A}\n"
@@ -141,6 +143,31 @@ class ParserTests(unittest.TestCase):
             "\\verb|a >> b|",
             "\\includegraphics[width=.8\\textwidth]{fig.pdf}",
         ])
+
+    def test_raw_line_escapes_preserve_extra_indentation_and_spans(self):
+        for prefix in ("@", "!"):
+            with self.subTest(prefix=prefix):
+                node = parse(
+                    f"@lstlisting: |\n       {prefix * 2}literal {{ >>:\n",
+                    "escape.tfx",
+                ).body.nodes[0].suite.nodes[0]
+                self.assertIsInstance(node, RawTex)
+                self.assertEqual(node.text, f"   {prefix}literal {{ >>:")
+                self.assertEqual(node.span.file, "escape.tfx")
+                self.assertEqual((node.span.start.line, node.span.start.column), (2, 5))
+
+    def test_raw_line_escapes_strip_exactly_one_prefix(self):
+        for prefix in ("@", "!"):
+            for tail in ("", prefix + "foo", "重要", "literal >>", "literal {:"):
+                with self.subTest(prefix=prefix, tail=tail):
+                    raw = prefix * 2 + tail
+                    node = parse(raw + "\n").body.nodes[0]
+                    entry = parse(f"\\foo:\n    - {raw}\n").body.nodes[0].suite.nodes[0]
+                    self.assertIsInstance(node, RawTex)
+                    self.assertIsInstance(entry.value.nodes[0], RawTex)
+                    self.assertEqual(node.text, prefix + tail)
+                    self.assertEqual(entry.value.nodes[0].text, prefix + tail)
+                    self.assertEqual(entry.value.nodes[0].span.start.column, 7)
 
     def test_plain_sequence_rejects_unmarked_children(self):
         with self.assertRaisesRegex(ParseError, "sequence suites"):
