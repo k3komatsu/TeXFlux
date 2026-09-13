@@ -247,11 +247,11 @@ __all__ = [
     "SequenceEntry",
     "SourcePosition",
     "SourceSpan",
+    "SourceText",
     "SpecialInvocation",
     "Stack",
     "SuiteMode",
     "SyntaxNode",
-    "SourceText",
     "TextFragment",
     "plain_text",
 ]

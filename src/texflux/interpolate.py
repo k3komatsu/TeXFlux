@@ -68,8 +68,10 @@ def interpolate(
     found = False
 
     def literal(value: str) -> None:
+        # Only a template's own literals are scaffolding; the same text written
+        # at a call site is the caller's content and keeps the higher rank.
         if value:
-            parts.append(TextFragment(value, target, scaffold=True))
+            parts.append(TextFragment(value, target, scaffold=lookup is not None))
 
     while (j := text.find("!", i)) >= 0:
         if is_escaped(text, j):

@@ -424,6 +424,24 @@ class InterpolationSourceMapTests(unittest.TestCase):
                                     for f in result.rendered.fragments))
                 self.assertEqual(result.text, "".join(f.text for f in result.rendered.fragments))
 
+    def test_escaped_marker_in_a_caller_value_stays_content(self):
+        # The caller writes the escape, so its literal text is content even
+        # though the same scan produces a template's scaffolding elsewhere.
+        source = (
+            "!defmacro{m}{x}: |\n"
+            "    prefix !text{x}\n"
+            "!m: |\n"
+            "    !!!text{literal}\n"
+        )
+        result = compile_with_map(source, filename="m.tfx")
+        fragments = {f.text: f for f in result.rendered.fragments}
+        self.assertEqual(result.text, "prefix !text{literal}\n")
+        self.assertEqual(fragments["prefix "].role, "scaffold")
+        self.assertEqual(fragments["prefix "].source.start.line, 3)
+        value = fragments["!text{literal}"]
+        self.assertEqual(value.role, "content")
+        self.assertEqual((value.source.start.line, value.source.start.column), (4, 5))
+
 
 class MacroFormTests(unittest.TestCase):
     """A template construct needs a ': |' suite that is actually written."""

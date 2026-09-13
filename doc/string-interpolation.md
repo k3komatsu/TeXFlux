@@ -303,7 +303,13 @@ def text_value(name: str, frame: _Frame) -> SourceText:
   `RawTex` は `0`、インライン `Argument` は `1`（開き delimiter の分）。
 - hole は `text_value(name, frame)` が返す `SourceText` を**そのまま連結**する
   （原案 §16 の要求 2）。1 文字も書き換えず、走査もしない（D3）。
-- リテラル部は `TextFragment(literal, target, scaffold=True)`。
+- リテラル部は `TextFragment(literal, target, scaffold=lookup is not None)`。
+  `scaffold` は「macro template が書いたリテラル」を低優先度に落とすための role
+  なので、`lookup is None`（テンプレート文脈の外＝呼び出し側やトップレベルの
+  テキスト）で走った補間のリテラルは呼び出し側の content であり、`scaffold` を
+  名乗ってはならない。名乗ると、呼び出し側の値に含まれる escape（`!!text{...}`）が
+  content の rank を失い、列情報なしの SyncTeX 入力で `ambiguous source mappings`
+  になり得る。
   連続するリテラルは 1 個の fragment にまとめてよい（`MappedEmitter` 側でも
   coalesce されるため、出力は同一）。
 - 返り値は §3.5 の `found` が真のときだけ `SourceText`、偽なら `None`。
@@ -467,6 +473,7 @@ command / environment / special / macro の名前は `parser.HeaderScanner._segm
 |---|---|
 | テンプレートのリテラル部（`scaffold=True`） | `"scaffold"` |
 | hole に入った呼び出し側の値 | その位置の既定 role（`RawTex` と group content なら `"content"`） |
+| 呼び出し側・トップレベルのテキストを走査して得たリテラル部（`scaffold=False`） | その位置の既定 role |
 
 ### 9.2 `render.py` の変更
 
@@ -891,6 +898,9 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 - それぞれの `role` が `"content"` / `"scaffold"` であること。
 - `.tfxm` 越しの nested macro でも、すべての fragment がルート `.tfx` の呼び出し行を
   指すこと（テンプレートは常に呼び出し位置へ再ターゲットされるため）。
+- 呼び出し側の値に書かれた escape（`!m: |` の suite に `!!!text{literal}`）の
+  fragment が `"content"` であり、値の行・列を指すこと。テンプレートのリテラルだけが
+  `"scaffold"` になる（§5.1）。
 - `result.text` が fragment の単純連結と一致すること。
 
 ### 14.3 remap 回帰（`tests/test_remap.py` に追記）

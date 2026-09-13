@@ -106,6 +106,15 @@ class SyncTeXRemapTests(TempDirTestCase):
         rewritten = self.remap(_sync(b"v1,1:100,200:3,4,5"), map_path)
         self.assertIn(b"v3,4:100,200:3,4,5\n", rewritten)
 
+    def test_an_escaped_marker_in_a_value_still_remaps_without_columns(self):
+        # The caller's own escape is content, so it outranks the template
+        # literal on the same generated line instead of tying with it.
+        map_path, _ = self.compile_to_disk(
+            "!defmacro{m}{x}: |\n    prefix !text{x}\n!m: |\n    !!!text{literal}\n"
+        )
+        rewritten = self.remap(_sync(b"v1,1:100,200:3,4,5"), map_path)
+        self.assertIn(b"v3,4:100,200:3,4,5\n", rewritten)
+
     def test_remaps_generated_input_to_tfx_source(self):
         generated = b"\\hbox{Generated}\n"
         source = b"first\nsecond\n"

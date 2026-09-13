@@ -53,6 +53,7 @@ class InterpolationModuleTests(TempDirTestCase):
         with self.assertRaisesRegex(MacroExpansionError, "!text is only valid inside a textual field"):
             compile_text("!macroimport{style.tfxm}\n!m{A}\n", filename=str(self.root / "main.tfx"))
 
+
 class GuardTests(unittest.TestCase):
     """The import-free pipeline names the module constructs it cannot run."""
 

@@ -12,6 +12,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
+import texflux
 from texflux import (
     Argument, ArgumentLayout, AstCompilationResult, Block, GenericInvocation,
     GroupKind, compile_ast, compile_with_map, parse, render, serialize_ast,
@@ -162,7 +163,9 @@ class AstCliTests(TempDirTestCase):
         path = self.write("slides.tfx", "日本😀\n")
         process = subprocess.run(
             [sys.executable, "-m", "texflux", "ast", str(path), "-o", "-"],
-            env={**os.environ, "PYTHONIOENCODING": "ascii"}, capture_output=True,
+            env={**os.environ, "PYTHONIOENCODING": "ascii",
+                 "PYTHONPATH": str(Path(texflux.__file__).resolve().parents[1])},
+            capture_output=True,
         )
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertIn("日本😀".encode("utf-8"), process.stdout)
