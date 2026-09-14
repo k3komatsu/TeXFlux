@@ -30,6 +30,7 @@ from .ast import (
     RawTex,
     SequenceEntry,
     SourceSpan,
+    SourceText,
     SpecialInvocation,
     Stack,
     SuiteMode,
@@ -354,6 +355,29 @@ def chain_text(chain: tuple[MacroDefinition, ...]) -> str:
     )
 
 
+def _text_field(
+    text: str,
+    parts: SourceText | None,
+    *,
+    origin: SourceSpan,
+    target: SourceSpan,
+    offset: int,
+    frame: _Frame | None,
+) -> tuple[str, SourceText | None]:
+    """Interpolate one text field, unless its fragments are already final.
+
+    Existing fragments, literal escaped markers included, are never scanned
+    again. ``offset`` is where the text starts inside ``origin``: one column
+    in for a group's contents, none for a raw line.
+    """
+
+    if parts is None:
+        parts = interpolate(
+            text, origin=origin, target=target, offset=offset, lookup=frame,
+        )
+    return (text if parts is None else plain_text(parts)), parts
+
+
 def _error(
     message: str,
     span: SourceSpan,
@@ -447,19 +471,18 @@ class _Expander:
                 return (self._entry(node, frame),)
             case RawTex():
                 target = self._span(node.span, frame)
-                # Existing fragments are final, including literal escaped markers;
-                # a raw-region line is verbatim and is never a text field at all.
-                parts = node.parts
-                if parts is None and not node.verbatim:
-                    parts = interpolate(
-                        node.text, origin=node.span, target=target, offset=0, lookup=frame,
-                    )
-                return (replace(
-                    node,
-                    text=node.text if parts is None else plain_text(parts),
-                    span=target,
-                    parts=parts,
-                ),)
+                if node.verbatim:
+                    # A raw-region line is never a text field at all.
+                    return (replace(node, span=target),)
+                text, parts = _text_field(
+                    node.text,
+                    node.parts,
+                    origin=node.span,
+                    target=target,
+                    offset=0,
+                    frame=frame,
+                )
+                return (replace(node, text=text, span=target, parts=parts),)
             case Stack():
                 raise TypeError("macro expansion requires a desugared syntax AST")
             case _:
@@ -523,17 +546,15 @@ class _Expander:
         if not allowed:
             self._reject(value, argument.span, f"{owner}'s arguments", frame)
             return replace(argument, span=target)
-        parts = argument.parts
-        if parts is None:
-            parts = interpolate(
-                value, origin=argument.span, target=target, offset=1, lookup=frame,
-            )
-        return replace(
-            argument,
-            value=value if parts is None else plain_text(parts),
-            span=target,
-            parts=parts,
+        text, parts = _text_field(
+            value,
+            argument.parts,
+            origin=argument.span,
+            target=target,
+            offset=1,
+            frame=frame,
         )
+        return replace(argument, value=text, span=target, parts=parts)
 
     def _entry(self, node: SequenceEntry, frame: _Frame | None) -> SequenceEntry:
         return replace(
@@ -743,14 +764,15 @@ class _Expander:
                     code="E017",
                 )
             target = self._span(group.span, frame)
-            parts = group.parts
-            if parts is None:
-                parts = interpolate(
-                    text, origin=group.span, target=target, offset=1, lookup=frame,
-                )
-            values.append((RawTex(
-                text if parts is None else plain_text(parts), target, parts,
-            ),))
+            text, parts = _text_field(
+                text,
+                group.parts,
+                origin=group.span,
+                target=target,
+                offset=1,
+                frame=frame,
+            )
+            values.append((RawTex(text, target, parts),))
 
         if node.suite is not None:
             if node.suite_mode is SuiteMode.SEQUENCE:

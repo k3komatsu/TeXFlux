@@ -71,12 +71,6 @@ class SyncTeXRecord:
     point_span: tuple[int, int] | None = None
 
     @property
-    def source_link(self) -> SyncTeXLink | None:
-        """Alias that makes the source-bearing role explicit to remappers."""
-
-        return self.link
-
-    @property
     def is_compressed(self) -> bool:
         return self.point is not None and self.point.compressed
 
@@ -126,8 +120,6 @@ class SyncTeXDocument:
     settings: tuple[SyncTeXSetting, ...]
     count: int | None
     count_line: int | None
-    postamble_line: int | None
-    post_scriptum_line: int | None
 
     @property
     def records(self) -> tuple[SyncTeXRecord, ...]:
@@ -319,8 +311,6 @@ def parse_synctex(data: bytes | bytearray | memoryview) -> SyncTeXDocument:
     lines: list[SyncTeXLine] = []
     count: int | None = None
     count_line: int | None = None
-    postamble_line: int | None = None
-    post_scriptum_line: int | None = None
     section = "preamble"
     last_vertical: int | None = None
 
@@ -335,12 +325,7 @@ def parse_synctex(data: bytes | bytearray | memoryview) -> SyncTeXDocument:
             input_record = _parse_input(body)
             inputs.append(input_record)
         elif body in _SECTION_NAMES:
-            section = _SECTION_NAMES[body]
-            line_section = section
-            if section == "postamble":
-                postamble_line = len(lines)
-            elif section == "postscript":
-                post_scriptum_line = len(lines)
+            section = line_section = _SECTION_NAMES[body]
         elif body.startswith(_COUNT_PREFIX):
             count = _integer(body[len(_COUNT_PREFIX) :], "SyncTeX Count")
             count_line = len(lines)
@@ -377,8 +362,6 @@ def parse_synctex(data: bytes | bytearray | memoryview) -> SyncTeXDocument:
         tuple(settings),
         count,
         count_line,
-        postamble_line,
-        post_scriptum_line,
     )
 
 

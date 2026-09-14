@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 import sys
 
@@ -103,17 +103,47 @@ def _write_stdout(text: str) -> None:
         sys.stdout.write(text)
 
 
+def _reject_paths(input_path: Path, output: str | Path | None) -> int | None:
+    """An exit status refusing the paths, or ``None`` when they are usable."""
+
+    if input_path.suffix != ".tfx":
+        return _fail("input must have a .tfx extension")
+    if output is not None and same_path(input_path, output):
+        return _fail("input and output must be different paths")
+    return None
+
+
+def _run(command: Callable[[], int], *, filename: object, failure: int = 1) -> int:
+    """Run one command body, turning what it raises into an exit status.
+
+    A document error prints its diagnostic line and exits 1. A problem with
+    the invocation itself -- a bad flag, an unreadable file, a broken
+    install -- exits with ``failure``, which ``check`` sets to 2 so that
+    "the document has an error" and "the document could not be looked at"
+    stay distinct.
+    """
+
+    try:
+        return command()
+    except TeXFluxError as error:
+        print(error.diagnostic(), file=sys.stderr)
+        return 1
+    except (FlagError, InternalError, ValueError, OSError) as error:
+        return _fail(str(error), failure)
+    except RecursionError:
+        # Deeply nested composition or macro expansion exhausts the
+        # interpreter stack before any TeXFlux limit is reached.
+        return _fail(f"{filename}: input nests too deeply to compile", failure)
+
+
 def _compile(args: argparse.Namespace) -> int:
     """Compile one .tfx file, writing the .tex and its .tfxmap side by side."""
 
-    input_path = Path(args.input)
-    output_path = Path(args.output)
-    if input_path.suffix != ".tfx":
-        return _fail("input must have a .tfx extension")
-    if same_path(input_path, output_path):
-        return _fail("input and output must be different paths")
+    input_path, output_path = Path(args.input), Path(args.output)
+    if (status := _reject_paths(input_path, output_path)) is not None:
+        return status
 
-    try:
+    def command() -> int:
         # with_name rejects a directory-like output path such as "/".
         map_path = output_path.with_name(output_path.name + ".tfxmap")
         source_bytes = input_path.read_bytes()
@@ -137,45 +167,36 @@ def _compile(args: argparse.Namespace) -> int:
             print(warning.diagnostic(), file=sys.stderr)
         output_path.write_bytes(output_bytes)
         map_path.write_text(map_text, encoding="utf-8", newline="\n")
-    except TeXFluxError as error:
-        print(error.diagnostic(), file=sys.stderr)
-        return 1
-    except (FlagError, InternalError, ValueError, OSError) as error:
-        return _fail(str(error))
-    except RecursionError:
-        # Deeply nested composition or macro expansion exhausts the
-        # interpreter stack before any TeXFlux limit is reached.
-        return _fail(f"{input_path}: input nests too deeply to compile")
-    return 0
+        return 0
+
+    return _run(command, filename=input_path)
 
 
 def _ast(args: argparse.Namespace) -> int:
     """Export a session's canonical AST without rendering TeX or a source map."""
 
     input_path = Path(args.input)
-    if input_path.suffix != ".tfx":
-        return _fail("input must have a .tfx extension")
-    if args.output != "-" and same_path(input_path, args.output):
-        return _fail("input and output must be different paths")
-    try:
+    to_stdout = args.output == "-"
+    status = _reject_paths(input_path, None if to_stdout else args.output)
+    if status is not None:
+        return status
+
+    def command() -> int:
         source_bytes = input_path.read_bytes()
         result = compile_ast(
-            source_bytes.decode("utf-8"), filename=str(input_path),
-            flags=_flags(args.flags), source_bytes=source_bytes,
+            source_bytes.decode("utf-8"),
+            filename=str(input_path),
+            flags=_flags(args.flags),
+            source_bytes=source_bytes,
         )
         text = serialize_ast(result, pretty=args.pretty)
-        if args.output == "-":
+        if to_stdout:
             _write_stdout(text)
         else:
             Path(args.output).write_bytes(text.encode("utf-8"))
-    except TeXFluxError as error:
-        print(error.diagnostic(), file=sys.stderr)
-        return 1
-    except (FlagError, InternalError, ValueError, OSError) as error:
-        return _fail(str(error))
-    except RecursionError:
-        return _fail(f"{input_path}: input nests too deeply to compile")
-    return 0
+        return 0
+
+    return _run(command, filename=input_path)
 
 
 def _check_input(args: argparse.Namespace) -> str | int:
@@ -210,7 +231,7 @@ def _check(args: argparse.Namespace) -> int:
     if isinstance(filename, int):
         return filename
 
-    try:
+    def command() -> int:
         source_bytes = (
             sys.stdin.buffer.read()
             if args.input == "-"
@@ -234,11 +255,9 @@ def _check(args: argparse.Namespace) -> int:
                 )
             if lines:
                 _write_stdout("\n".join(lines) + "\n")
-    except (FlagError, InternalError, ValueError, OSError) as error:
-        return _fail(str(error), 2)
-    except RecursionError:
-        return _fail(f"{filename}: input nests too deeply to compile", 2)
-    return 0 if report.ok else 1
+        return 0 if report.ok else 1
+
+    return _run(command, filename=filename, failure=2)
 
 
 def _synctex_remap(args: argparse.Namespace) -> int:

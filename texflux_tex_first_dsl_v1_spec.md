@@ -6,7 +6,7 @@ This document is normative for the TeXFlux v1 language. The implementation,
 tests, examples, README, and doc/dsl.md must agree with it.
 
 TeXFlux is a Python 3.11+ TeX-first preprocessor. It preserves raw TeX and
-provides only structural syntax for containers, values, itemize, and source
+provides only structural syntax for containers, values, and source
 provenance. It does not parse TeX or infer command/environment signatures.
 
 The fixed mental model is:
@@ -153,17 +153,15 @@ selects sequence mode. A pipe is never part of suite syntax:
 Any trailing token after this suffix is a ParseError. A pipe elsewhere in raw
 TeX is not syntax.
 
-The established ordinary-TeX spelling with an immediately attached binding-like
-text, `\foo(x):`, remains raw TeX so that the
-parenthesized text after a command is not reclassified by this migration.
-The `(...)` here is not a TeXFlux binding list. This compatibility exception
-does not apply to `::`; `\foo(x)::` remains a structural parse error.
-For an ordinary command, a single colon followed by non-space text is not a
-suffix: `\texttt{std}:vector` remains raw TeX. The `|` and `>>` tokens are
-the deliberate exceptions: they make the failed structural scan stay an
-error so old pipe suites and malformed stack headers fail rather than
-degrade. Once `::` is recognized, a following token is an error, so
-`\texttt{std}::vector` is invalid.
+The ordinary-TeX spelling with parenthesized text attached to a command
+name, `\foo(x):`, remains raw TeX: the `(...)` here is not a TeXFlux binding
+list. This exception does not apply to `::`; `\foo(x)::` is a structural
+parse error. For an ordinary command, a single colon followed by non-space
+text is not a suffix: `\texttt{std}:vector` remains raw TeX. The `|` and `>>`
+tokens are the deliberate exceptions: they make the failed structural scan
+stay an error, so a malformed suite marker or stack header fails rather than
+degrading to raw TeX. Once `::` is recognized, a following token is an error,
+so `\texttt{std}::vector` is invalid.
 
 At-sign classification has this precedence:
 
@@ -508,10 +506,10 @@ nothing:
 Every rule of section 10 applies to these five, and no rule of its own does.
 A payload written with a `':'` block suite and a payload written as the rest
 of a `>>` composition are the same single value (section 10.2), and a `'::'`
-sequence suite is one value per `-` or `+` entry there as anywhere else. A `+`
-entry is rejected for these macro calls; a wrong value count is the ordinary
-arity diagnostic; and provenance follows section 15, so each value keeps the
-span of the group or suite the author wrote it in.
+sequence suite binds one value per `-` entry; as at any macro call, a `+`
+entry is rejected (section 10.2). A wrong value count is the ordinary arity
+diagnostic, and provenance follows section 15, so each value keeps the span
+of the group or suite the author wrote it in.
 
 `!drop` needs no primitive and has none. Its template is empty, so the value
 it binds reaches no template position and nothing survives expansion. That is
@@ -528,8 +526,8 @@ weaker than a dropped conditional payload, which section 11.5 never expands
 at all. `!when`/`!unless` is the construct for disabling content that no
 longer compiles; `!drop` discards content that still expands.
 
-The old !vpad special is removed and is not an alias. Spacing is the TeX the
-author chose, placed by the generic combinators:
+There is no spacing special. Spacing is the TeX the author chose, placed by
+the generic combinators:
 
 ~~~text
 !before{\vspace{-1em}}:
@@ -541,12 +539,27 @@ author chose, placed by the generic combinators:
 so the language holds no handler that knows `\vspace`, and no interpolation
 allow-list exists for one construct's arguments.
 
-### 9.2 Removed constructs
+The standard surface is frozen to these five names. A new name SHOULD be
+added only if all of the following hold: the operation is backend-independent;
+it manipulates TeXFlux structural flow rather than TeX presentation; it is
+broadly useful across unrelated projects; its semantics are stable and
+unsurprising; it is not a one-to-one alias of an existing TeX command or
+environment; it meaningfully improves composition with `>>`; and there is
+evidence of repeated real-world use. No convenience combinator is added merely
+because it abbreviates another short composition. Presentation helpers such
+as a figure placement, a two-column layout, a colour or a font switch belong
+in TeX source or in user macro modules, never here. Should the standard
+surface ever grow substantially, the collision rule of section 12.9 may be
+reconsidered as a separate language proposal; while it stays this small,
+strict collision is simpler than any precedence layer.
 
-The old !block, !arg, !body, and !items constructs are removed and are not
-aliases. A list is an ordinary environment holding raw `\item` lines, which
-already carries every overlay, optional label, continuation, and nesting the
-removed mini-grammar supported:
+### 9.2 Reserved former names
+
+`!block`, `!arg`, `!body`, `!items` and `!vpad` are not part of v1 and are
+not aliases: each fails as an unknown special, and none may return under any
+spelling. In particular there is no list mini-grammar. A list is an ordinary
+environment holding raw `\item` lines, which already carries every overlay,
+optional label, continuation, and nesting:
 
 ~~~text
 @itemize:
@@ -556,41 +569,14 @@ removed mini-grammar supported:
 ~~~
 
 An environment body is an ordinary block suite, so every rule in sections 2
-through 7 applies to the lines inside it, `\item` included. The removed
-mini-grammar read its suite as raw text -- the one construct in the language
-that scanned nothing -- so item bodies were exempt from all of them. Nothing
-is exempt now, and four shapes that `!items` accepted are rejected or read
-differently:
-
-- A depth-zero trailing colon makes the line a structural command candidate
-  (section 3), so `\item Summary:` fails. A continuation line that scans as a
-  complete header, such as `\TextCA{Note}::`, fails through the other branch
-  and reports a missing `-`/`+` entry instead. An empty trailing group --
-  `\item Summary:{}` -- writes either one, and changes no TeX: an empty group
-  leaves `\spacefactor` alone, so the colon's end-of-sentence space survives.
-- A line beginning `@` is an environment header; `@@` escapes it.
-- A line beginning `!` is a special; `!!` escapes it, just as `@@` escapes `@`.
-  This also applies inside `@verbatim` and `@lstlisting` bodies.
-
-Two shapes change the output instead of failing, which makes them the ones a
-migration has to look for:
-
-- `\item >> \foo` is a stack, and section 14's brace placement renders it over
-  three lines, `\item{` then `\foo` then `}`. Text between the name and the
-  operator keeps the line raw.
-- `@@foo{A}` / `!!foo{A}` are the escapes above, so they emit `@foo{A}` /
-  `!foo{A}`. A raw suite emitted them verbatim. `@@@foo{A}` / `!!!foo{A}`
-  write the doubled characters.
-
-A block suite also keeps blank lines as document content, while the removed
-handler dropped the blank separators between items.
-
-The suite-suffix migration has one separate silent case: an old sequence
-written as `\foo:` with `-` entries must be changed to `\foo::`. If it is left
-unchanged, the input is now a valid block suite and the entries become one
-multiline argument instead of separate arguments. An empty `:` suite is also
-valid, so a former sequence header with no entries must be reviewed rather
-than expected to fail.
+through 7 applies to the lines inside it, `\item` included, and nothing is
+exempt: a depth-zero trailing colon makes `\item Summary:` a structural
+command candidate (write `\item Summary:{}` -- an empty group leaves
+`\spacefactor` alone, so the colon's end-of-sentence space survives); a line
+beginning `@` or `!` is a header unless `@@` or `!!` escapes it, inside
+`@verbatim` and `@lstlisting` bodies too; `\item >> \foo` is a stack, which
+section 14 renders over three lines. A block suite keeps blank lines as
+document content.
 
 ## 10. Source macros
 
@@ -777,8 +763,8 @@ for markers. No additional static traversal enters dropped payloads.
 RawTex and inline Argument nodes may carry `parts`, and BraceGroup may carry
 `header_parts`: tuples of TextFragment(text, span, scaffold=False). Concatenating
 fragments must equal the associated string; Argument parts require a string
-value. Invalid combinations raise ValueError. An absent parts field preserves
-the previous whole-field provenance. Bound fragments keep their original spans
+value. Invalid combinations raise ValueError. A node without parts maps its
+whole field to its one span. Bound fragments keep their original spans
 and scaffold flags through nested macro calls and module boundaries. Template
 literals point at the call site with the `scaffold` rendering role. Errors in a
 template point at its definition and include the expansion chain and call site.
@@ -786,8 +772,8 @@ template point at its definition and include the expansion chain and call site.
 Rendering fragments must produce exactly the same text as rendering their
 concatenation. The source-map version remains 1; `scaffold` has rank 1, below
 `content` at rank 0 for columnless SyncTeX. Distinct source lines contributing
-multiple content fragments to one generated line remain ambiguous. Documents
-without holes or escapes retain their previous output byte for byte.
+multiple content fragments to one generated line remain ambiguous. A document
+without holes or escapes renders exactly as it would without interpolation.
 
 ## 11. Build flags
 
@@ -1120,6 +1106,13 @@ scaffolding it contributes is retargeted onto the call site like any macro's
 no node type for a standard flow call. A bundled module that fails to parse
 or validate is an installation defect rather than a document error, and is
 reported as one.
+
+Seeding is a property of the compilation session. Module-aware compilation --
+`compile_text`, `compile_with_map`, `compile_ast`, `texflux.diagnose` and the
+CLI -- is the normative public behaviour; the low-level `normalize()` sees no
+standard macros, and a source calling one there fails as an unknown special.
+A new entry point that compiles a document must go through the session so
+that the standard names behave the same everywhere.
 
 ## 13. Normalization and renderer boundary
 

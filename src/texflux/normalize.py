@@ -35,7 +35,7 @@ from .ast import (
 from .errors import DirectiveError, ModuleError, ValidationError
 from .flags import Flags, collect_flags, validate_flag_forms
 from .macros import collect_macros, expand_macros, validate_macro_forms
-from .syntax import sequence_entries
+from .syntax import map_children, sequence_entries
 
 
 #: The in-process special registry: one handler per name. A reusable
@@ -99,30 +99,13 @@ def desugar(document: Document) -> Document:
 
 def _desugar_tree(block: Block) -> Block:
     nodes = tuple(
-        _desugar_child(_desugar_stack(node) if isinstance(node, Stack) else node)
+        map_children(
+            _desugar_stack(node) if isinstance(node, Stack) else node,
+            _desugar_tree,
+        )
         for node in block.nodes
     )
     return replace(block, nodes=nodes)
-
-
-def _desugar_child(node: Node) -> Node:
-    match node:
-        case ParsedInvocation() | SpecialInvocation():
-            return replace(
-                node,
-                groups=tuple(_desugar_argument(group) for group in node.groups),
-                suite=None if node.suite is None else _desugar_tree(node.suite),
-            )
-        case SequenceEntry():
-            return replace(node, value=_desugar_tree(node.value))
-        case _:
-            return node
-
-
-def _desugar_argument(argument: Argument) -> Argument:
-    if isinstance(argument.value, Block):
-        return replace(argument, value=_desugar_tree(argument.value))
-    return argument
 
 
 def _normalize_block(block: Block, registry: DirectiveRegistry) -> Block:
@@ -188,13 +171,10 @@ def _header_arguments(
     )
 
 
-def _suite_mode(
-    node: ParsedInvocation | SpecialInvocation,
-    default: SuiteMode = SuiteMode.BLOCK,
-) -> SuiteMode:
-    """Read a suite mode, applying ``default`` to hand-built AST nodes."""
+def _suite_mode(node: ParsedInvocation | SpecialInvocation) -> SuiteMode:
+    """Read a suite mode, applying the block default to hand-built AST nodes."""
 
-    return node.suite_mode or default
+    return node.suite_mode or SuiteMode.BLOCK
 
 
 def _argument_from_entry(

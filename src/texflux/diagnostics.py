@@ -16,14 +16,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-import hashlib
-import json
-import os
 
-from . import __version__
 from .ast import SourceSpan
 from .errors import RelatedLocation, TeXFluxError, diagnostic_line
 from .flags import Flags
+from .interchange import dump_json, header, span_encoder
 from .modules import CompilationSession, SourceReader, read_source
 from .paths import normalized_path
 from .render import LoadedSource, RenderWarning, render_with_provenance
@@ -209,55 +206,23 @@ def serialize_diagnostics(
     file spelling, indexed into the same source table the external AST uses.
     """
 
-    ids = {source.file: index for index, source in enumerate(report.sources)}
-    if len(ids) != len(report.sources):
-        raise ValueError("diagnostic report sources must have unique file names")
-
-    def span(value: SourceSpan) -> dict:
-        if value.file not in ids:
-            raise ValueError(
-                f"diagnostic span names a file that was not loaded: {value.file}"
-            )
-        return {
-            "source": ids[value.file],
-            "start": {"line": value.start.line, "column": value.start.column},
-            "end": {"line": value.end.line, "column": value.end.column},
+    payload = header("texflux-diagnostics", report.sources)
+    span = span_encoder(report.sources)
+    payload["diagnostics"] = [
+        {
+            "severity": diagnostic.severity,
+            "kind": diagnostic.kind,
+            "code": diagnostic.code,
+            "message": diagnostic.message,
+            "span": span(diagnostic.span),
+            "related": [
+                {"message": related.message, "span": span(related.span)}
+                for related in diagnostic.related
+            ],
         }
-
-    payload = {
-        "format": "texflux-diagnostics",
-        "version": 1,
-        "producer": {"name": "texflux", "version": __version__},
-        "root": 0,
-        "sources": [
-            {
-                "id": index,
-                "file": source.file.replace(os.sep, "/"),
-                "sha256": hashlib.sha256(source.data).hexdigest(),
-            }
-            for index, source in enumerate(report.sources)
-        ],
-        "diagnostics": [
-            {
-                "severity": diagnostic.severity,
-                "kind": diagnostic.kind,
-                "code": diagnostic.code,
-                "message": diagnostic.message,
-                "span": span(diagnostic.span),
-                "related": [
-                    {"message": related.message, "span": span(related.span)}
-                    for related in diagnostic.related
-                ],
-            }
-            for diagnostic in report.diagnostics
-        ],
-    }
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        indent=2 if pretty else None,
-        separators=None if pretty else (",", ":"),
-    ) + "\n"
+        for diagnostic in report.diagnostics
+    ]
+    return dump_json(payload, pretty=pretty)
 
 
 __all__ = [

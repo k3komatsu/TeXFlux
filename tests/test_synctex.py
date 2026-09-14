@@ -125,7 +125,6 @@ class SyncTeXCodecTests(TempDirTestCase):
             [b"!", b"{", b"[", b"v", b"h", b"f", b"<", b"z", b"%", b">", b"]", b"}"],
         )
         box = next(record for record in document.records if record.kind == b"[")
-        self.assertEqual(box.link, box.source_link)
         self.assertEqual(box.link.tag, 1)
         self.assertEqual(box.link.line, 4)
         self.assertEqual(box.link.column, 9)

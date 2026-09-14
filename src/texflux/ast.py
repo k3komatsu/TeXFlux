@@ -56,6 +56,15 @@ def plain_text(parts: SourceText) -> str:
     return "".join(fragment.text for fragment in parts)
 
 
+def _check_parts(parts: SourceText | None, text: object, owner: str) -> None:
+    """Reject provenance fragments that do not spell ``text`` exactly."""
+
+    if parts is not None and (
+        not isinstance(text, str) or plain_text(parts) != text
+    ):
+        raise ValueError(f"{owner} parts must match its text")
+
+
 class GroupKind(StrEnum):
     """A TeX group, identified by the delimiter pair that encloses it."""
 
@@ -137,10 +146,7 @@ class Argument:
     parts: SourceText | None = None
 
     def __post_init__(self) -> None:
-        if self.parts is not None and (
-            not isinstance(self.value, str) or plain_text(self.parts) != self.value
-        ):
-            raise ValueError("Argument parts must match its string value")
+        _check_parts(self.parts, self.value, "Argument")
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,8 +158,7 @@ class RawTex:
     verbatim: bool = False
 
     def __post_init__(self) -> None:
-        if self.parts is not None and plain_text(self.parts) != self.text:
-            raise ValueError("RawTex parts must match its text")
+        _check_parts(self.parts, self.text, "RawTex")
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,11 +226,7 @@ class BraceGroup:
     header_parts: SourceText | None = None
 
     def __post_init__(self) -> None:
-        if (
-            self.header_parts is not None
-            and plain_text(self.header_parts) != self.header_raw
-        ):
-            raise ValueError("BraceGroup header_parts must match its header_raw")
+        _check_parts(self.header_parts, self.header_raw, "BraceGroup header")
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,7 +20,8 @@ about module boundaries.
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from enum import StrEnum
 import importlib.resources
@@ -34,12 +35,10 @@ from .ast import (
     Document,
     GroupKind,
     Node,
-    ParsedInvocation,
     RawTex,
     SourcePosition,
     SourceSpan,
     SpecialInvocation,
-    SequenceEntry,
 )
 from .errors import (
     InternalError,
@@ -72,7 +71,7 @@ from .normalize import (
 from .parser import parse
 from .paths import normalized_path
 from .render import LoadedSource
-from .syntax import demand_text, required_text, stacks, walk
+from .syntax import demand_text, map_children, required_text, stacks, walk
 
 
 class ModuleKind(StrEnum):
@@ -80,6 +79,12 @@ class ModuleKind(StrEnum):
 
     CONTENT = ".tfx"
     MACRO = ".tfxm"
+
+    @property
+    def construct(self) -> "Module":
+        """The special that imports a module of this kind."""
+
+        return Module.IMPORT if self is ModuleKind.CONTENT else Module.MACROIMPORT
 
 
 class Module(StrEnum):
@@ -144,7 +149,6 @@ class ModuleSource:
 
     path: str            # canonical identity
     display: str         # the spelling spans and diagnostics use
-    kind: ModuleKind
     data: bytes          # file bytes, for the source map's digest
     document: Document   # parsed syntax AST, before desugaring
 
@@ -190,11 +194,8 @@ def resolve_module_path(
             code="M004",
         )
     if not written.endswith(kind.value):
-        construct = (
-            Module.IMPORT if kind is ModuleKind.CONTENT else Module.MACROIMPORT
-        )
         raise ModuleError(
-            f"!{construct} requires a '{kind.value}' module; got '{written}'",
+            f"!{kind.construct} requires a '{kind.value}' module; got '{written}'",
             span,
             code="M005",
         )
@@ -535,6 +536,33 @@ def merge_imports(
     return environment
 
 
+def collect_macro_module(
+    document: Document,
+    display: str,
+    module: str,
+    registry: DirectiveRegistry,
+    standard: Container[str] = (),
+) -> tuple[dict[str, MacroDefinition], tuple[MacroImport, ...]]:
+    """Validate one parsed ``.tfxm`` and read its own macros and imports.
+
+    ``display`` is the spelling its import paths resolve against and
+    ``module`` the identity its definitions are scoped to; they differ only
+    for the bundled standard module.
+    """
+
+    validate_macro_forms(document)
+    validate_macroimport_forms(document)
+    validate_macro_module_purity(document)
+    document, imports = resolve_macro_imports(desugar(document), display)
+    _, macros = collect_macros(
+        document,
+        registry,
+        module=module,
+        standard=standard,
+    )
+    return macros, imports
+
+
 def load_standard_macros(
     registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
 ) -> dict[str, MacroDefinition]:
@@ -553,18 +581,18 @@ def load_standard_macros(
             .joinpath(_PRELUDE_RESOURCE)
             .read_text(encoding="utf-8")
         )
-        document = parse(text, PRELUDE_MODULE)
-        validate_macro_forms(document)
-        validate_macroimport_forms(document)
-        validate_macro_module_purity(document)
-        document, imports = resolve_macro_imports(desugar(document), PRELUDE_MODULE)
+        macros, imports = collect_macro_module(
+            parse(text, PRELUDE_MODULE),
+            PRELUDE_MODULE,
+            PRELUDE_MODULE,
+            registry,
+        )
         if imports:
             raise ModuleError(
                 "the bundled standard macro module imports no other module",
                 imports[0].span,
                 code="M022",
             )
-        _, macros = collect_macros(document, registry, module=PRELUDE_MODULE)
     except (TeXFluxError, OSError, UnicodeError) as error:
         raise InternalError(
             f"internal error: bundled prelude is invalid: {error}"
@@ -595,35 +623,13 @@ class _ImportResolver:
     def block(self, block: Block) -> Block:
         nodes: list[Node] = []
         for node in block.nodes:
-            nodes.extend(self.node(node))
+            if isinstance(node, SpecialInvocation) and node.name == Module.IMPORT:
+                nodes.extend(self._expand(node))
+            else:
+                # Raw TeX and the canonical nodes an inner import produced
+                # hold no blocks, so they come back unchanged.
+                nodes.append(map_children(node, self.block))
         return replace(block, nodes=tuple(nodes))
-
-    def node(self, node: Node) -> tuple[Node, ...]:
-        match node:
-            case SpecialInvocation(name=Module.IMPORT):
-                return self._expand(node)
-            case ParsedInvocation() | SpecialInvocation():
-                return (
-                    replace(
-                        node,
-                        groups=tuple(
-                            self._argument(group) for group in node.groups
-                        ),
-                        suite=(
-                            None if node.suite is None else self.block(node.suite)
-                        ),
-                    ),
-                )
-            case SequenceEntry():
-                return (replace(node, value=self.block(node.value)),)
-            case _:
-                # Raw TeX, and the canonical nodes an inner import produced.
-                return (node,)
-
-    def _argument(self, argument: Argument) -> Argument:
-        if isinstance(argument.value, Block):
-            return replace(argument, value=self.block(argument.value))
-        return argument
 
     def _cycle(self, target: ModuleSource) -> str:
         chain = [self._session.display(path) for path in self._stack]
@@ -676,11 +682,7 @@ class _ImportResolver:
         try:
             # Loading the target parses it, so a parse error in the callee has
             # to be inside the chain as much as a later validation error is.
-            target = self._session.load(
-                display,
-                ModuleKind.CONTENT,
-                path_group.span,
-            )
+            target = self._session.load(display, path_group.span)
             # The active import stack, not 'ever seen': importing one module
             # twice is legal and simply produces two instances.
             if target.path in self._stack:
@@ -768,13 +770,7 @@ class CompilationSession:
 
         return self._sources[path].display
 
-    def _register(
-        self,
-        display: str,
-        kind: ModuleKind,
-        data: bytes,
-        text: str,
-    ) -> ModuleSource:
+    def _register(self, display: str, data: bytes, text: str) -> ModuleSource:
         # Recorded before parsing: a diagnostic report lists every file the
         # compilation read, and the one whose parse failed most of all.
         self._loaded.append(
@@ -783,19 +779,13 @@ class CompilationSession:
         source = ModuleSource(
             normalized_path(display),
             display,
-            kind,
             data,
             parse(text, display),
         )
         self._sources[source.path] = source
         return source
 
-    def load(
-        self,
-        display: str,
-        kind: ModuleKind,
-        span: SourceSpan,
-    ) -> ModuleSource:
+    def load(self, display: str, span: SourceSpan) -> ModuleSource:
         """Read and parse one module, caching it by canonical path identity.
 
         A second spelling of the same file reuses the first load, so its spans
@@ -816,12 +806,13 @@ class CompilationSession:
                 span,
                 code="M028",
             ) from error
-        return self._register(display, kind, data, text)
+        return self._register(display, data, text)
 
     # -- macro modules -----------------------------------------------------
 
-    def _imported(self, error: TeXFluxError, path: str) -> TeXFluxError:
-        """Name every ``!macroimport`` between this error and the document.
+    @contextmanager
+    def _importing(self, path: str) -> Iterator[None]:
+        """Name every ``!macroimport`` between an error in ``path`` and the document.
 
         A macro module is shared between decks, so which imports pulled it in
         is what locates the problem. Each module records the one import that
@@ -831,24 +822,25 @@ class CompilationSession:
         levels above it still say how that file entered the build.
         """
 
-        message = error.message
-        related: list[RelatedLocation] = []
-        seen: set[str] = set()
-        current = path
-        while current not in seen:
-            seen.add(current)
-            site = self._imported_from.get(current)
-            if site is None:
-                break
-            if error.span.file != site.file:
-                message = f"{message}; imported from {site.location}"
-                related.append(RelatedLocation("imported from here", site))
-            current = normalized_path(site.file)
-        # Returning the error itself when nothing was added keeps the caller's
-        # bare re-raise, and with it the original exception as __cause__.
-        if message == error.message:
-            return error
-        return error.chained(message, *related)
+        try:
+            yield
+        except TeXFluxError as error:
+            message = error.message
+            related: list[RelatedLocation] = []
+            seen: set[str] = set()
+            current = path
+            while current not in seen:
+                seen.add(current)
+                site = self._imported_from.get(current)
+                if site is None:
+                    break
+                if error.span.file != site.file:
+                    message = f"{message}; imported from {site.location}"
+                    related.append(RelatedLocation("imported from here", site))
+                current = normalized_path(site.file)
+            if not related:
+                raise
+            raise error.chained(message, *related) from error
 
     def _load_macro_modules(self, roots: Sequence[MacroImport]) -> None:
         """Load the macro-import closure of ``roots``, without recursing.
@@ -866,31 +858,15 @@ class CompilationSession:
             if macro_import.path in self._public:
                 continue
             self._imported_from.setdefault(macro_import.path, macro_import.span)
-            try:
-                source = self.load(
-                    macro_import.display,
-                    ModuleKind.MACRO,
-                    macro_import.span,
-                )
-                document = source.document
-                validate_macro_forms(document)
-                validate_macroimport_forms(document)
-                validate_macro_module_purity(document)
-                document, imports = resolve_macro_imports(
-                    desugar(document),
+            with self._importing(macro_import.path):
+                source = self.load(macro_import.display, macro_import.span)
+                own, imports = collect_macro_module(
+                    source.document,
                     source.display,
-                )
-                _, own = collect_macros(
-                    document,
+                    source.path,
                     self._registry,
-                    module=source.path,
-                    standard=self._standard,
+                    self._standard,
                 )
-            except TeXFluxError as error:
-                chained = self._imported(error, macro_import.path)
-                if chained is error:
-                    raise
-                raise chained from error
             self._public[source.path] = own
             self._imports[source.path] = imports
             pending.extend(imports)
@@ -900,31 +876,24 @@ class CompilationSession:
 
         A module's environment is its own macros plus the public macros of its
         direct imports, so it depends on nothing deeper and needs no recursion.
+        Every new environment is merged before any module is checked against
+        its own, so a name collision is always reported ahead of a template
+        that names something it cannot see. An environment never changes once
+        built, so each module is checked exactly once.
         """
 
         self._load_macro_modules(roots)
-        for path, own in self._public.items():
-            if path in self._environments:
-                continue
-            try:
+        fresh = [path for path in self._public if path not in self._environments]
+        for path in fresh:
+            with self._importing(path):
                 self._environments[path] = merge_imports(
-                    {**self._standard, **own},
+                    {**self._standard, **self._public[path]},
                     self._imports[path],
                     self._public,
                 )
-            except TeXFluxError as error:
-                chained = self._imported(error, path)
-                if chained is error:
-                    raise
-                raise chained from error
-        for path in self._public:
-            try:
+        for path in fresh:
+            with self._importing(path):
                 self._check_self_contained(path)
-            except TeXFluxError as error:
-                chained = self._imported(error, path)
-                if chained is error:
-                    raise
-                raise chained from error
 
     def _check_self_contained(self, path: str) -> None:
         """Reject a macro module that depends on a name it cannot see itself.
@@ -963,7 +932,7 @@ class CompilationSession:
     ) -> Document:
         """Compile the document a caller supplied as text."""
 
-        source = self._register(filename, ModuleKind.CONTENT, data, text)
+        source = self._register(filename, data, text)
         return self._compile(
             source,
             overrides=flags,
@@ -1053,6 +1022,7 @@ __all__ = [
     "ModuleSource",
     "SourceReader",
     "bind_import_flags",
+    "collect_macro_module",
     "load_standard_macros",
     "merge_imports",
     "parse_bindings",

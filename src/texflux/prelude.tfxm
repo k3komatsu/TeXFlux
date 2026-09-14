@@ -4,7 +4,7 @@
 % the compilation session. They manipulate structural flow only: nothing here
 % knows a TeX command, so spacing and styling stay the author's own TeX.
 %
-% The names are frozen; section 17 of the standard flow macro specification
+% The names are frozen; section 9.1 of texflux_tex_first_dsl_v1_spec.md
 % states what a new one would have to justify.
 
 % Emit one value before a payload.

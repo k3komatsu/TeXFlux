@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Literal, TypeAlias
 
-from .errors import diagnostic_line
-from .syntax import blank, is_escaped
 from .ast import (
     Argument,
     ArgumentLayout,
@@ -21,6 +19,8 @@ from .ast import (
     SourceSpan,
     SourceText,
 )
+from .errors import diagnostic_line
+from .syntax import blank, is_escaped
 
 
 #: The provenance role of one rendered fragment.
@@ -279,26 +279,40 @@ def _render_arguments(
     for argument in arguments:
         if argument.layout is ArgumentLayout.INLINE:
             _emit_group(emitter, argument)
-            continue
-        explicit = argument.layout is ArgumentLayout.EXPLICIT
-        if not explicit and argument.layout not in (
-            ArgumentLayout.BLOCK,
-            ArgumentLayout.HUGGED,
-        ):
-            raise TypeError("renderer received an invalid argument layout")
-        if not isinstance(argument.value, Block):
+        elif isinstance(argument.value, Block):
+            _render_block_argument(emitter, argument, source_comments)
+        else:
             raise TypeError("renderer received an invalid argument value")
 
-        if not explicit:
-            emitter.emit("{", source=argument.span, role="open")
-        if argument.layout is ArgumentLayout.BLOCK:
-            emitter.newline()
-        mark = emitter.mark()
-        _render_block(emitter, argument.value, source_comments)
-        if argument.layout is not ArgumentLayout.BLOCK:
-            _close_hugged(emitter, argument, mark)
-        if not explicit:
-            emitter.emit("}", source=argument.span, role="close")
+
+def _render_block_argument(
+    emitter: MappedEmitter,
+    argument: Argument,
+    source_comments: bool,
+) -> None:
+    """Render a block value inside generated braces, or an explicit group as is.
+
+    A block value opens on its own line; a hugged or explicit one is pulled
+    onto its last line, so the closing delimiter follows the content.
+    """
+
+    if argument.layout not in (
+        ArgumentLayout.BLOCK,
+        ArgumentLayout.HUGGED,
+        ArgumentLayout.EXPLICIT,
+    ):
+        raise TypeError("renderer received an invalid argument layout")
+    generated = argument.layout is not ArgumentLayout.EXPLICIT
+    if generated:
+        emitter.emit("{", source=argument.span, role="open")
+    if argument.layout is ArgumentLayout.BLOCK:
+        emitter.newline()
+    mark = emitter.mark()
+    _render_block(emitter, argument.value, source_comments)
+    if argument.layout is not ArgumentLayout.BLOCK:
+        _close_hugged(emitter, argument, mark)
+    if generated:
+        emitter.emit("}", source=argument.span, role="close")
 
 
 def _close_hugged(

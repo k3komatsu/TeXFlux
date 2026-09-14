@@ -115,13 +115,8 @@ def published_rows():
     text = DESIGN.read_text(encoding="utf-8")
     rows = {}
     for code, where, rest in _ROW.findall(text):
-        where = where.strip()
-        match = re.match(r"([a-z_]+\.py)", where)
-        # The parse table is all one file, so its rows name only a line.
-        file = "parser.py" if where.isdigit() else (
-            match.group(1) if match else None
-        )
-        rows[code] = (file, rest)
+        match = re.search(r"([a-z_]+\.py)", where)
+        rows[code] = (match.group(1) if match else None, rest)
     return rows
 
 

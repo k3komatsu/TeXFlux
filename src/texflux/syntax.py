@@ -7,7 +7,8 @@ can raise the diagnostic that fits its own stage.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import replace
 from typing import Final
 
 from .ast import (
@@ -81,12 +82,6 @@ def optional_text(argument: Argument) -> str | None:
     return _inline_text(argument, GroupKind.OPTIONAL)
 
 
-def binding_text(argument: Argument) -> str | None:
-    """The raw text of one trailing ``(...)`` list, or ``None`` if it is not one."""
-
-    return _inline_text(argument, GroupKind.BINDING)
-
-
 def demand_text(argument: Argument, label: str) -> str:
     """Read one required inline group, or reject it at its own span.
 
@@ -131,6 +126,37 @@ def walk(block: Block) -> Iterator[Node]:
                 pass
 
 
+def map_children(node: Node, rewrite: Callable[[Block], Block]) -> Node:
+    """Rebuild ``node`` with ``rewrite`` applied to every block it holds.
+
+    The writing counterpart of ``walk``: a pass that rewrites a tree keeps
+    its own rule for the nodes it cares about and hands every other node
+    here, so the shape of the syntax AST is spelled out once. A node without
+    blocks, canonical nodes included, is returned as it is. Every rewriting
+    pass runs after ``>>`` desugaring, so a ``Stack`` is refused rather than
+    given a meaning here.
+    """
+
+    match node:
+        case ParsedInvocation() | SpecialInvocation():
+            return replace(
+                node,
+                groups=tuple(
+                    replace(group, value=rewrite(group.value))
+                    if isinstance(group.value, Block)
+                    else group
+                    for group in node.groups
+                ),
+                suite=None if node.suite is None else rewrite(node.suite),
+            )
+        case Stack():
+            raise TypeError("map_children requires a desugared syntax AST")
+        case SequenceEntry():
+            return replace(node, value=rewrite(node.value))
+        case _:
+            return node
+
+
 def stacks(block: Block) -> Iterator[Stack]:
     """Yield every ``>>`` stack under ``block``, before desugaring removes it."""
 
@@ -152,10 +178,10 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
 
 
 __all__ = [
-    "binding_text",
     "blank",
     "demand_text",
     "is_escaped",
+    "map_children",
     "optional_text",
     "RAW_BEGIN_MARKER",
     "RAW_END_MARKER",

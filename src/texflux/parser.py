@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import string
-from typing import Final
+from typing import Final, TypeAlias
 
 from .ast import (
     BINDING_OPENER,
@@ -35,6 +35,10 @@ from .syntax import (
 )
 
 
+#: What one structural header line parses to.
+_Structural: TypeAlias = ParsedInvocation | SpecialInvocation | Stack
+
+
 @dataclass(frozen=True, slots=True)
 class HeaderScanResult:
     """One physical header; a trailing separator requests another line."""
@@ -43,6 +47,16 @@ class HeaderScanResult:
     suite_mode: SuiteMode | None
     suite_span: SourceSpan | None
     continuation_span: SourceSpan | None = None
+
+    @property
+    def closed_single(self) -> bool:
+        """One segment, no suite, no continuation: the line is complete."""
+
+        return (
+            self.suite_mode is None
+            and self.continuation_span is None
+            and len(self.segments) == 1
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,9 +149,64 @@ def _block_span(boundary: SourceSpan, nodes: list[Node]) -> SourceSpan:
     return SourceSpan(boundary.file, boundary.start, max(boundary.end, end))
 
 
+def _node_end(node: Node) -> SourcePosition:
+    """Where a node's source ends, its suite included."""
+
+    end = node.span.end
+    if (
+        isinstance(node, (ParsedInvocation, SpecialInvocation, Stack))
+        and node.suite is not None
+    ):
+        end = max(end, node.suite.span.end)
+    return end
+
+
 #: TeXFlux names are ASCII-only, independent of the host locale.
 _NAME_START: Final = frozenset(string.ascii_letters)
 _NAME_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_")
+
+
+class _StrayBrace(Exception):
+    """A ``}`` that closes nothing inside a bracket or binding group."""
+
+
+#: How each inline group scans: its closer, whether another opener of the
+#: same kind deepens it, and whether a balanced '{...}' inside it is skipped
+#: as opaque text, so a '{a,b}' value or a '{]}' stays out of the count.
+_GROUP_SCAN: Final = {
+    "<": (">", False, False),
+    "{": ("}", True, False),
+    "[": ("]", True, True),
+    "(": (")", True, True),
+}
+
+
+def _group_end(text: str, start: int) -> int | None:
+    """The offset of the closer balancing ``text[start]``, or ``None`` if unclosed."""
+
+    opener = text[start]
+    closer, nests, skips_braces = _GROUP_SCAN[opener]
+    depth = 1
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if is_escaped(text, index):
+            pass
+        elif skips_braces and char == "{":
+            inner = _group_end(text, index)
+            if inner is None:
+                return None
+            index = inner
+        elif skips_braces and char == "}":
+            raise _StrayBrace
+        elif nests and char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
 
 
 def scan_group(
@@ -148,88 +217,27 @@ def scan_group(
 ) -> tuple[int, str]:
     """Scan one inline group, returning the end offset and raw content."""
 
-    match text[start]:
+    opener = text[start]
+    if opener not in _GROUP_SCAN:
+        raise ParseError("invalid group opener", span, code="P009")
+    try:
+        end = _group_end(text, start)
+    except _StrayBrace:
+        # A code names one construction site, so each opener keeps its own.
+        if opener == "[":
+            raise ParseError("mismatched group delimiter", span, code="P005") from None
+        raise ParseError("mismatched group delimiter", span, code="P007") from None
+    if end is not None:
+        return end + 1, text[start + 1 : end]
+    match opener:
         case "<":
-            # An overlay group does not nest.
-            index = start + 1
-            while index < len(text):
-                if text[index] == ">" and not is_escaped(text, index):
-                    return index + 1, text[start + 1 : index]
-                index += 1
             raise ParseError("unclosed overlay group", span, code="P003")
-
         case "{":
-            depth = 1
-            index = start + 1
-            while index < len(text):
-                char = text[index]
-                if not is_escaped(text, index):
-                    if char == "{":
-                        depth += 1
-                    elif char == "}":
-                        depth -= 1
-                        if depth == 0:
-                            return index + 1, text[start + 1 : index]
-                index += 1
             raise ParseError("unclosed required group", span, code="P004")
-
         case "[":
-            # Brackets nest, but only outside a balanced brace group.
-            bracket_depth = 1
-            brace_depth = 0
-            index = start + 1
-            while index < len(text):
-                char = text[index]
-                if not is_escaped(text, index):
-                    if char == "{":
-                        brace_depth += 1
-                    elif char == "}":
-                        if brace_depth == 0:
-                            raise ParseError(
-                                "mismatched group delimiter",
-                                span,
-                                code="P005",
-                            )
-                        brace_depth -= 1
-                    elif brace_depth == 0 and char == "[":
-                        bracket_depth += 1
-                    elif brace_depth == 0 and char == "]":
-                        bracket_depth -= 1
-                        if bracket_depth == 0:
-                            return index + 1, text[start + 1 : index]
-                index += 1
             raise ParseError("unclosed optional group", span, code="P006")
-
-        case "(":
-            # A binding list nests like an optional group, but only outside a
-            # balanced brace group, so a '{a,b}' value stays opaque.
-            paren_depth = 1
-            brace_depth = 0
-            index = start + 1
-            while index < len(text):
-                char = text[index]
-                if not is_escaped(text, index):
-                    if char == "{":
-                        brace_depth += 1
-                    elif char == "}":
-                        if brace_depth == 0:
-                            raise ParseError(
-                                "mismatched group delimiter",
-                                span,
-                                code="P007",
-                            )
-                        brace_depth -= 1
-                    elif brace_depth == 0 and char == "(":
-                        paren_depth += 1
-                    elif brace_depth == 0 and char == ")":
-                        paren_depth -= 1
-                        if paren_depth == 0:
-                            return index + 1, text[start + 1 : index]
-                index += 1
-            raise ParseError("unclosed binding list", span, code="P008")
-
         case _:
-            raise ParseError("invalid group opener", span, code="P009")
+            raise ParseError("unclosed binding list", span, code="P008")
 
 
 def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
@@ -660,10 +668,7 @@ class _Parser:
                 run = self._blank_run(base)
                 if run is None:
                     break
-                for blank_index in run:
-                    nodes.append(
-                        RawTex("", self._line_span(self.lines[blank_index]))
-                    )
+                nodes.extend(self._blank_nodes(run))
                 continue
 
             if line.indent < base:
@@ -673,27 +678,17 @@ class _Parser:
             extra = len(rest) - len(rest.lstrip(" "))
             first = rest[extra : extra + 1]
 
-            if first in {"@", "!"} and rest[extra : extra + 2] == first * 2:
-                raw_text = rest[:extra] + rest[extra + 1 :]
-                nodes.append(
-                    RawTex(raw_text, self._line_span(line, base + 1, rest))
-                )
-                self.index += 1
-                continue
-
-            if rest[extra : extra + 2] == RAW_LINE_MARKER:
-                tail = self._raw_line_tail(
-                    line,
-                    rest[extra + len(RAW_LINE_MARKER) :],
-                    line.indent + 1,
-                )
-                nodes.append(
-                    RawTex(
-                        rest[:extra] + tail,
-                        self._line_span(line, base + 1, rest),
-                        verbatim=True,
-                    )
-                )
+            # Escapes precede the indentation rules, so an escaped line may
+            # sit deeper than the base and keeps those extra spaces.
+            escaped = self._escaped_raw(
+                line,
+                rest[extra:],
+                line.indent + 1,
+                self._line_span(line, base + 1, rest),
+                indent=rest[:extra],
+            )
+            if escaped is not None:
+                nodes.append(escaped)
                 self.index += 1
                 continue
 
@@ -713,7 +708,7 @@ class _Parser:
                 if rest.rstrip(" ") == RAW_BEGIN_MARKER:
                     nodes.extend(self._raw_region(base))
                     continue
-                nodes.append(self._directive(line, base))
+                nodes.append(self._structural_line(line, base))
                 continue
 
             if first == "\\":
@@ -737,6 +732,36 @@ class _Parser:
         raw_text = line.text[base:]
         nodes.append(RawTex(raw_text, self._line_span(line, base + 1, raw_text)))
         self.index += 1
+
+    def _blank_nodes(self, run: range) -> list[Node]:
+        """One empty raw line for each physical line of a blank run."""
+
+        return [RawTex("", self._line_span(self.lines[index])) for index in run]
+
+    def _escaped_raw(
+        self,
+        line: _PhysicalLine,
+        text: str,
+        column: int,
+        span: SourceSpan,
+        *,
+        indent: str = "",
+    ) -> RawTex | None:
+        """The raw line a leading escape in ``text`` produces, or ``None``.
+
+        ``@@`` and ``!!`` strip one prefix character and stay a text field;
+        ``!|`` strips the whole marker and one space and is verbatim. Both
+        keep ``indent``, the spaces beyond the block base, in front of the
+        body. ``column`` is where ``text`` starts, for the ``!|`` diagnostic.
+        """
+
+        head = text[:2]
+        if head in ("@@", "!!"):
+            return RawTex(indent + text[1:], span)
+        if head == RAW_LINE_MARKER:
+            tail = self._raw_line_tail(line, text[len(RAW_LINE_MARKER) :], column)
+            return RawTex(indent + tail, span, verbatim=True)
+        return None
 
     def _raw_line_tail(
         self,
@@ -796,52 +821,43 @@ class _Parser:
         self,
         line: _PhysicalLine,
         base: int,
-    ):
-        header_span = self._header_span(line, base)
-        result = _scan_structural_header(line.text[base:], header_span)
-        if result is None:
-            return None
-        if (
-            result.suite_mode is None
-            and result.continuation_span is None
-            and len(result.segments) == 1
-        ):
-            # A closed single-segment command line is ordinary TeX.
-            return None
-        return result, header_span
+    ) -> HeaderScanResult | None:
+        """Scan a ``\\`` line, or return ``None`` when it stays ordinary TeX."""
+
+        result = _scan_structural_header(
+            line.text[base:],
+            self._header_span(line, base),
+        )
+        # A closed single-segment command line is ordinary TeX.
+        return None if result is None or result.closed_single else result
 
     def _try_structural_command(
         self,
         line: _PhysicalLine,
         base: int,
-    ):
-        scanned = self._scan_command_header(line, base)
-        if scanned is None:
-            return None
-        result, header_span = scanned
-        return self._directive_result(base, result, header_span)
+    ) -> _Structural | None:
+        result = self._scan_command_header(line, base)
+        return None if result is None else self._statement(line, base, result)
 
-    def _directive(self, line: _PhysicalLine, base: int):
-        if line.indent != base:
-            raise self._indent_error(line)
+    def _structural_line(self, line: _PhysicalLine, base: int) -> _Structural:
+        """Parse an ``@`` or ``!`` line, which has to scan as a header."""
+
         header_span = self._header_span(line, base)
         result = HeaderScanner(line.text[base:], span=header_span).scan()
-        return self._directive_result(base, result, header_span)
+        return self._statement(line, base, result)
 
-    def _directive_result(
+    def _statement(
         self,
+        line: _PhysicalLine,
         base: int,
         result: HeaderScanResult,
-        header_span: SourceSpan,
-    ):
+    ) -> _Structural:
+        """Consume the header line and attach whatever suite it asks for."""
+
         self.index += 1
-        if (
-            result.suite_mode is None
-            and result.continuation_span is None
-            and len(result.segments) == 1
-        ):
+        if result.closed_single:
             self._reject_missing_suite(base, result.segments[0])
-        return self._structural_node(base, result, header_span)
+        return self._structural_node(base, result, self._header_span(line, base))
 
     def _reject_missing_suite(
         self,
@@ -873,7 +889,7 @@ class _Parser:
         base: int,
         result: HeaderScanResult,
         header_span: SourceSpan,
-    ) -> ParsedInvocation | SpecialInvocation | Stack:
+    ) -> _Structural:
         """Attach the parsed suite, if any, to one scanned header."""
 
         if result.continuation_span is not None:
@@ -1018,15 +1034,14 @@ class _Parser:
         nodes: list[Node] = []
         if payload:
             payload_span = self._line_span(line, payload_start + 1, payload)
-            if payload[:2] in {"@@", "!!"}:
-                nodes.append(RawTex(payload[1:], payload_span))
-            elif payload[:2] == RAW_LINE_MARKER:
-                tail = self._raw_line_tail(
-                    line,
-                    payload[len(RAW_LINE_MARKER) :],
-                    payload_start + 1,
-                )
-                nodes.append(RawTex(tail, payload_span, verbatim=True))
+            escaped = self._escaped_raw(
+                line,
+                payload,
+                payload_start + 1,
+                payload_span,
+            )
+            if escaped is not None:
+                nodes.append(escaped)
             elif payload[0] in "\\@!":
                 # Only a command payload may turn out to be ordinary TeX; an
                 # '@' or '!' payload must scan as a structural header.
@@ -1046,14 +1061,7 @@ class _Parser:
         continuation = self._sequence_continuation(base, entry_span)
         nodes.extend(continuation.nodes)
 
-        value_end = entry_span.end
-        for node in nodes:
-            value_end = max(value_end, node.span.end)
-            if (
-                isinstance(node, (ParsedInvocation, SpecialInvocation, Stack))
-                and node.suite is not None
-            ):
-                value_end = max(value_end, node.suite.span.end)
+        value_end = max([entry_span.end, *map(_node_end, nodes)])
         value_span = SourceSpan(entry_span.file, entry_span.start, value_end)
         value = Block(tuple(nodes), value_span)
         # A value that never leaves its marker line is the compact case; a
@@ -1148,10 +1156,7 @@ class _Parser:
                 run = self._blank_run(continuation_base)
                 if run is None:
                     break
-                for blank_index in run:
-                    nodes.append(
-                        RawTex("", self._line_span(self.lines[blank_index]))
-                    )
+                nodes.extend(self._blank_nodes(run))
                 continue
             if line.indent < continuation_base:
                 break
@@ -1223,6 +1228,7 @@ class _Parser:
             self.lines[next_index].indent,
             boundary,
         )
+
 
 def parse(source: str, filename: str = "<string>") -> Document:
     """Parse source text into the syntax AST."""

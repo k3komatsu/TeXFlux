@@ -2,397 +2,56 @@
 
 最終更新: 2026-09-14。
 
-| 主題 | 状態 |
-| --- | --- |
-| モジュールシステム | `b3e8e33` で `main` に統合済み（§A） |
-| 文字列 interpolation（`!text`） | **実装・検証済み**（§B） |
-| `!items` の削除 | `feature/remove-items` で実施済み（§C） |
-| 行頭 `!!` raw escape | 実装済み（§D は導入前の設計メモ） |
-| 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`） | **実装・検証済み**（§E） |
-| 行単位 raw escape（`!\| `） | **実装・検証済み**（§G） |
-| Diagnostic API（`texflux check` / `diagnose`） | **実装・検証済み**（§H） |
+## 現状
 
----
+v1 の言語機能はすべて実装・検証済みで、`main` に統合されている。規範定義は
+`texflux_tex_first_dsl_v1_spec.md`、利用者向け説明は `README.md` と `doc/dsl.md`、
+設計判断は `doc/` の各設計書にある。
 
-# §B 文字列 interpolation（`!text`） — 実装済み
-
-`feature/string-interpolation` で実装した。利用者向け説明は `doc/dsl.md` §12.7、
-規範定義は `texflux_tex_first_dsl_v1_spec.md` §10.6、詳細設計は
-`doc/string-interpolation.md`。原案の未追跡ファイルは変更していない。
-
-- テキストフィールドの `!text{name}` は、ちょうど1個の `RawTex` の値のみを補間する。
-  `!param` は AST 位置専用。挿入文字列は再走査も再パースもしない。
-- 補間は macro expander 内で遅延処理し、捨てた条件分岐の中には入らない。
-  parser、flag 処理、import graph、lexical scope は変更していない。
-- fragment の由来を nested macro と `.tfxm` 越しにも保持する。テンプレートの
-  リテラルは呼び出し位置と `scaffold` role、値は元の span を保持する。
-- `RenderRole` と remapper の rank に `scaffold` を同時追加した。列なし SyncTeX は
-  値の行を優先する。異なる行の値を1行に複数差し込む場合の曖昧性は既存の制約として残る。
-- `AGENTS.md` の禁止リストと checklist も更新済み（gitignored のためローカルのみ）。
-- 設計書の疑似コードで欠けていた `text` / `value` の同時更新、マクロ章の参照先、
-  golden に必要な inline group 例を訂正した。既存 lexical scope テスト1件の
-  テキスト中 `!param` は `!text` に移行した。
-
-検証:
-
-```bash
-python3 -W error::ResourceWarning -m unittest discover
-```
-
-補間・診断・drop・escape・fragment・module・列なし SyncTeX・golden を検証済み。
-`examples/` 6件は再コンパイル結果と `.tex` がバイト単位で一致した。
-
-以下の §D・§C は raw-line escape 導入前の設計判断の履歴であり、当時の
-「未実装」「回避策なし」という記述は現在の仕様ではない。
-
----
-
-# §H Diagnostic API — 実装済み
-
-`feature/diagnostics` で実装した。詳細設計は `doc/diagnostics.md`、
-スキーマは `schemas/texflux-diagnostics-v1.schema.json`。
-
-- Python API `texflux.diagnose(...)` は例外を投げず、読んだ全ソースと全診断を
-  `DiagnosticReport` として返す。未保存バッファは `overlays` で差し替える。
-- CLI `texflux check` は `--format {text,json}` / `--pretty` / stdin に対応し、
-  終了コードは 0（エラーなし）/ 1（エラーあり）/ 2（ツール自体の失敗）。
-  `.tex` も `.tfxmap` も書かない。
-- 既存の全診断 132 箇所に安定した診断コード（`P004` など）を付けた。
-  1 生成箇所 1 コードで、改番も再利用もしない。表は `doc/diagnostics.md` §2 にあり、
-  `tests/test_diagnostic_codes.py` がソースとの一致を検査する。
-- メッセージに埋め込まれていた副位置（`already defined at ...` など）を、
-  `TeXFluxError.related` として構造化された関連位置でも持たせた。文言は変えていない。
-- `CompilationSession` に読み込みフック（`reader`）を足し、ファイルの記録を
-  パースより前に移した。パースに失敗したファイルも報告のソース表に載る。
-
-確定した決定: 関連位置は構造化する（`TeXFluxError.related`）／コードは全
-raise 箇所に付与し改番・再利用はしない／未保存バッファの overlay は Python API
-のみ（CLI からの import 先 overlay は非対象）／エラー件数は fail-fast のまま
-最大 1 件 + 警告 N 件。
-
-検証:
-
-```bash
-python3 -W error::ResourceWarning -m unittest discover   # 462 tests, OK
-```
-
-スキーマ検証テストは開発用の `jsonschema` を入れた環境でのみ走り、未導入なら skip する。
-`examples/` 6 件は再コンパイル結果が `.tex` とバイト単位で一致することを確認済み。
-
----
-
-# §D 行頭 `!!` raw escape — 次の作業
-
-## 決定
-
-行頭の `!!` を、`@@` と同じ規則の raw-line escape として追加する。`!!foo` は
-`!foo` という生の TeX 行を出力する。
-
-## なぜ要るか
-
-`@` には `@@` があるが `!` には対応する escape が無い、という**元からある非対称**。
-`!items` の raw suite が項目本文についてだけ穴を塞いでいたが、それを削除して
-露出した。実測で今日失敗するもの:
-
-| 入力 | 結果 |
-| --- | --- |
-| `@verbatim: \|` の本文行 `!important` | `DirectiveError` |
-| `@lstlisting: \|` の `!! # ...` | `ParseError: invalid structural name` |
-| 散文 `!重要` | `ParseError`（`!` の次は ASCII 英字でないと名前にならない） |
-| シーケンス payload `- !bar` | `DirectiveError` |
-
-## なぜ `!raw{...}` ではないか
-
-1. **`!raw{...}` はインデントできない。** `!` 始まりの行はブロック基準位置ちょうど
-   にしか書けない（`first in {"@", "!"} and line.indent != base` → indent error）。
-   字下げされた listing 本文という最も必要な場面で使えない。`@@` の分岐は
-   **インデント検査より前**にあり `rest[:extra]` で字下げを保存するので、`!!` は
-   その性質を継承する。
-2. 不均衡な `{` を書けない（`scan_group` が balance を要求する）。
-3. 行単位で効く `!raw:` が欲しくなるが、それは parser が special 名をハードコード
-   して suite を raw にする仕組み、すなわち §C で削除した `raw_suite` の復活である。
-
-## 変更箇所（2 箇所だけ）
-
-`src/texflux/parser.py` のみ。他のモジュールは変更しない。
-
-1. `_block`（現 520 行付近）
-   ```python
-   if first == "@" and rest[extra : extra + 2] == "@@":
-   ```
-   → `if first in {"@", "!"} and rest[extra : extra + 2] == first * 2:`
-   本体（`rest[:extra] + rest[extra + 1 :]`）は変更不要。
-
-2. `_sequence_entry`（現 778 行付近）
-   ```python
-   if payload.startswith("@@"):
-   ```
-   → `if payload[:2] in {"@@", "!!"}:`
-   直後の `elif payload[0] in "\\@!":` はそのまま残す。
-
-## 決めておくべき細部
-
-- `!!` 単独 → `!`、`!!!foo` → `!!foo`。`@@` と同じ doubling。
-- `!!literal >>` は生の行なので行末 `>>` は継続にならない（`@@` と同じ。
-  `tests/test_parser.py:48` の対応物）。
-- 非 ASCII が続く場合（`!!重要` → `!重要`）も通る。これが散文のケースを救う。
-
-## 文字列 interpolation 設計との衝突（必ず対応する）
-
-`doc/string-interpolation.md` の **D9 は「行頭 `!!` の raw-line escape は導入しない」
-と書いてある。この決定は覆る**ので D9 を書き換えること。あわせて §3.3 に、二層に
-なることを明記する:
-
-```text
-!!text{x}   → parser が ! を1つ剥がす → RawTex "!text{x}" → 補間される
-!!!text{x}  → "!!text{x}" → 走査器が escape → リテラル "!text{x}"
-```
-
-実際には踏まない（テンプレート行頭の `!text{` は設計上すでに T01 エラー）が、
-記録しないと実装者が混乱する。
-
-## 文書の更新先
-
-`@@` が書かれている場所と対にする:
-
-- `doc/dsl.md:55-58`（`@@` の説明）、`:378-381`（§8 の表）、`:521`、`:1072`
-- `texflux_tex_first_dsl_v1_spec.md:66`、`:341`、`:420`、`:430-431`
-- `AGENTS.md` の source-of-truth 規則（`@@` に触れている箇所）と review checklist
-- `README.md` のチートシート注記
-
-## テスト
-
-`@@` のテストと対にする: `tests/test_parser.py:48`, `:128-129`,
-`tests/test_compile.py:362`, `:383`。加えて §D の「なぜ要るか」表の 4 ケースが
-`!!` で書けるようになることを固定する。golden は `tests/golden/source-comments`
-が `@@` を含むだけなので、`!!` 専用の golden を足すかは AGENTS.md の
-「既存ケースが覆う形を重ねない」規則で判断する。
-
----
-
-# §E 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`） — 実装済み
-
-行頭 `!!` は1行を救う escape であり、verbatim / lstlisting のような長い領域では
-全行に `!!` または `@@` を付ける必要が残る。そのため、`!BEGIN_RAW_MODE` の次の物理行
-から、同じインデントの `!END_RAW_MODE` の直前までを行単位の raw 領域として扱う機能を
-追加した。
-
-- マーカーは前後の半角スペースを除いて単独でなければならず、BEGIN はブロック基準位置に置く。
-- 領域内はヘッダースキャン、`@@` / `!!` escape、dedent による終了、空行の巻き戻し、
-  `!text{...}` 補間を行わない。タブも許可する。
-- 本文は基準位置まで最大で先頭スペースを除去した `RawTex(verbatim=True)` として出力する。
-  マーカーはノードを生まず、インデントの違う END は本文になる。
-- 実装は `syntax.py` / `parser.py` / `ast.py` / `macros.py` に閉じ、正準 AST のノード種別、
-  normalize、renderer、external AST、source map、flags、modules は変更しない。
-- パーサがこの2つの特殊名を物理行層で決め打ちするのは意図的な例外であり、正準 AST・
-  normalize・renderer に raw mode 固有の知識は追加しない。
-
-詳細設計は `doc/raw-mode.md`、利用者向け説明は `doc/dsl.md` §3、規範定義は
-`texflux_tex_first_dsl_v1_spec.md` §2。`tests/golden/raw-mode` を含む parser、compile、
-macro、module、golden のテストと、全スイートを検証済み。
-
----
-
-# §G 行単位 raw escape（`!| `） — 実装済み
-
-## なぜ要るか
-
-`@@` / `!!` は「先頭の1文字を剥がす」escape なので、`!` / `@` で始まる行しか救えない。
-`!BEGIN_RAW_MODE` は領域単位なので1行には 3 行かかる。その間に **`\` で始まる行**という
-穴が残っていた。実装前の実測:
-
-| 入力 | 結果 |
-| --- | --- |
-| `\item Note:` | `ParseError: unexpected token in structural header` |
-| `\textbf{Note}:` | **黙って** `\textbf{Note}{\n}` を出力 |
-| `\emph{x} >> \emph{y}` | **黙って** `\emph{x}{\n\emph{y}\n}` を出力 |
-
-同じ穴がシーケンス payload（`- \textbf{Note}:` など）にもあった。`!!` では救えない
-（`!!\item Note:` は `!\item Note:` にしかならない）。後半2件は**エラーにならず黙って
-誤出力する**ので、「raw mode 領域で書けばいい」と言っても書き手は気づけない。
-これが `- !| ` の payload 対応まで入れた理由である。
-
-## 決定
-
-- `!`, `|`, 半角スペース の 3 文字。直後が半角スペースでも行末でもなければ L01 エラー。
-  行末の `!|` は空の生の行（空行を書くのに見えない末尾スペースを要求しないため）。
-- `@@` / `!!` と同じ位置（インデント検査より前）で処理する。
-- 生成は `RawTex(verbatim=True)`。マクロ展開は補間しない。
-- **`!| ` 以降は改行まで何でも受け入れる**（タブを含む）。BEGIN/END 領域の本文と同じ。
-  ただし `-` の payload と `+` の本文には例外がある（下記「意図的に残した非対称」）。
-  これで escape（`@@` / `!!`、補間される・タブ禁止）と raw（`!| ` / BEGIN・END、
-  補間されない・タブ許可）の2階層に整理された。
-- 文字どおりの `!| ` は `!!| foo`。doubling 規則の帰結なので新しい規則は要らない。
-- `+` の明示グループとその継続ブロックは従来どおり対象外。
-
-## 意図的に残した非対称
-
-`- !| ` の payload ではタブを許さない。タブ検査はパースより前の行単位事前走査で、
-`-` で始まる行がシーケンスマーカーかどうかは囲む suite が `::` か `:` かで変わるため
-判別できない（`@center:` の中の `- !| x` はただの生の行）。免除を広げると escape が
-1 つも関わっていない散文行のタブがすり抜ける。必要なら `-` の継続ブロックに書けば
-行頭 `!| ` になり免除される。
-
-`+` の明示グループ継続ブロックは全行 opaque なので、そこの `!|` 行は escape として
-働かないまま免除だけ効いてしまう。`_raw_sequence_continuation` で `_reject_tab` を
-呼び直して塞いだ。したがって「タブを書けるのは行頭の `!| ` と raw mode 領域だけ、ただし
-`+` の本文の中の `!| ` 行は除く」が正確な規則である（`+` の中でも raw mode 領域は
-従来どおりタブを許す）。
-
-`- ` の payload ではもう1点、末尾のスペースも保持されない。payload は escape より
-前に `rstrip(" ")` されるためで、これは `@@` / `!!` と共有している既存の挙動である。
-
-## 変更箇所
-
-`src/texflux/syntax.py`（定数 1 個）と `src/texflux/parser.py` だけ。`ast.py` /
-`macros.py` / `normalize.py` / `render.py` / `external_ast.py` / `schemas/` は 1 行も
-変更していない。`RawTex.verbatim` と補間抑止は §E で既に入っていたものをそのまま使う。
-`!|` はプレフィックスなので、§E で認めた「パーサが名前を決め打ちする例外」は
-**2 個のまま増えていない**。
-
-詳細設計は `doc/raw-mode.md` §8、利用者向け説明は `doc/dsl.md` §3、規範定義は
-`texflux_tex_first_dsl_v1_spec.md` §2。parser / compile / macro / interpolation /
-golden のテストと全スイート 392 件、`examples/` 6 件のバイト比較を検証済み。
-別エージェントによるレビューを1周実施し、指摘（ドキュメントの事実誤り 5 件と
-テストの穴 6 件）を反映した。パーサ本体の欠陥指摘は無し。
-
----
-
-# §F suite suffix の移行（`:` / `::`）
-
-旧記法のシーケンス suite は `:`、ブロック suite は `:|` / `: |` だった。
-現在はシーケンスを `::`、ブロックを `:` で書く。旧ブロック記法はパースエラーに
-なるが、旧シーケンス記法は `-` エントリーを1つのブロック引数として受け入れるため、
-静かに出力が変わる。
-
-| 旧入力 | 現在の解釈 | 移行 |
+| 機能 | 実装 | 設計書 / 規範 |
 | --- | --- | --- |
-| `\foo:` + `- A` / `- B` | 1つのブロック引数 | `\foo::` |
-| `\foo:|` / `\foo: |` | パースエラー | `\foo:` |
-| `\foo:`（エントリーなし） | 空のブロック suite | 意図を確認 |
-
----
-
-# §C `!items` の削除
-
-## 何をしたか
-
-`!items` ミニ文法を言語から完全に削除した。箇条書きは通常の `@itemize` 環境と
-生の `\item` 行で書く。
-
-削除の理由は、`!items` が**表現力をほとんど増やしていなかった**こと。オーバーレイ、
-ラベル、継続行、入れ子、複数行項目のすべてが `@itemize` + `\item` で既に書けており、
-差はタイプ量（1 行あたり 6 文字）だけだった。その対価として:
-
-- `parser.py` が special の**名前をハードコード**していた（`raw_suite` を決める
-  `segments[-1].name == "items"`）。プレフィックスだけで分類するという中核原則の
-  唯一の例外だった。
-- 正準 AST が 4 種のうち 1 種（`Item`）を itemize 専用に使っていた。
-- `normalize.py` の 325/870 行（37%）が `!items` 専用だった。
-- `itemize` 決め打ちで、`enumerate` / `description` には使えなかった。
-  つまり利用者は結局どちらの書き方も覚えさせられていた。
-
-## 削除が安全だったことの根拠
-
-変換後に再コンパイルして、`examples/` 6 ファイルと golden 4 件の出力が
-**1 バイトも変わらなかった**。`examples/content.tex`（1370 行の実物のスライド）を
-含む。`@itemize` + `\item` が `!items` と同じ TeX を生むことの実証である。
-
-## 移行ハザード
-
-`!items` の suite は **TeXFlux で唯一「中身を一切走査しない生ブロック」**だった。
-失われたのは行末コロンの免除ひとつではなく、**生の行そのもの**である。
-`@itemize` の本文は普通のブロックスイートなので、項目本文は文書のどこに書く生の
-TeX 行とも同じ制約を受ける:
-
-| 行 | `!items` | `@itemize:` | 回避 |
-| --- | --- | --- | --- |
-| `まとめ:` / `\item まとめ:` | 項目 | パースエラー | `:{}` |
-| 継続行 `\TextCA{注意}::` | 項目本文 | パースエラー（診断は「`-` エントリーが必要」で、二重コロンのシーケンス規則による） | `:{}` |
-| `@foo{A}` | 生テキスト | パースエラー | `@@foo{A}` |
-| `!foo` | 生テキスト | DirectiveError | **回避策なし** |
-| `\item >> \foo` | 生テキスト | **静かに** `\item{` / `\foo` / `}` の3行になる | 名前と `>>` の間に本文を置く |
-| `@@foo{A}` | 生テキスト | **静かに** `@foo{A}` になる | `@@@foo{A}` |
-
-下2行はエラーにならず出力だけが変わるので、移行時はこちらのほうが危険である。
-`@@` は同時に 3 行目の回避策でもあることに注意。
-
-これとは別に、`_items_handler` は項目間の空行を捨てていたが、ブロックスイートは
-空行を文書の内容として保持する。空行で区切ったリストは生成 TeX にその空行が残る。
-変換前のコーパスに空行区切りの `!items` は 0 件だったので、バイト一致の主張には
-影響しない。
-
-行の規則に関するものは、いずれも生の `\command` 行すべてに元からある規則であって
-新しい制限ではない。
-ただし `!foo` の行は、これで **TeXFlux のどこにも書けなくなった**。`@@` に相当する
-raw-line escape が `!` には存在しないためである。文字列 interpolation の原案 §18.1 は
-行頭 `!!` escape を提案していたが、設計書では D9 で見送っている。必要なら独立した
-機能として再検討すること。
-
-記載先は `doc/dsl.md` 8 章の表、規範仕様 9 章、`README.md` のチートシート。
-`tests/test_compile.py` の `test_an_item_body_is_an_ordinary_raw_line` で固定した。
-
-## 消えた API
-
-`texflux.Item` / `texflux.ast.Item` は公開 API から削除した。`CanonicalNode` は
-`RawTex | GenericInvocation | BraceGroup` の 3 種になった。
-
-`!items` は `!block` / `!arg` / `!body` と同じく unknown special として失敗する。
-`AGENTS.md` の v1 境界に、リスト用ミニ文法をどの綴りでも復活させない旨を記録した。
-
----
-
-# §A モジュールシステム
-
-モジュールシステムは `b3e8e33` で `main` に統合済み。
-実装・仕様・ドキュメント・テストは揃っている。ここに残すのは、
-**意図的に見送った項目**と**承知の上で放置している残件**だけである。
-
-## 参照先
-
-| 知りたいこと | 読む場所 |
-| --- | --- |
-| 言語としての規範 | `texflux_tex_first_dsl_v1_spec.md` §12 |
-| 日本語の利用者向け説明 | `doc/dsl.md` 14 章 |
-| 実装の設計と診断一覧（M01〜M27） | `doc/module-system.md` |
-| 守るべき不変条件 | `AGENTS.md`（v1 境界とレビューチェックリスト） |
-| 動く実例 | `examples/modules.tfx` と `examples/modules/` |
+| パーサ・正規化・レンダラ | `parser.py` `normalize.py` `render.py` | spec §1〜§8, §13〜§15 / `doc/dsl.md` |
+| 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`）と raw escape（`!\| `） | `parser.py` `syntax.py` | `doc/raw-mode.md` / spec §2 / `doc/dsl.md` §3 |
+| ソースマクロと標準フロー制御（同梱 `prelude.tfxm`） | `macros.py` `modules.py` | spec §9, §10, §12.9 / `doc/dsl.md` §11, §12, §14.10 |
+| 文字列 interpolation（`!text`） | `interpolate.py` `macros.py` | `doc/string-interpolation.md` / spec §10.6 / `doc/dsl.md` §12.7 |
+| ビルドフラグ（`!flag` / `!when` / `!unless`） | `flags.py` | spec §11 / `doc/dsl.md` §13 |
+| モジュールシステム（`!import` / `!macroimport`） | `modules.py` | `doc/module-system.md` / spec §12 / `doc/dsl.md` §14 |
+| ソースマップと SyncTeX リマップ | `source_map.py` `remap.py` `synctex.py` | spec §15 / `doc/dsl.md` §18 |
+| 外部 AST（`texflux ast`） | `external_ast.py` `interchange.py` | `doc/external-ast.md` / `schemas/texflux-ast-v1.schema.json` |
+| Diagnostic API（`texflux check` / `diagnose`） | `diagnostics.py` `interchange.py` `cli.py` | `doc/diagnostics.md` / `schemas/texflux-diagnostics-v1.schema.json` |
 
 ## 検証
 
+Python 3.11 以上が必要である（`.venv` が 3.9 のままなら作り直す）。
+
 ```bash
-python3 -W error::ResourceWarning -m unittest discover   # 273 tests, OK
-PYTHONPATH=src python3 -m texflux compile examples/modules.tfx -o /tmp/m.tex
-diff -u examples/modules.tex /tmp/m.tex                  # 差分なし
+python3 -W error::ResourceWarning -m unittest discover
+for f in basic structured stacked-items macros modules content; do
+  PYTHONPATH=src python3 -m texflux compile examples/$f.tfx -o /tmp/$f.tex && cmp examples/$f.tex /tmp/$f.tex
+done
 ```
 
-## `AGENTS.md` はローカルのみ
-
-`AGENTS.md` は `.gitignore` 済みなので、モジュールシステムに関する加筆は
-**コミットされていない**。clone し直すか別マシンへ移ると失われるため、
-その際は再度加筆が要る。
+JSON Schema の検証テストは開発用の `jsonschema` を入れた環境でのみ走り、未導入なら skip する。
+LaTeX 連携のテストは `pdflatex` / `synctex` を検出して skip する。
 
 ## 意図的に見送った項目
 
-`doc/module-system.md` §16 に全件ある。実運用で欲しくなりそうなのは次の 3 つ。
-
-- **依存関係の出力**（`texflux compile --deps` 相当）。Makefile で `.tfx` / `.tfxm`
-  の依存を書くには要る。`session.loaded()` が全ソースを持っているので実装は軽い。
-  ただし条件分岐で依存グラフが変わる点をどう扱うかは要設計。
-- **`.tfxm` の陳腐化検出**。`.tfxm` はフラグメントを生まないため `.tfxmap` の
-  `sources` に載らない。今はビルドシステムの責務としている。
-- **`ModuleInstance` のキャッシュ**。現状はパース結果のみキャッシュなので、
-  同じモジュールを同じフラグで 2 回 import すると 2 回コンパイルする。
-  `(path, frozenset(flags.items()))` をキーにすれば安全に効かせられる。
+- **依存関係の出力**（`texflux compile --deps` 相当）。`session.loaded()` が全ソースを持っているので
+  実装は軽いが、条件分岐で依存グラフが変わる点をどう扱うかは要設計（`doc/module-system.md` §14）。
+- **`.tfxm` の陳腐化検出**。`.tfxm` はフラグメントを生まないため `.tfxmap` の `sources` に載らない。
+  ビルドシステムの責務としている。
+- **モジュールインスタンスのキャッシュ**。同じモジュールを同じフラグで 2 回 import すると 2 回
+  コンパイルする。`(path, frozenset(flags.items()))` をキーにすれば安全に効かせられる。
+- **複数エラーの収集**、**LSP サーバー本体**、**CLI からの import 先 overlay**（`doc/diagnostics.md` §5）。
 
 ## 承知の上で放置している残件
 
-- `_check_self_contained` は `_build_environments` のたびにロード済みの全マクロ
-  モジュールを走査する（O(コンテンツ数 × マクロモジュール数)）。実測で
-  40×40×20 マクロ 0.09 秒。純粋かつ冪等なので害はない。問題になったら
-  「検査済み集合」を持てばよい。
-- 大文字小文字を区別しないボリュームでは `paths.normalized_path` の `normcase`
-  により `b.tfx` と `B.tfx` が同一視される。
-- ルートの `filename` に NUL が入ると `compile_with_map` は span のない
-  `ValueError` を返す（文書中のパスではなく呼び出し側の引数なので、`FlagError`
-  と同じ扱いという判断）。CLI は捕捉するのでクラッシュはしない。
+- 大文字小文字を区別しないボリュームでは、`paths.normalized_path` の `normcase` が macOS では恒等なので
+  `b.tfx` と `B.tfx` が 2 つのソースになる。
+- ルートの `filename` に NUL が入ると `compile_with_map` は span のない `ValueError` を返す
+  （文書中のパスではなく呼び出し側の引数なので、`FlagError` と同じ扱い）。CLI は捕捉する。
+
+## 運用メモ
+
+- `AGENTS.md` は `.gitignore` 済みでローカルにしか無い。clone し直すか別マシンへ移ると失われる。
+- 日本語文書は事実が固まった後に `ja-doc-polish` スキルで整えてよい（任意）。

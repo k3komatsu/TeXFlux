@@ -609,6 +609,19 @@ class MacroModulePurityTests(ModuleTestCase):
             "'!helper' is not defined in",
         )
 
+    def test_every_environment_is_merged_before_any_module_is_checked(self):
+        # Two independent faults: the first module names a macro it cannot
+        # see, the second imports two definitions of one name. Merging every
+        # environment first means the collision wins regardless of order.
+        self.write("d1.tfxm", "!defmacro{dup}:\n    A\n")
+        self.write("d2.tfxm", "!defmacro{dup}:\n    B\n")
+        self.write("m1.tfxm", "!defmacro{m1}:\n    !nosuch\n")
+        self.write("m2.tfxm", "!macroimport{d1.tfxm}\n!macroimport{d2.tfxm}\n")
+        self.write("main.tfx", "!macroimport{m1.tfxm}\n!macroimport{m2.tfxm}\n")
+        error = self.failure()
+        self.assertEqual(error.code, "M021")
+        self.assertIn("'!dup' is already available here", error.message)
+
     def test_a_callers_namespace_cannot_complete_a_macro_module(self):
         self.write("a.tfxm", "!defmacro{foo}:\n    !helper\n")
         self.write(

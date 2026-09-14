@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 
 from . import __version__
 from .ast import SourcePosition
+from .interchange import dump_json, encode_position
 from .paths import PathLike
 from .render import CompilationResult, RenderedFragment
-
-
-def _position(position: SourcePosition) -> dict[str, int]:
-    return {"line": position.line, "column": position.column}
 
 
 def _stored_path(path: PathLike, map_path: PathLike) -> str:
@@ -45,7 +41,9 @@ def _source_ids(result: CompilationResult) -> dict[str, int]:
     map it always did. Every other file follows in order of first appearance,
     which the document's own order decides. A module that contributed no
     fragment -- a ``.tfxm``, or a ``.tfx`` whose content was all dropped --
-    is left out, because every listed source becomes a SyncTeX input.
+    is left out, because every listed source becomes a SyncTeX input. That
+    is why the map cannot share ``interchange.header``, whose table lists
+    every loaded source in load order.
     """
 
     if not result.sources:
@@ -57,9 +55,7 @@ def _source_ids(result: CompilationResult) -> dict[str, int]:
             continue
         name = fragment.source.file
         if name not in known:
-            raise ValueError(
-                f"source span names a file that was not loaded: {name}"
-            )
+            raise ValueError(f"span names a file that was not loaded: {name}")
         if name not in order:
             order.append(name)
     return {name: index for index, name in enumerate(order)}
@@ -96,13 +92,13 @@ def serialize_source_map(
         mappings.append(
             {
                 "generated": {
-                    "start": _position(fragment.generated.start),
-                    "end": _position(fragment.generated.end),
+                    "start": encode_position(fragment.generated.start),
+                    "end": encode_position(fragment.generated.end),
                 },
                 "source": {
                     "id": ids[fragment.source.file],
-                    "start": _position(fragment.source.start),
-                    "end": _position(fragment.source.end),
+                    "start": encode_position(fragment.source.start),
+                    "end": encode_position(fragment.source.end),
                 },
                 "role": fragment.role,
             }
@@ -126,7 +122,7 @@ def serialize_source_map(
         ],
         "mappings": mappings,
     }
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+    return dump_json(payload)
 
 
 __all__ = ["serialize_source_map"]

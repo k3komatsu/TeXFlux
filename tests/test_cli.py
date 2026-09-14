@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 from types import SimpleNamespace
 import unittest
 
@@ -383,6 +384,28 @@ class CliFlagTests(TempDirTestCase):
         status, _, stderr = self.run_compile("draft", "draft=off")
         self.assertEqual(status, 1)
         self.assertIn("more than once", stderr)
+
+
+class EntryPointTests(TempDirTestCase):
+    def test_the_console_script_points_at_main(self):
+        root = Path(__file__).parents[1]
+        metadata = tomllib.loads(
+            (root / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(metadata["project"]["name"], "texflux")
+        self.assertEqual(
+            metadata["project"]["scripts"],
+            {"texflux": "texflux.cli:main"},
+        )
+
+    def test_a_missing_subcommand_is_a_usage_error(self):
+        input_path = self.write("input.tfx", "raw\n")
+        stderr = StringIO()
+        with contextlib.redirect_stderr(stderr):
+            status = main([str(input_path), "-o", str(self.root / "out.tex")])
+        self.assertEqual(status, 2)
+        self.assertIn("invalid choice", stderr.getvalue())
+        self.assertFalse((self.root / "out.tex").exists())
 
 
 if __name__ == "__main__":

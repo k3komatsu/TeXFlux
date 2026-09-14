@@ -485,7 +485,7 @@ print("エラーなし" if report.ok else "エラーあり")
 ```
 
 診断コードの体系、JSON 形式 `texflux-diagnostics`、LSP へのマッピングなど詳細は
-[Diagnostic API 実装設計書 (doc/diagnostics.md)](doc/diagnostics.md) を参照してください。
+[Diagnostic API 設計書 (doc/diagnostics.md)](doc/diagnostics.md) を参照してください。
 
 ---
 
@@ -526,9 +526,11 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 
 - [TeXFlux DSL v1 利用者向け言語仕様書 (doc/dsl.md)](doc/dsl.md)（日本語）
 - [TeXFlux Normative Specification (texflux_tex_first_dsl_v1_spec.md)](texflux_tex_first_dsl_v1_spec.md)（規範的仕様書・英語）
-- [モジュールシステム詳細設計書 (doc/module-system.md)](doc/module-system.md)（日本語）
-- [行単位 raw mode 実装設計書 (doc/raw-mode.md)](doc/raw-mode.md)（日本語）
-- [Diagnostic API 実装設計書 (doc/diagnostics.md)](doc/diagnostics.md)（日本語）
+- [モジュールシステム設計書 (doc/module-system.md)](doc/module-system.md)（日本語）
+- [文字列 interpolation 設計書 (doc/string-interpolation.md)](doc/string-interpolation.md)（日本語）
+- [行単位 raw mode 設計書 (doc/raw-mode.md)](doc/raw-mode.md)（日本語）
+- [外部 AST 出力 (doc/external-ast.md)](doc/external-ast.md)（日本語）
+- [Diagnostic API 設計書 (doc/diagnostics.md)](doc/diagnostics.md)（日本語）
 
 ---
 
