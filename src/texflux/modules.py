@@ -20,7 +20,7 @@ about module boundaries.
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 import importlib.resources
@@ -41,7 +41,12 @@ from .ast import (
     SpecialInvocation,
     SequenceEntry,
 )
-from .errors import InternalError, ModuleError, TeXFluxError
+from .errors import (
+    InternalError,
+    ModuleError,
+    RelatedLocation,
+    TeXFluxError,
+)
 from .flags import (
     FLAG_NAME_PATTERN,
     FLAG_VALUES,
@@ -119,6 +124,20 @@ _BINDING_RE: Final = re.compile(
 # --------------------------------------------------------------------------
 
 
+#: Reads one module's bytes, given the spelling ``load`` was asked for. An
+#: editor supplies its own so an unsaved buffer is compiled in place of the
+#: file on disk. A reader signals "no such module" with ``OSError``, which is
+#: what ``load`` already turns into a spanned diagnostic.
+SourceReader: TypeAlias = Callable[[str], bytes]
+
+
+def read_source(display: str) -> bytes:
+    """The default reader: whatever is on disk at ``display``."""
+
+    with open(os.path.abspath(display), "rb") as stream:
+        return stream.read()
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleSource:
     """One loaded file, cached by canonical path identity."""
@@ -152,18 +171,23 @@ def resolve_module_path(
     """
 
     if not written:
-        raise ModuleError("module path must not be empty", span)
+        raise ModuleError("module path must not be empty", span, code="M001")
     if "\0" in written:
         # The OS refuses to even stat such a path, raising ValueError rather
         # than OSError, so it is rejected here for both constructs at once
         # instead of leaking out of whichever one happens to look first.
-        raise ModuleError("module path must not contain a NUL character", span)
+        raise ModuleError(
+            "module path must not contain a NUL character",
+            span,
+            code="M002",
+        )
     if "\\" in written:
-        raise ModuleError("module paths use '/' separators", span)
+        raise ModuleError("module paths use '/' separators", span, code="M003")
     if os.path.isabs(written.replace("/", os.sep)):
         raise ModuleError(
             "module paths must be relative to the importing file",
             span,
+            code="M004",
         )
     if not written.endswith(kind.value):
         construct = (
@@ -172,6 +196,7 @@ def resolve_module_path(
         raise ModuleError(
             f"!{construct} requires a '{kind.value}' module; got '{written}'",
             span,
+            code="M005",
         )
     return os.path.normpath(
         os.path.join(os.path.dirname(importer), *written.split("/"))
@@ -222,11 +247,16 @@ def parse_bindings(argument: Argument) -> tuple[FlagBinding, ...]:
 
     text = argument.value
     if not isinstance(text, str):
-        raise ModuleError("!import binding list must be inline text", argument.span)
+        raise ModuleError(
+            "!import binding list must be inline text",
+            argument.span,
+            code="M006",
+        )
     if not text.strip(" "):
         raise ModuleError(
             "!import binding list is empty; omit '(...)' instead",
             argument.span,
+            code="M007",
         )
 
     bindings: list[FlagBinding] = []
@@ -248,6 +278,7 @@ def parse_bindings(argument: Argument) -> tuple[FlagBinding, ...]:
                 "!import bindings are written 'flag=on', 'flag=off' or "
                 f"'flag=$callerFlag'; got '{chunk}'",
                 _sub_span(argument, first, max(last, first + 1)),
+                code="M008",
             )
         name, value = match.group(1), match.group(2)
         forwarded = value.startswith("$")
@@ -287,18 +318,27 @@ def bind_import_flags(
                 f"imported module '{module}' does not declare build flag "
                 f"'{binding.name}'; {declared_flags_hint(declared)}",
                 binding.name_span,
+                code="M009",
             )
         if binding.name in bound:
             raise ModuleError(
                 f"build flag '{binding.name}' is bound twice; first bound at "
                 f"{bound[binding.name].location}",
                 binding.name_span,
+                code="M010",
+                related=(
+                    RelatedLocation(
+                        "first bound here",
+                        bound[binding.name],
+                    ),
+                ),
             )
         if binding.caller is not None and binding.caller not in caller_flags:
             raise ModuleError(
                 f"unknown build flag '{binding.caller}' in this module; "
                 f"{declared_flags_hint(caller_flags)}",
                 binding.value_span,
+                code="M011",
             )
         bound[binding.name] = binding.name_span
         resolved[binding.name] = (
@@ -332,6 +372,7 @@ def validate_macroimport_forms(document: Document) -> None:
                     "!macroimport must be a top-level declaration and cannot "
                     "be a '>>' segment",
                     segment.span,
+                    code="M012",
                 )
 
 
@@ -350,6 +391,7 @@ def validate_macro_module_purity(document: Document) -> None:
             raise ModuleError(
                 f"'!{child.name}' is not allowed in a .tfxm macro module",
                 child.span,
+                code="M013",
             )
 
     for node in document.body.nodes:
@@ -365,6 +407,7 @@ def validate_macro_module_purity(document: Document) -> None:
                     "a .tfxm macro module may contain only !defmacro, "
                     "!macroimport, comment lines and blank lines",
                     node.span,
+                    code="M014",
                 )
 
 
@@ -379,7 +422,11 @@ def _macro_import(
     importer: str,
 ) -> MacroImport:
     if node.suite is not None:
-        raise ModuleError("!macroimport does not accept a suite", node.span)
+        raise ModuleError(
+            "!macroimport does not accept a suite",
+            node.span,
+            code="M015",
+        )
     binding = next(
         (group for group in node.groups if group.kind is GroupKind.BINDING),
         None,
@@ -388,14 +435,20 @@ def _macro_import(
         raise ModuleError(
             "!macroimport does not accept a '(...)' list",
             binding.span,
+            code="M016",
         )
     if len(node.groups) != 1:
-        raise ModuleError("!macroimport requires one '{path}' group", node.span)
+        raise ModuleError(
+            "!macroimport requires one '{path}' group",
+            node.span,
+            code="M017",
+        )
     group = node.groups[0]
     if required_text(group) is None:
         raise ModuleError(
             "!macroimport path must be a required '{...}' group",
             group.span,
+            code="M018",
         )
 
     written = demand_text(group, "!macroimport path")
@@ -406,6 +459,8 @@ def _macro_import(
             f"macro module '{display}' is already imported at "
             f"{seen[path].location}",
             group.span,
+            code="M019",
+            related=(RelatedLocation("first imported here", seen[path]),),
         )
     seen[path] = group.span
     return MacroImport(path, display, group.span)
@@ -444,6 +499,7 @@ def resolve_macro_imports(
         raise ModuleError(
             "!macroimport is only valid at the top level",
             misplaced.span,
+            code="M020",
         )
     return replace(document, body=body), tuple(imports)
 
@@ -467,6 +523,13 @@ def merge_imports(
                     f"macro '!{name}' is already available here, defined at "
                     f"{environment[name].span.location}",
                     macro_import.span,
+                    code="M021",
+                    related=(
+                        RelatedLocation(
+                            "defined here",
+                            environment[name].span,
+                        ),
+                    ),
                 )
             environment[name] = definition
     return environment
@@ -499,6 +562,7 @@ def load_standard_macros(
             raise ModuleError(
                 "the bundled standard macro module imports no other module",
                 imports[0].span,
+                code="M022",
             )
         _, macros = collect_macros(document, registry, module=PRELUDE_MODULE)
     except (TeXFluxError, OSError, UnicodeError) as error:
@@ -571,6 +635,7 @@ class _ImportResolver:
                 "!import produces content: it does not accept a suite and "
                 "cannot wrap a '>>' payload",
                 node.span,
+                code="M023",
             )
 
         path_group: Argument | None = None
@@ -583,17 +648,20 @@ class _ImportResolver:
                     raise ModuleError(
                         "!import requires exactly one '{path}' group",
                         node.span,
+                        code="M024",
                     )
                 path_group = group
             else:
                 raise ModuleError(
                     "!import does not accept '[...]' or '<...>' groups",
                     group.span,
+                    code="M025",
                 )
         if path_group is None:
             raise ModuleError(
                 "!import requires exactly one '{path}' group",
                 node.span,
+                code="M026",
             )
 
         display = resolve_module_path(
@@ -619,6 +687,7 @@ class _ImportResolver:
                 raise ModuleError(
                     "content import cycle: " + self._cycle(target),
                     node.span,
+                    code="M027",
                 )
             imported = self._session.compile_content(
                 target,
@@ -633,9 +702,9 @@ class _ImportResolver:
             # so already, so only an error from the callee names this site.
             if error.span.file == node.span.file:
                 raise
-            raise type(error)(
+            raise error.chained(
                 f"{error.message}; imported from {node.span.location}",
-                error.span,
+                RelatedLocation("imported from here", node.span),
             ) from error
         return imported.body.nodes
 
@@ -666,8 +735,14 @@ def resolve_content_imports(
 class CompilationSession:
     """One compilation: its source cache, macro environments and file list."""
 
-    def __init__(self, registry: DirectiveRegistry = BUILTIN_DIRECTIVES):
+    def __init__(
+        self,
+        registry: DirectiveRegistry = BUILTIN_DIRECTIVES,
+        *,
+        reader: SourceReader | None = None,
+    ):
         self._registry = registry
+        self._reader = read_source if reader is None else reader
         self._sources: dict[str, ModuleSource] = {}
         self._loaded: list[LoadedSource] = []
         self._public: dict[str, dict[str, MacroDefinition]] = {}
@@ -700,6 +775,11 @@ class CompilationSession:
         data: bytes,
         text: str,
     ) -> ModuleSource:
+        # Recorded before parsing: a diagnostic report lists every file the
+        # compilation read, and the one whose parse failed most of all.
+        self._loaded.append(
+            LoadedSource(display, os.path.abspath(display), data)
+        )
         source = ModuleSource(
             normalized_path(display),
             display,
@@ -708,9 +788,6 @@ class CompilationSession:
             parse(text, display),
         )
         self._sources[source.path] = source
-        self._loaded.append(
-            LoadedSource(display, os.path.abspath(display), data)
-        )
         return source
 
     def load(
@@ -729,8 +806,7 @@ class CompilationSession:
             cached = self._sources.get(normalized_path(display))
             if cached is not None:
                 return cached
-            with open(os.path.abspath(display), "rb") as stream:
-                data = stream.read()
+            data = self._reader(display)
             text = data.decode("utf-8")
         except (OSError, UnicodeError, ValueError) as error:
             # A NUL byte makes a path the OS refuses to even look at, which
@@ -738,6 +814,7 @@ class CompilationSession:
             raise ModuleError(
                 f"cannot read module '{display}': {error}",
                 span,
+                code="M028",
             ) from error
         return self._register(display, kind, data, text)
 
@@ -755,6 +832,7 @@ class CompilationSession:
         """
 
         message = error.message
+        related: list[RelatedLocation] = []
         seen: set[str] = set()
         current = path
         while current not in seen:
@@ -764,10 +842,13 @@ class CompilationSession:
                 break
             if error.span.file != site.file:
                 message = f"{message}; imported from {site.location}"
+                related.append(RelatedLocation("imported from here", site))
             current = normalized_path(site.file)
+        # Returning the error itself when nothing was added keeps the caller's
+        # bare re-raise, and with it the original exception as __cause__.
         if message == error.message:
             return error
-        return type(error)(message, error.span)
+        return error.chained(message, *related)
 
     def _load_macro_modules(self, roots: Sequence[MacroImport]) -> None:
         """Load the macro-import closure of ``roots``, without recursing.
@@ -867,6 +948,7 @@ class CompilationSession:
                     f"'!{child.name}' is not defined in {definition.span.file} "
                     "and is not available through its own !macroimport",
                     child.span,
+                    code="M029",
                 )
 
     # -- content modules ---------------------------------------------------
@@ -969,10 +1051,12 @@ __all__ = [
     "Module",
     "ModuleKind",
     "ModuleSource",
+    "SourceReader",
     "bind_import_flags",
     "load_standard_macros",
     "merge_imports",
     "parse_bindings",
+    "read_source",
     "resolve_content_imports",
     "resolve_macro_imports",
     "resolve_module_path",

@@ -1253,7 +1253,7 @@ MacroEnvironment: TypeAlias = Mapping[str, MacroDefinition]
 
 
 class ModuleError(TeXFluxError):
-    error_kind = "module error"
+    kind = "module"
 ```
 
 `ModuleError` は `errors.py` に置き、`modules.py` から re-export する。
@@ -1505,38 +1505,41 @@ map_text = serialize_source_map(
 
 ## 13. 診断の一覧
 
-すべて `ModuleError`（`error_kind = "module error"`）。span は表のとおり。
+すべて `ModuleError`（`kind = "module"`、表示は `module error`）。span は表のとおり。
+旧 M01〜M27 との対応表は `doc/diagnostics.md` §2.6 にある。
 
 | # | 条件 | メッセージ | span |
 | --- | --- | --- | --- |
-| M01 | パスが空 | `module path must not be empty` | 群 |
-| M01' | パスが NUL を含む | `module path must not contain a NUL character` | 群 |
-| M02 | `\` を含む | `module paths use '/' separators` | 群 |
-| M03 | 絶対パス | `module paths must be relative to the importing file` | 群 |
-| M04 | `!import` の拡張子不一致 | `!import requires a '.tfx' module; got '<written>'` | 群 |
-| M05 | `!macroimport` の拡張子不一致 | `!macroimport requires a '.tfxm' module; got '<written>'` | 群 |
-| M06 | ファイルが読めない | `cannot read module '<display>': <理由>` | 群 |
-| M07 | `!import` に suite | `!import produces content: it does not accept a suite and cannot wrap a '>>' payload` | ノード |
-| M08 | `!import` の必須群が 1 個でない | `!import requires exactly one '{path}' group` | ノード |
-| M09 | `!import` に `[...]`/`<...>` | `!import does not accept '[...]' or '<...>' groups` | 群 |
-| M10 | 束縛リストが空 | `!import binding list is empty; omit '(...)' instead` | 群 |
-| M11 | 束縛の構文不正 | `!import bindings are written 'flag=on', 'flag=off' or 'flag=$callerFlag'; got '<chunk>'` | 部分 |
-| M12 | callee が未宣言のフラグ | `imported module '<display>' does not declare build flag '<name>'; <宣言一覧>` | 名前 |
-| M13 | 同じ callee フラグの二重束縛 | `build flag '<name>' is bound twice; first bound at <loc>` | 名前 |
-| M14 | `$x` が caller に無い | `unknown build flag '<x>' in this module; <宣言一覧>` | 値 |
-| M15 | コンテンツ import の循環 | `content import cycle: <経路>` | ノード |
-| M16 | `!macroimport` に suite | `!macroimport does not accept a suite` | ノード |
-| M17 | `!macroimport` の群が 1 個でない | `!macroimport requires one '{path}' group` | ノード |
-| M18 | `!macroimport` に `(...)` | `!macroimport does not accept a '(...)' list` | 群 |
-| M19 | `!macroimport` のパスが必須群でない | `!macroimport path must be a required '{...}' group` | 群 |
-| M20 | 同一モジュールの二重取り込み | `macro module '<display>' is already imported at <loc>` | 群 |
-| M21 | `!macroimport` が非トップレベル | `!macroimport is only valid at the top level` | ノード |
-| M22 | `!macroimport` が `>>` セグメント | `!macroimport must be a top-level declaration and cannot be a '>>' segment` | セグメント |
-| M23 | `.tfxm` のトップレベル純粋性違反 | `a .tfxm macro module may contain only !defmacro, !macroimport, comment lines and blank lines` | ノード |
-| M24 | `.tfxm` 内の禁止特殊 | `'!<name>' is not allowed in a .tfxm macro module` | ノード |
-| M25 | 取り込みマクロ名の衝突 | `macro '!<name>' is already available here, defined at <loc>` | `!macroimport` |
-| M26 | `.tfxm` の自己完結性違反 | `'!<n>' is not defined in <display> and is not available through its own !macroimport` | ノード |
-| M27 | `normalize()` 直呼び | `'!<name>' requires module compilation; use texflux.compile_with_map or the texflux CLI` | ノード |
+| M001 | パスが空 | `module path must not be empty` | 群 |
+| M002 | パスが NUL を含む | `module path must not contain a NUL character` | 群 |
+| M003 | `\` を含む | `module paths use '/' separators` | 群 |
+| M004 | 絶対パス | `module paths must be relative to the importing file` | 群 |
+| M005 | `!import` の拡張子不一致 | `!import requires a '.tfx' module; got '<written>'` | 群 |
+| M005 | `!macroimport` の拡張子不一致 | `!macroimport requires a '.tfxm' module; got '<written>'` | 群 |
+| M006 | 束縛リストがインラインテキストでない | `!import binding list must be inline text` | 群 |
+| M028 | ファイルが読めない | `cannot read module '<display>': <理由>` | 群 |
+| M023 | `!import` に suite | `!import produces content: it does not accept a suite and cannot wrap a '>>' payload` | ノード |
+| M024 / M026 | `!import` の必須群が 1 個でない | `!import requires exactly one '{path}' group` | ノード |
+| M025 | `!import` に `[...]`/`<...>` | `!import does not accept '[...]' or '<...>' groups` | 群 |
+| M007 | 束縛リストが空 | `!import binding list is empty; omit '(...)' instead` | 群 |
+| M008 | 束縛の構文不正 | `!import bindings are written 'flag=on', 'flag=off' or 'flag=$callerFlag'; got '<chunk>'` | 部分 |
+| M009 | callee が未宣言のフラグ | `imported module '<display>' does not declare build flag '<name>'; <宣言一覧>` | 名前 |
+| M010 | 同じ callee フラグの二重束縛 | `build flag '<name>' is bound twice; first bound at <loc>` | 名前 |
+| M011 | `$x` が caller に無い | `unknown build flag '<x>' in this module; <宣言一覧>` | 値 |
+| M027 | コンテンツ import の循環 | `content import cycle: <経路>` | ノード |
+| M015 | `!macroimport` に suite | `!macroimport does not accept a suite` | ノード |
+| M017 | `!macroimport` の群が 1 個でない | `!macroimport requires one '{path}' group` | ノード |
+| M016 | `!macroimport` に `(...)` | `!macroimport does not accept a '(...)' list` | 群 |
+| M018 | `!macroimport` のパスが必須群でない | `!macroimport path must be a required '{...}' group` | 群 |
+| M019 | 同一モジュールの二重取り込み | `macro module '<display>' is already imported at <loc>` | 群 |
+| M020 | `!macroimport` が非トップレベル | `!macroimport is only valid at the top level` | ノード |
+| M012 | `!macroimport` が `>>` セグメント | `!macroimport must be a top-level declaration and cannot be a '>>' segment` | セグメント |
+| M014 | `.tfxm` のトップレベル純粋性違反 | `a .tfxm macro module may contain only !defmacro, !macroimport, comment lines and blank lines` | ノード |
+| M013 | `.tfxm` 内の禁止特殊 | `'!<name>' is not allowed in a .tfxm macro module` | ノード |
+| M021 | 取り込みマクロ名の衝突 | `macro '!<name>' is already available here, defined at <loc>` | `!macroimport` |
+| M022 | 同梱の標準マクロモジュールが `!macroimport` を持つ（到達不能: `InternalError` に変換される） | `the bundled standard macro module imports no other module` | ノード |
+| M029 | `.tfxm` の自己完結性違反 | `'!<n>' is not defined in <display> and is not available through its own !macroimport` | ノード |
+| M030 | `normalize()` 直呼び | `'!<name>' requires module compilation; use texflux.compile_with_map or the texflux CLI` | ノード |
 
 `ValidationError` として報告するもの（既存の体系に合わせる）:
 

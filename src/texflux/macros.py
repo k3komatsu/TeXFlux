@@ -36,7 +36,7 @@ from .ast import (
     SyntaxNode,
     plain_text,
 )
-from .errors import MacroExpansionError, ValidationError
+from .errors import MacroExpansionError, RelatedLocation, ValidationError
 from .flags import (
     CONDITIONAL_NAMES,
     Conditional,
@@ -135,13 +135,19 @@ def _parameters(groups: tuple[Argument, ...]) -> tuple[MacroParameter, ...]:
             raise ValidationError(
                 f"invalid macro parameter name '{text}'",
                 group.span,
+                code="V013",
             )
         if name in seen:
-            raise ValidationError(f"duplicate macro parameter '{name}'", group.span)
+            raise ValidationError(
+                f"duplicate macro parameter '{name}'",
+                group.span,
+                code="V014",
+            )
         if parameters and parameters[-1].rest:
             raise ValidationError(
                 "a rest parameter must be the last macro parameter",
                 group.span,
+                code="V015",
             )
         seen.add(name)
         parameters.append(MacroParameter(name, rest))
@@ -159,20 +165,34 @@ def _definition(
         raise ValidationError(
             "!defmacro requires a ':' template suite",
             node.span,
+            code="V016",
         )
     if not node.groups:
-        raise ValidationError("!defmacro requires a macro name group", node.span)
+        raise ValidationError(
+            "!defmacro requires a macro name group",
+            node.span,
+            code="V017",
+        )
 
     name_group = node.groups[0]
     name = demand_text(name_group, "!defmacro name")
     if _MACRO_NAME_RE.fullmatch(name) is None:
-        raise ValidationError(f"invalid macro name '{name}'", name_group.span)
+        raise ValidationError(
+            f"invalid macro name '{name}'",
+            name_group.span,
+            code="V018",
+        )
     if name in _RESERVED_NAMES:
-        raise ValidationError(f"'!{name}' is reserved by TeXFlux", name_group.span)
+        raise ValidationError(
+            f"'!{name}' is reserved by TeXFlux",
+            name_group.span,
+            code="V019",
+        )
     if name in builtins:
         raise ValidationError(
             f"'!{name}' is a built-in special and cannot be redefined",
             name_group.span,
+            code="V020",
         )
     if name in standard:
         # Strict collision rather than shadowing: with a handful of standard
@@ -181,12 +201,15 @@ def _definition(
         raise ValidationError(
             f"macro '!{name}' conflicts with a TeXFlux standard flow macro",
             name_group.span,
+            code="V021",
         )
     if name in defined:
         previous = defined[name].span.location
         raise ValidationError(
             f"macro '!{name}' is already defined at {previous}",
             name_group.span,
+            code="V022",
+            related=(RelatedLocation("first defined here", defined[name].span),),
         )
     for child in walk(node.suite):
         if not isinstance(child, SpecialInvocation):
@@ -195,6 +218,7 @@ def _definition(
             raise ValidationError(
                 "!defmacro is only valid at the top level",
                 child.span,
+                code="V023",
             )
         if child.name in _MODULE_NAMES:
             # Otherwise content dependency discovery would depend on macro
@@ -202,6 +226,7 @@ def _definition(
             raise ValidationError(
                 f"!{child.name} is not allowed inside a macro template",
                 child.span,
+                code="V024",
             )
     return MacroDefinition(
         name,
@@ -233,6 +258,7 @@ def validate_macro_forms(document: Document) -> None:
                     "!defmacro must be a top-level ':' definition and "
                     "cannot be a '>>' segment",
                     segment.span,
+                    code="V025",
                 )
             writes_own_suite = (
                 index == len(stack.segments) - 1
@@ -242,6 +268,7 @@ def validate_macro_forms(document: Document) -> None:
                 raise ValidationError(
                     "!each requires a ':' template suite of its own",
                     segment.span,
+                    code="V026",
                 )
 
 
@@ -331,12 +358,19 @@ def _error(
     message: str,
     span: SourceSpan,
     frame: _Frame | None,
+    *,
+    code: str,
 ) -> MacroExpansionError:
     """Build a diagnostic that names the expansion chain when inside one."""
 
-    if frame is not None:
-        message = f"{message}; {frame.where()}"
-    return MacroExpansionError(message, span)
+    if frame is None:
+        return MacroExpansionError(message, span, code=code)
+    return MacroExpansionError(
+        f"{message}; {frame.where()}",
+        span,
+        code=code,
+        related=(RelatedLocation("called here", frame.call_span),),
+    )
 
 
 class _Expander:
@@ -389,6 +423,7 @@ class _Expander:
                 raise ValidationError(
                     "!defmacro is only valid at the top level",
                     node.span,
+                    code="V027",
                 )
             case SpecialInvocation(name=Reserved.PARAM):
                 return self._param(node, frame)
@@ -398,6 +433,7 @@ class _Expander:
                     "use !param for an AST position",
                     node.span,
                     frame,
+                    code="E009",
                 )
             case SpecialInvocation(name=Reserved.EACH):
                 return self._each(node, frame)
@@ -467,7 +503,7 @@ class _Expander:
         try:
             reject_markers(text, span, where)
         except MacroExpansionError as error:
-            raise _error(error.message, error.span, frame) from None
+            raise _error(error.message, error.span, frame, code=error.code) from None
 
     def _argument(
         self,
@@ -520,6 +556,7 @@ class _Expander:
             raise ValidationError(
                 f"{label} requires exactly {count} required group(s)",
                 node.span,
+                code="V028",
             )
         texts = []
         for group in node.groups:
@@ -539,6 +576,7 @@ class _Expander:
             raise MacroExpansionError(
                 f"!{node.name} is only valid inside a macro template",
                 node.span,
+                code="E010",
             )
         return frame
 
@@ -549,7 +587,11 @@ class _Expander:
     ) -> tuple[Node, ...]:
         frame = self._template_frame(node, frame)
         if node.suite is not None:
-            raise ValidationError("!param does not accept a suite", node.span)
+            raise ValidationError(
+                "!param does not accept a suite",
+                node.span,
+                code="V029",
+            )
         (name,) = self._single_name(node, "!param", 1, frame)
 
         if name in frame.sequences:
@@ -557,9 +599,15 @@ class _Expander:
                 f"'{name}' is a rest parameter; use !each to expand it",
                 node.span,
                 frame,
+                code="E011",
             )
         if name not in frame.values:
-            raise _error(f"unknown macro parameter '{name}'", node.span, frame)
+            raise _error(
+                f"unknown macro parameter '{name}'",
+                node.span,
+                frame,
+                code="E012",
+            )
         # The bound value already carries call-site spans, so it is spliced
         # in unchanged rather than retargeted.
         return frame.values[name]
@@ -571,12 +619,17 @@ class _Expander:
     ) -> tuple[Node, ...]:
         frame = self._template_frame(node, frame)
         if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
-            raise ValidationError("!each requires a ':' template suite", node.span)
+            raise ValidationError(
+                "!each requires a ':' template suite",
+                node.span,
+                code="V030",
+            )
         sequence_name, item_name = self._single_name(node, "!each", 2, frame)
         if _PARAM_NAME_RE.fullmatch(item_name) is None:
             raise ValidationError(
                 f"invalid !each item name '{item_name}'",
                 node.groups[1].span,
+                code="V031",
             )
 
         if sequence_name in frame.values:
@@ -584,18 +637,21 @@ class _Expander:
                 f"'{sequence_name}' is not a rest parameter; !each needs one",
                 node.span,
                 frame,
+                code="E013",
             )
         if sequence_name not in frame.sequences:
             raise _error(
                 f"unknown macro parameter '{sequence_name}'",
                 node.span,
                 frame,
+                code="E014",
             )
         if frame.knows(item_name):
             raise _error(
                 f"!each item '{item_name}' shadows a bound macro parameter",
                 node.span,
                 frame,
+                code="E015",
             )
 
         nodes: list[Node] = []
@@ -624,11 +680,13 @@ class _Expander:
             raise ValidationError(
                 f"!{node.name} requires a ':' suite or a '>>' payload",
                 node.span,
+                code="V032",
             )
         if node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError(
                 f"!{node.name} does not accept a '::' sequence suite",
                 node.span,
+                code="V033",
             )
 
         if not keep:
@@ -654,6 +712,7 @@ class _Expander:
                 "recursive macro expansion detected: " + chain_text(chain),
                 node.span,
                 frame,
+                code="E016",
             )
 
         values = self._values(node, frame)
@@ -681,6 +740,7 @@ class _Expander:
                     "macro calls accept required '{...}' values only",
                     group.span,
                     frame,
+                    code="E017",
                 )
             target = self._span(group.span, frame)
             parts = group.parts
@@ -700,6 +760,7 @@ class _Expander:
                             "macro calls do not accept '+' sequence entries",
                             entry.span,
                             frame,
+                            code="E018",
                         )
             suite = self.block(node.suite, frame)
             if node.suite_mode is SuiteMode.SEQUENCE:
@@ -725,6 +786,7 @@ class _Expander:
                 f"got {len(values)}",
                 node.span,
                 frame,
+                code="E019",
             )
         bound = {
             parameter.name: value

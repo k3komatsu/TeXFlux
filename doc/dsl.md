@@ -1354,6 +1354,11 @@ suite のモード情報としては `Sequence` または `Block` を保持す�
 
 ## 19. エラー診断（Diagnostics）
 
+すべての診断は `file:line:column: kind: message [CODE]` の形式で出力される。
+コードは英字1文字と3桁の数字（例: `P004`）から成り、リリースをまたいでも
+安定している（改番も再利用もされない）。コード体系、JSON 形式、および
+`texflux check` コマンドの詳細は `doc/diagnostics.md` を参照。
+
 `ModuleError`（`module error`）は、モジュールシステムに関する診断を表す。
 import の形式、パスの解決、コンテンツ import の循環、`.tfxm` の純粋性と自己完結性、
 モジュール間のマクロ名の衝突、そして import のフラグ束縛がこれに含まれる。

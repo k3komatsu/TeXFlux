@@ -213,6 +213,8 @@ pip install .
 
 ### 3. コンパイルして PDF を生成
 
+コンパイルの前に `texflux check slides.tfx` を実行すると、TeX コンパイラを呼び出す前に構文エラーを検出できます。
+
 ```bash
 # 1. TeXFlux で .tex ファイルとソースマップ（.tfxmap）を生成
 texflux compile slides.tfx -o slides.tex
@@ -444,6 +446,49 @@ texflux ast slides.tfx -o - --pretty
 Python APIは`compile_ast`と`serialize_ast`です。形式と使い方は
 [外部AST出力](doc/external-ast.md)を参照してください。
 
+---
+
+## 診断のJSON出力（`texflux check`）
+
+VSCode 拡張や Language Server などのエディタ連携から呼び出すためのサブコマンドです。`.tex` を生成せず、構文・意味エラーだけを構造化された形で受け取れます。
+
+```bash
+# 1. 人間向けにテキストで表示する（compile 実行前の下調べに）
+texflux check slides.tfx
+
+# 2. エディタ連携向けに構造化された JSON で受け取る
+texflux check slides.tfx --format json --pretty
+
+# 3. 保存前のバッファ（標準入力）をそのままチェックする
+cat slides.tfx | texflux check - --stdin-filename slides.tfx --format json
+```
+
+終了コードだけで結果を判定できます。
+
+| 終了コード | 意味 |
+| :---: | --- |
+| `0` | エラーなし |
+| `1` | エラーあり |
+| `2` | ツール自体の失敗 |
+
+Python から直接呼ぶ場合は、例外を投げない `texflux.diagnose` が全ソースと全診断をまとめて返します。
+
+```python
+from pathlib import Path
+from texflux import diagnose
+
+path = Path("slides.tfx")
+report = diagnose(path.read_text(encoding="utf-8"), filename=str(path))
+for diagnostic in report.diagnostics:
+    print(diagnostic.line())
+print("エラーなし" if report.ok else "エラーあり")
+```
+
+診断コードの体系、JSON 形式 `texflux-diagnostics`、LSP へのマッピングなど詳細は
+[Diagnostic API 実装設計書 (doc/diagnostics.md)](doc/diagnostics.md) を参照してください。
+
+---
+
 ## ❓ よくある質問（FAQ）
 
 ### Q. 既存の Beamer テーマやスタイルファイル（`.sty`）は使えますか？
@@ -483,6 +528,7 @@ TeXFlux が認識するのは、行頭のプレフィックス（`@`, `!`, `\`�
 - [TeXFlux Normative Specification (texflux_tex_first_dsl_v1_spec.md)](texflux_tex_first_dsl_v1_spec.md)（規範的仕様書・英語）
 - [モジュールシステム詳細設計書 (doc/module-system.md)](doc/module-system.md)（日本語）
 - [行単位 raw mode 実装設計書 (doc/raw-mode.md)](doc/raw-mode.md)（日本語）
+- [Diagnostic API 実装設計書 (doc/diagnostics.md)](doc/diagnostics.md)（日本語）
 
 ---
 

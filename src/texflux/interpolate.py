@@ -27,15 +27,21 @@ def text_value(name: str, frame: _Frame) -> SourceText:
         raise MacroExpansionError(
             f"'{name}' is a rest parameter; use !each to access its values",
             frame.call_span,
+            code="E001",
         )
     if name not in frame.values:
-        raise MacroExpansionError(f"unknown macro parameter '{name}'", frame.call_span)
+        raise MacroExpansionError(
+            f"unknown macro parameter '{name}'",
+            frame.call_span,
+            code="E002",
+        )
     value = frame.values[name]
     if len(value) != 1 or not isinstance(value[0], RawTex):
         raise MacroExpansionError(
             f"macro parameter '{name}' is not a text value; "
             "use !param for structural values",
             frame.call_span,
+            code="E003",
         )
     node = value[0]
     if node.parts is not None:
@@ -46,7 +52,11 @@ def text_value(name: str, frame: _Frame) -> SourceText:
 def reject_markers(text: str, span: SourceSpan, where: str) -> None:
     """Compiler metadata is static, including escaped marker spellings."""
     if "!text{" in text or "!param{" in text:
-        raise MacroExpansionError(f"interpolation is not allowed in {where}", span)
+        raise MacroExpansionError(
+            f"interpolation is not allowed in {where}",
+            span,
+            code="E004",
+        )
 
 
 def interpolate(
@@ -93,18 +103,29 @@ def interpolate(
                 raise _error(
                     "unterminated !text{...}",
                     marker_span(origin, offset + j, 6), lookup,
+                    code="E005",
                 )
             name = text[j + 6 : close]
             span = marker_span(origin, offset + j, close + 1 - j)
             if _PARAM_NAME_RE.fullmatch(name) is None:
-                raise _error(f"invalid !text parameter name '{name}'", span, lookup)
+                raise _error(
+                    f"invalid !text parameter name '{name}'",
+                    span,
+                    lookup,
+                    code="E006",
+                )
             if lookup is None:
-                raise _error("!text is only valid inside a macro template", span, lookup)
+                raise _error(
+                    "!text is only valid inside a macro template",
+                    span,
+                    lookup,
+                    code="E007",
+                )
             literal(text[last:j])
             try:
                 parts.extend(text_value(name, lookup))
             except MacroExpansionError as error:
-                raise _error(error.message, span, lookup) from None
+                raise _error(error.message, span, lookup, code=error.code) from None
             i = last = close + 1
             found = True
             continue
@@ -113,6 +134,7 @@ def interpolate(
                 "!param cannot be used inside a text field; "
                 "use !text for text interpolation",
                 marker_span(origin, offset + j, 7), lookup,
+                code="E008",
             )
         i = j + 1
     if not found:

@@ -1,37 +1,95 @@
-"""User-facing TeXFlux errors."""
+"""User-facing TeXFlux errors.
+
+Every diagnostic carries a stable code, so an editor can recognize one across
+releases without matching its message, and zero or more related locations. A
+related location is the second place a diagnostic is about -- the first
+declaration a duplicate collides with, the import that pulled a broken module
+in -- which the message already names in prose and which a language server
+needs as structured data.
+"""
+
+from dataclasses import dataclass
+from typing import ClassVar, Self
 
 from .ast import SourceSpan
 
 
-class TeXFluxError(Exception):
-    error_kind = "texflux error"
+@dataclass(frozen=True, slots=True)
+class RelatedLocation:
+    """A second place a diagnostic points at, beside its own span."""
 
-    def __init__(self, message: str, span: SourceSpan):
+    message: str
+    span: SourceSpan
+
+
+def diagnostic_line(
+    span: SourceSpan,
+    label: str,
+    message: str,
+    code: str,
+) -> str:
+    """The one line every diagnostic prints, errors and warnings alike."""
+
+    return f"{span.location}: {label}: {message} [{code}]"
+
+
+class TeXFluxError(Exception):
+    #: The category this diagnostic reports, which each subclass names.
+    kind: ClassVar[str] = "texflux"
+
+    def __init__(
+        self,
+        message: str,
+        span: SourceSpan,
+        *,
+        code: str,
+        related: tuple[RelatedLocation, ...] = (),
+    ):
         self.message = message
         self.span = span
+        self.code = code
+        self.related = related
         super().__init__(message)
 
+    @property
+    def error_kind(self) -> str:
+        return f"{self.kind} error"
+
     def diagnostic(self) -> str:
-        return f"{self.span.location}: {self.error_kind}: {self.message}"
+        return diagnostic_line(self.span, self.error_kind, self.message, self.code)
 
     def __str__(self) -> str:
         return self.diagnostic()
 
+    def chained(self, message: str, *related: RelatedLocation) -> Self:
+        """This error with a longer message and more related locations.
+
+        The code and the span stay the callee's, so an import chain can be
+        appended without losing either what went wrong or where.
+        """
+
+        return type(self)(
+            message,
+            self.span,
+            code=self.code,
+            related=self.related + related,
+        )
+
 
 class ParseError(TeXFluxError):
-    error_kind = "parse error"
+    kind = "parse"
 
 
 class ValidationError(TeXFluxError):
-    error_kind = "validation error"
+    kind = "validation"
 
 
 class DirectiveError(TeXFluxError):
-    error_kind = "directive error"
+    kind = "directive"
 
 
 class MacroExpansionError(TeXFluxError):
-    error_kind = "macro error"
+    kind = "macro"
 
 
 class ModuleError(TeXFluxError):
@@ -42,7 +100,7 @@ class ModuleError(TeXFluxError):
     ``!import`` flag bindings.
     """
 
-    error_kind = "module error"
+    kind = "module"
 
 
 class InternalError(RuntimeError):
@@ -73,6 +131,8 @@ __all__ = [
     "MacroExpansionError",
     "ModuleError",
     "ParseError",
+    "RelatedLocation",
     "TeXFluxError",
     "ValidationError",
+    "diagnostic_line",
 ]

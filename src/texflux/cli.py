@@ -7,7 +7,13 @@ from collections.abc import Sequence
 from pathlib import Path
 import sys
 
-from . import compile_ast, compile_with_map, serialize_ast
+from . import (
+    compile_ast,
+    compile_with_map,
+    diagnose,
+    serialize_ast,
+    serialize_diagnostics,
+)
 from .errors import FlagError, InternalError, TeXFluxError
 from .flags import FLAG_VALUES
 from .paths import same_path
@@ -23,9 +29,19 @@ def _parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("--source-comments", action="store_true")
     ast_parser = commands.add_parser("ast", help="export canonical AST as JSON")
     ast_parser.add_argument("--pretty", action="store_true")
+    check_parser = commands.add_parser(
+        "check", help="report diagnostics without writing anything",
+    )
+    check_parser.add_argument(
+        "input", metavar="INPUT", help="a .tfx file, or '-' for standard input",
+    )
+    check_parser.add_argument("--format", choices=("text", "json"), default="text")
+    check_parser.add_argument("--pretty", action="store_true")
+    check_parser.add_argument("--stdin-filename", metavar="PATH")
     for frontend in (compile_parser, ast_parser):
         frontend.add_argument("input", metavar="INPUT")
         frontend.add_argument("-o", "--output", required=True, metavar="OUTPUT")
+    for frontend in (compile_parser, ast_parser, check_parser):
         frontend.add_argument(
             "--flag", dest="flags", action="append", default=[],
             metavar="NAME[=on|off]",
@@ -73,9 +89,18 @@ def _flags(arguments: Sequence[str]) -> dict[str, bool]:
     return flags
 
 
-def _fail(message: str) -> int:
+def _fail(message: str, status: int = 1) -> int:
     print(f"texflux: {message}", file=sys.stderr)
-    return 1
+    return status
+
+
+def _write_stdout(text: str) -> None:
+    """Write bytes to bypass platform encoding and newline translation."""
+
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout.buffer.write(text.encode("utf-8"))
+    else:
+        sys.stdout.write(text)
 
 
 def _compile(args: argparse.Namespace) -> int:
@@ -140,11 +165,7 @@ def _ast(args: argparse.Namespace) -> int:
         )
         text = serialize_ast(result, pretty=args.pretty)
         if args.output == "-":
-            # Write bytes to bypass platform encoding and newline translation.
-            if hasattr(sys.stdout, "buffer"):
-                sys.stdout.buffer.write(text.encode("utf-8"))
-            else:
-                sys.stdout.write(text)
+            _write_stdout(text)
         else:
             Path(args.output).write_bytes(text.encode("utf-8"))
     except TeXFluxError as error:
@@ -155,6 +176,69 @@ def _ast(args: argparse.Namespace) -> int:
     except RecursionError:
         return _fail(f"{input_path}: input nests too deeply to compile")
     return 0
+
+
+def _check_input(args: argparse.Namespace) -> str | int:
+    """The document's display name, or an exit code rejecting the arguments."""
+
+    if args.pretty and args.format != "json":
+        return _fail("--pretty requires --format json", 2)
+    if args.input != "-":
+        if args.stdin_filename is not None:
+            return _fail("--stdin-filename requires INPUT '-'", 2)
+        if Path(args.input).suffix != ".tfx":
+            return _fail("input must have a .tfx extension", 2)
+        return args.input
+    if args.stdin_filename is None:
+        # Imports then resolve against the working directory, which is the
+        # best a caller that named no path can be given.
+        return "<stdin>"
+    if Path(args.stdin_filename).suffix != ".tfx":
+        return _fail("--stdin-filename must have a .tfx extension", 2)
+    return args.stdin_filename
+
+
+def _check(args: argparse.Namespace) -> int:
+    """Report one document's diagnostics on stdout, writing nothing else.
+
+    Exit code 1 means the document has an error, so it is not the code for
+    being unable to look at the document at all; that is 2, which is also
+    what argparse uses for a misspelled command line.
+    """
+
+    filename = _check_input(args)
+    if isinstance(filename, int):
+        return filename
+
+    try:
+        source_bytes = (
+            sys.stdin.buffer.read()
+            if args.input == "-"
+            else Path(filename).read_bytes()
+        )
+        report = diagnose(
+            source_bytes.decode("utf-8"),
+            filename=filename,
+            flags=_flags(args.flags),
+            source_bytes=source_bytes,
+        )
+        if args.format == "json":
+            _write_stdout(serialize_diagnostics(report, pretty=args.pretty))
+        else:
+            lines: list[str] = []
+            for diagnostic in report.diagnostics:
+                lines.append(diagnostic.line())
+                lines.extend(
+                    f"  {related.span.location}: note: {related.message}"
+                    for related in diagnostic.related
+                )
+            if lines:
+                _write_stdout("\n".join(lines) + "\n")
+    except (FlagError, InternalError, ValueError, OSError) as error:
+        return _fail(str(error), 2)
+    except RecursionError:
+        return _fail(f"{filename}: input nests too deeply to compile", 2)
+    return 0 if report.ok else 1
 
 
 def _synctex_remap(args: argparse.Namespace) -> int:
@@ -184,6 +268,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _compile(args)
         case ("ast", _):
             return _ast(args)
+        case ("check", _):
+            return _check(args)
         case ("synctex", "remap"):
             return _synctex_remap(args)
         case (command, _):

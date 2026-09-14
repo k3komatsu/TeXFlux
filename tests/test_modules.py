@@ -719,10 +719,15 @@ class DiagnosticChainTests(ModuleTestCase):
         self.write("deep.tfxm", "!defmacro{m}:\n    !nope\n")
         self.write("b.tfxm", "!macroimport{deep.tfxm}\n\n!defmacro{b}:\n    B\n")
         self.write("main.tfx", "!macroimport{b.tfxm}\n")
-        message = self.failure().message
-        self.assertEqual(message.count("imported from"), 2)
-        self.assertIn("b.tfxm", message)
-        self.assertIn("main.tfx", message)
+        error = self.failure()
+        self.assertEqual(error.message.count("imported from"), 2)
+        self.assertIn("b.tfxm", error.message)
+        self.assertIn("main.tfx", error.message)
+        # The message's chain and the structured one say the same thing.
+        self.assertEqual(
+            [related.message for related in error.related],
+            ["imported from here", "imported from here"],
+        )
 
     def test_a_nested_unreadable_module_keeps_the_levels_above_it(self):
         # The level written at the error's own line adds nothing, but it must
@@ -760,7 +765,9 @@ class DiagnosticChainTests(ModuleTestCase):
     def test_an_unreadable_macro_module_is_not_given_a_chain(self):
         # That error is already reported at the !macroimport line itself.
         self.write("main.tfx", "!macroimport{missing.tfxm}\n")
-        self.assertNotIn("imported from", self.failure().message)
+        error = self.failure()
+        self.assertNotIn("imported from", error.message)
+        self.assertEqual(error.related, ())
 
     def test_a_caller_side_binding_error_is_not_given_a_chain(self):
         self.write("child.tfx", "!flag{d}{off}\n\nC\n")

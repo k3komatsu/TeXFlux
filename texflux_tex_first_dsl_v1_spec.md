@@ -1073,7 +1073,8 @@ exactly one.
 
 An error raised inside an imported module keeps its own span, so inverse
 search reaches the line that is broken, and names the import site in its
-message. Nested imports accumulate those sites innermost first.
+message. Nested imports accumulate those sites innermost first. Each import
+site the message names is also carried as a related location.
 
 An error inside a macro module names its `!macroimport` sites the same way,
 because a macro module is shared between documents and which import reached
@@ -1266,6 +1267,18 @@ declaration matches. InternalError covers a broken TeXFlux installation --
 today, the bundled standard macro module of section 12.9 failing to read or
 validate -- and is a RuntimeError rather than a TeXFluxError, because nothing
 the source says can cause it or fix it.
+
+Every diagnostic carries a stable code and zero or more related locations. A
+code is one uppercase letter for the diagnostic's kind followed by three
+digits; it identifies the place a diagnostic is raised rather than its
+wording, and is never renumbered or reused. A related location is a second
+span the message already names in prose -- a first declaration, a macro
+call site, an import that pulled a module in -- carried as structured data
+beside the diagnostic. Diagnostics print as
+`file:line:column: kind: message [CODE]`. The `texflux check` command and
+the `texflux.diagnose` API report the same diagnostics as the
+`texflux-diagnostics` version 1 format, whose members doc/diagnostics.md
+defines.
 
 v1 does not include:
 

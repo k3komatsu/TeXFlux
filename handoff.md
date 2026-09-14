@@ -10,6 +10,7 @@
 | 行頭 `!!` raw escape | 実装済み（§D は導入前の設計メモ） |
 | 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`） | **実装・検証済み**（§E） |
 | 行単位 raw escape（`!\| `） | **実装・検証済み**（§G） |
+| Diagnostic API（`texflux check` / `diagnose`） | **実装・検証済み**（§H） |
 
 ---
 
@@ -43,6 +44,40 @@ python3 -W error::ResourceWarning -m unittest discover
 
 以下の §D・§C は raw-line escape 導入前の設計判断の履歴であり、当時の
 「未実装」「回避策なし」という記述は現在の仕様ではない。
+
+---
+
+# §H Diagnostic API — 実装済み
+
+`feature/diagnostics` で実装した。詳細設計は `doc/diagnostics.md`、
+スキーマは `schemas/texflux-diagnostics-v1.schema.json`。
+
+- Python API `texflux.diagnose(...)` は例外を投げず、読んだ全ソースと全診断を
+  `DiagnosticReport` として返す。未保存バッファは `overlays` で差し替える。
+- CLI `texflux check` は `--format {text,json}` / `--pretty` / stdin に対応し、
+  終了コードは 0（エラーなし）/ 1（エラーあり）/ 2（ツール自体の失敗）。
+  `.tex` も `.tfxmap` も書かない。
+- 既存の全診断 132 箇所に安定した診断コード（`P004` など）を付けた。
+  1 生成箇所 1 コードで、改番も再利用もしない。表は `doc/diagnostics.md` §2 にあり、
+  `tests/test_diagnostic_codes.py` がソースとの一致を検査する。
+- メッセージに埋め込まれていた副位置（`already defined at ...` など）を、
+  `TeXFluxError.related` として構造化された関連位置でも持たせた。文言は変えていない。
+- `CompilationSession` に読み込みフック（`reader`）を足し、ファイルの記録を
+  パースより前に移した。パースに失敗したファイルも報告のソース表に載る。
+
+確定した決定: 関連位置は構造化する（`TeXFluxError.related`）／コードは全
+raise 箇所に付与し改番・再利用はしない／未保存バッファの overlay は Python API
+のみ（CLI からの import 先 overlay は非対象）／エラー件数は fail-fast のまま
+最大 1 件 + 警告 N 件。
+
+検証:
+
+```bash
+python3 -W error::ResourceWarning -m unittest discover   # 462 tests, OK
+```
+
+スキーマ検証テストは開発用の `jsonschema` を入れた環境でのみ走り、未導入なら skip する。
+`examples/` 6 件は再コンパイル結果が `.tex` とバイト単位で一致することを確認済み。
 
 ---
 

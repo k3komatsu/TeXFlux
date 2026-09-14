@@ -83,27 +83,30 @@ class InterpolationEscapeTests(unittest.TestCase):
 
 class InterpolationDiagnosticTests(unittest.TestCase):
     def test_diagnostics_point_at_definition_markers_and_keep_chain(self):
+        # A value read through the hole reports the reading site's own code,
+        # so the three text_value failures arrive as E002 rather than E006.
         cases = (
-            ("pre !text{nope}", "unknown macro parameter 'nope'", 9),
-            ("pre !text{}", "invalid !text parameter name ''", 9),
-            ("pre !text{1x}", "invalid !text parameter name '1x'", 9),
-            ("pre !text{a b}", "invalid !text parameter name 'a b'", 9),
-            ("pre !text{", "unterminated !text{...}", 9),
-            ("pre !param{x}", "!param cannot be used inside a text field; use !text for text interpolation", 9),
-            ("pre !param{", "!param cannot be used inside a text field; use !text for text interpolation", 9),
-            ("!text{x}", "!text is only valid inside a textual field; use !param for an AST position", 5),
-            ("\\foo::\n    - !text{x}", "!text is only valid inside a textual field; use !param for an AST position", 11),
+            ("pre !text{nope}", "unknown macro parameter 'nope'", 9, "E002"),
+            ("pre !text{}", "invalid !text parameter name ''", 9, "E006"),
+            ("pre !text{1x}", "invalid !text parameter name '1x'", 9, "E006"),
+            ("pre !text{a b}", "invalid !text parameter name 'a b'", 9, "E006"),
+            ("pre !text{", "unterminated !text{...}", 9, "E005"),
+            ("pre !param{x}", "!param cannot be used inside a text field; use !text for text interpolation", 9, "E008"),
+            ("pre !param{", "!param cannot be used inside a text field; use !text for text interpolation", 9, "E008"),
+            ("!text{x}", "!text is only valid inside a textual field; use !param for an AST position", 5, "E009"),
+            ("\\foo::\n    - !text{x}", "!text is only valid inside a textual field; use !param for an AST position", 11, "E009"),
         )
-        for body, message, column in cases:
+        for body, message, column, code in cases:
             with self.subTest(body=body):
                 with self.assertRaises(MacroExpansionError) as caught:
                     compile_text(macro(body), filename="m.tfx")
                 error = caught.exception
                 line = 3 if body.startswith("\\foo::") else 2
                 call_line = 4 if line == 3 else 3
+                self.assertEqual(error.code, code)
                 self.assertEqual(error.diagnostic(),
                     f"m.tfx:{line}:{column}: macro error: {message}; "
-                    f"while expanding 'm' called at m.tfx:{call_line}:1")
+                    f"while expanding 'm' called at m.tfx:{call_line}:1 [{code}]")
 
     def test_group_marker_offsets(self):
         with self.assertRaises(MacroExpansionError) as caught:

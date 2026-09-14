@@ -28,7 +28,7 @@ from .ast import (
     SourceSpan,
     SpecialInvocation,
 )
-from .errors import FlagError, ValidationError
+from .errors import FlagError, RelatedLocation, ValidationError
 from .syntax import demand_text, optional_text, stacks, walk
 
 
@@ -96,6 +96,7 @@ def _combinator(
             f"!{node.name} modifier must be '[and]' or '[or]', "
             f"got '[{modifier}]'",
             node.groups[0].span,
+            code="V001",
         )
     return Combinator(modifier), node.groups[1:]
 
@@ -114,11 +115,13 @@ def _flag_names(
             raise ValidationError(
                 f"unknown build flag '{name}'; {declared_flags_hint(flags)}",
                 group.span,
+                code="V002",
             )
         if name in names:
             raise ValidationError(
                 f"build flag '{name}' is listed twice",
                 group.span,
+                code="V003",
             )
         names.append(name)
     return names
@@ -136,6 +139,7 @@ def evaluate_conditional(node: SpecialInvocation, flags: Flags) -> bool:
         raise ValidationError(
             f"!{node.name} requires at least one '{{flag}}' group",
             node.span,
+            code="V004",
         )
     names = _flag_names(node, groups, flags)
     if modifier is None and len(names) > 1:
@@ -143,6 +147,7 @@ def evaluate_conditional(node: SpecialInvocation, flags: Flags) -> bool:
             f"!{node.name} requires an '[and]' or '[or]' modifier to combine "
             f"{len(names)} flags",
             node.span,
+            code="V005",
         )
 
     fold = any if modifier is Combinator.ANY else all
@@ -168,6 +173,7 @@ def validate_flag_forms(document: Document) -> None:
                     "!flag must be a top-level declaration and cannot be a "
                     "'>>' segment",
                     segment.span,
+                    code="V006",
                 )
 
 
@@ -178,11 +184,12 @@ def _declaration(
     """Read one ``!flag{name}{on|off}`` declaration."""
 
     if node.suite is not None:
-        raise ValidationError("!flag does not accept a suite", node.span)
+        raise ValidationError("!flag does not accept a suite", node.span, code="V007")
     if len(node.groups) != 2:
         raise ValidationError(
             "!flag requires a name group and an 'on' or 'off' default group",
             node.span,
+            code="V008",
         )
 
     name = demand_text(node.groups[0], "!flag name")
@@ -190,12 +197,15 @@ def _declaration(
         raise ValidationError(
             f"invalid build flag name '{name}'",
             node.groups[0].span,
+            code="V009",
         )
     if name in declared:
         raise ValidationError(
             f"build flag '{name}' is already declared at "
             f"{declared[name].location}",
             node.groups[0].span,
+            code="V010",
+            related=(RelatedLocation("first declared here", declared[name]),),
         )
 
     default = demand_text(node.groups[1], "!flag default")
@@ -203,6 +213,7 @@ def _declaration(
         raise ValidationError(
             f"!flag default must be 'on' or 'off', got '{default}'",
             node.groups[1].span,
+            code="V011",
         )
     return name, FLAG_VALUES[default]
 
@@ -250,6 +261,7 @@ def collect_flags(
         raise ValidationError(
             "!flag is only valid at the top level",
             misplaced.span,
+            code="V012",
         )
 
     for name, value in (overrides or {}).items():

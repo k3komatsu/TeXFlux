@@ -482,15 +482,15 @@ _RESERVED_NAMES: Final = frozenset(Reserved) | CONDITIONAL_NAMES | RAW_MODE_NAME
 
 ## 4. 診断一覧
 
-| ID | 条件 | メッセージ | span |
-| --- | --- | --- | --- |
-| R01 | `!BEGIN_RAW_MODE` に対応する `!END_RAW_MODE` が無い | `'!BEGIN_RAW_MODE' is not closed by '!END_RAW_MODE'` | BEGIN 行のマーカー |
-| R02 | 領域外の `!END_RAW_MODE` 単独行 | `'!END_RAW_MODE' has no matching '!BEGIN_RAW_MODE'` | その行のマーカー |
-| R03 | マーカーが単独行でない（payload / `>>` / 群 / suffix / コメント付き） | `'!BEGIN_RAW_MODE' must stand alone on its own line` | セグメント先頭 |
-| R04 | マーカーが基準インデント位置にない | `invalid structural indentation`（既存） | 行の先頭非空白 |
-| R05 | 領域外のタブ | `tab characters are not allowed`（既存） | タブの位置 |
-| R06 | `!defmacro{BEGIN_RAW_MODE}` | `'!BEGIN_RAW_MODE' is reserved by TeXFlux`（既存） | 名前の群 |
-| R07 | `.tfxm` トップレベルの領域 | `a .tfxm macro module may contain only !defmacro, ...`（既存） | 生行のノード |
+| ID | コード | 条件 | メッセージ | span |
+| --- | --- | --- | --- | --- |
+| R01 | P002 | `!BEGIN_RAW_MODE` に対応する `!END_RAW_MODE` が無い | `'!BEGIN_RAW_MODE' is not closed by '!END_RAW_MODE'` | BEGIN 行のマーカー |
+| R02 | P001 | 領域外の `!END_RAW_MODE` 単独行 | `'!END_RAW_MODE' has no matching '!BEGIN_RAW_MODE'` | その行のマーカー |
+| R03 | P019 | マーカーが単独行でない（payload / `>>` / 群 / suffix / コメント付き） | `'!BEGIN_RAW_MODE' must stand alone on its own line` | セグメント先頭 |
+| R04 | P025 | マーカーが基準インデント位置にない | `invalid structural indentation`（既存） | 行の先頭非空白 |
+| R05 | P023 | 領域外のタブ | `tab characters are not allowed`（既存） | タブの位置 |
+| R06 | V019 | `!defmacro{BEGIN_RAW_MODE}` | `'!BEGIN_RAW_MODE' is reserved by TeXFlux`（既存） | 名前の群 |
+| R07 | M014 | `.tfxm` トップレベルの領域 | `a .tfxm macro module may contain only !defmacro, ...`（既存） | 生行のノード |
 
 いずれも `ParseError` / `ValidationError` / `ModuleError` として既存の
 `file:line:column: kind: message` 形式に乗る。
@@ -679,11 +679,11 @@ name` だった（raw mode 領域の内側と `+` グループ本文では従来
 
 ### 8.5 診断
 
-| ID | 条件 | メッセージ |
-| --- | --- | --- |
-| L01 | `!\|` の直後が半角スペースでも行末でもない | `'!\|' must be followed by one space or end the line` |
-| L02 | 行頭以外の `!\|`（`>>` セグメント等） | `invalid structural name`（既存） |
-| L03 | `+` の明示グループ継続ブロック内の `!\|` 行のタブ | `tab characters are not allowed`（既存） |
+| ID | コード | 条件 | メッセージ |
+| --- | --- | --- | --- |
+| L01 | P024 | `!\|` の直後が半角スペースでも行末でもない | `'!\|' must be followed by one space or end the line` |
+| L02 | P017 / P018 | 行頭以外の `!\|`（`>>` セグメント等） | `invalid structural name`（既存） |
+| L03 | P023 | `+` の明示グループ継続ブロック内の `!\|` 行のタブ | `tab characters are not allowed`（既存） |
 
 診断の順序: 領域の対応付け（R01/R02）→ タブ禁止（R05）→ L01。`!|` で始まる行は
 タブ検査から免除されるので、`!|<TAB>foo` は R05 ではなく L01 になる。

@@ -12,8 +12,10 @@ PathLike: TypeAlias = str | os.PathLike[str]
 def normalized_path(path: PathLike) -> str:
     """Return one comparable spelling of ``path``.
 
-    Symlinks, relative segments, and case-insensitive file systems are all
-    resolved, so two spellings of the same file compare equal.
+    Symlinks and relative segments are resolved, so two spellings of the same
+    file compare equal. Case is folded only where ``normcase`` folds it, which
+    is Windows: on a case-insensitive macOS volume two spellings that differ
+    in case still compare as two files.
     """
 
     return os.path.normcase(os.path.realpath(os.path.abspath(os.fspath(path))))

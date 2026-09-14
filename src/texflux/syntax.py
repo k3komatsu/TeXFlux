@@ -100,6 +100,7 @@ def demand_text(argument: Argument, label: str) -> str:
         raise ValidationError(
             f"{label} must be a required '{{...}}' group",
             argument.span,
+            code="V042",
         )
     return text.strip()
 
@@ -145,6 +146,7 @@ def sequence_entries(suite: Block) -> tuple[SequenceEntry, ...]:
             raise ValidationError(
                 "sequence suites require '-' or '+' value entries",
                 child.span,
+                code="V043",
             )
     return entries
 

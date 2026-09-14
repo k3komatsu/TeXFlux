@@ -58,6 +58,7 @@ def _desugar_stack(
         raise ValidationError(
             "stack requires at least two segments",
             node.span,
+            code="V034",
         )
 
     # A stack's suffix belongs to its rightmost segment. Every segment to the
@@ -146,6 +147,7 @@ def _normalize_node(
             raise ValidationError(
                 "sequence entries are only valid inside a '::' suite",
                 node.span,
+                code="V035",
             )
         case GenericInvocation() | BraceGroup():
             return (_normalize_canonical(node, registry),)
@@ -224,6 +226,7 @@ def _sequence_body(suite: Block, registry: DirectiveRegistry) -> Block:
             raise ValidationError(
                 "anonymous containers do not accept '+' sequence entries",
                 entry.span,
+                code="V036",
             )
         nodes.extend(_normalize_block(entry.value, registry).nodes)
     return Block(tuple(nodes), suite.span)
@@ -279,11 +282,13 @@ def _normalize_environment(
             raise ValidationError(
                 "environment sequence suites require a body value",
                 node.span,
+                code="V037",
             )
         if entries[-1].argument_kind is not None:
             raise ValidationError(
                 "environment sequence suites require the final '-' entry to be the body",
                 entries[-1].span,
+                code="V038",
             )
         arguments += tuple(
             _argument_from_entry(entry, registry) for entry in entries[:-1]
@@ -303,6 +308,7 @@ def _normalize_invocation(
         raise ValidationError(
             "container values require a suite or a closed stack payload",
             node.span,
+            code="V039",
         )
 
     suite = node.suite
@@ -336,6 +342,7 @@ def _normalize_invocation(
                     raise ValidationError(
                         "literal brace containers require one raw header group",
                         node.span,
+                        code="V040",
                     )
 
         case InvocationKind.TRANSPARENT:
@@ -343,6 +350,7 @@ def _normalize_invocation(
                 raise ValidationError(
                     "transparent containers do not accept header groups",
                     node.span,
+                    code="V041",
                 )
             return _container_body(node, suite, registry).nodes
 
@@ -359,6 +367,7 @@ def _normalize_special(
         raise DirectiveError(
             f"unknown special directive '!{node.name}'",
             node.span,
+            code="D001",
         )
     result = handler(node, registry)
     if not isinstance(result, tuple) or any(
@@ -386,6 +395,7 @@ def _module_guard(name: str) -> SpecialHandler:
             f"'!{name}' requires module compilation; use "
             "texflux.compile_with_map or the texflux CLI",
             node.span,
+            code="M030",
         )
 
     return handler

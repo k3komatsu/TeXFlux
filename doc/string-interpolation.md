@@ -624,20 +624,20 @@ role はそのまま直列化される。形式バージョンも据え置く（
 `; while expanding '<chain>' called at <location>` を付す。既存 `!param` の診断と
 完全に同じ体裁になる。
 
-| ID | 条件 | メッセージ | span | 例外 | chain |
-|---|---|---|---|---|---|
-| T01 | `!text` が AST ノード位置に現れた | `!text is only valid inside a textual field; use !param for an AST position` | ノードの span | `MacroExpansionError` | あり（frame がある場合） |
-| T02 | マクロテンプレート外の text field に `!text{` | `!text is only valid inside a macro template` | marker の span | `MacroExpansionError` | なし |
-| T03 | 未知のパラメータ名 | `unknown macro parameter '<name>'` | hole の span | `MacroExpansionError` | あり |
-| T04 | rest パラメータを `!text` した | `'<name>' is a rest parameter; use !each to access its values` | hole の span | `MacroExpansionError` | あり |
-| T05 | text-extractable でない値 | `macro parameter '<name>' is not a text value; use !param for structural values` | hole の span | `MacroExpansionError` | あり |
-| T06 | 名前が文法に合わない（空を含む） | `invalid !text parameter name '<name>'` | hole 全体の span | `MacroExpansionError` | あり |
-| T07 | `}` が見つからない | `unterminated !text{...}` | marker の span | `MacroExpansionError` | あり |
-| T08 | text field 内の `!param{` | `!param cannot be used inside a text field; use !text for text interpolation` | marker の span | `MacroExpansionError` | あり |
-| T10 | `!when` / `!unless` の group に marker | `interpolation is not allowed in a !<name> flag group; flag names are static` | その group の span | `MacroExpansionError` | あり |
-| T11 | `!param` / `!each` の name group に marker | `interpolation is not allowed in a !<name> name group` | その group の span | `MacroExpansionError` | あり |
-| T12 | 許可リストに無い special の group に marker | `interpolation is not allowed in !<name>'s arguments` | その group の span | `MacroExpansionError` | あり |
-| T13 | `(...)` binding list に marker | `interpolation is not allowed in a '(...)' binding list` | その group の span | `MacroExpansionError` | あり |
+| ID | コード | 条件 | メッセージ | span | 例外 | chain |
+|---|---|---|---|---|---|---|
+| T01 | E009 | `!text` が AST ノード位置に現れた | `!text is only valid inside a textual field; use !param for an AST position` | ノードの span | `MacroExpansionError` | あり（frame がある場合） |
+| T02 | E007 | マクロテンプレート外の text field に `!text{` | `!text is only valid inside a macro template` | marker の span | `MacroExpansionError` | なし |
+| T03 | E002 | 未知のパラメータ名 | `unknown macro parameter '<name>'` | hole の span | `MacroExpansionError` | あり |
+| T04 | E001 | rest パラメータを `!text` した | `'<name>' is a rest parameter; use !each to access its values` | hole の span | `MacroExpansionError` | あり |
+| T05 | E003 | text-extractable でない値 | `macro parameter '<name>' is not a text value; use !param for structural values` | hole の span | `MacroExpansionError` | あり |
+| T06 | E006 | 名前が文法に合わない（空を含む） | `invalid !text parameter name '<name>'` | hole 全体の span | `MacroExpansionError` | あり |
+| T07 | E005 | `}` が見つからない | `unterminated !text{...}` | marker の span | `MacroExpansionError` | あり |
+| T08 | E008 | text field 内の `!param{` | `!param cannot be used inside a text field; use !text for text interpolation` | marker の span | `MacroExpansionError` | あり |
+| T10 | E004 | `!when` / `!unless` の group に marker | `interpolation is not allowed in a !<name> flag group; flag names are static` | その group の span | `MacroExpansionError` | あり |
+| T11 | E004 | `!param` / `!each` の name group に marker | `interpolation is not allowed in a !<name> name group` | その group の span | `MacroExpansionError` | あり |
+| T12 | E004 | 許可リストに無い special の group に marker | `interpolation is not allowed in !<name>'s arguments` | その group の span | `MacroExpansionError` | あり |
+| T13 | E004 | `(...)` binding list に marker | `interpolation is not allowed in a '(...)' binding list` | その group の span | `MacroExpansionError` | あり |
 
 （T09 は欠番。`!param{` は閉じているか否かに関わらず T08 になる。）
 

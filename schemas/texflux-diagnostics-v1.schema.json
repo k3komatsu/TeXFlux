@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TeXFlux Diagnostics v1",
+  "description": "Diagnostics emitted by `texflux check --format json` and texflux.serialize_diagnostics. Unknown object members are allowed. `kind` and the code's letter are open sets; `severity` is closed.",
+  "$comment": "Source IDs must match load-order indices, source files must be unique, every span.source must resolve, and span.start must not follow span.end. These cross-value invariants require consumer checks beyond JSON Schema. Zero-width spans (start equal to end) and spans whose end line differs from the start line are legal and are intentionally left unconstrained here.",
+  "type": "object",
+  "required": ["format", "version", "producer", "root", "sources", "diagnostics"],
+  "properties": {
+    "format": {"const": "texflux-diagnostics"},
+    "version": {"type": "integer", "const": 1},
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "texflux"},
+        "version": {"type": "string"}
+      }
+    },
+    "root": {"type": "integer", "const": 0},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/source"},
+            {"properties": {"id": {"const": 0}}}
+          ]
+        }
+      ],
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagnostic"}
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["id", "file", "sha256"],
+      "properties": {
+        "id": {"type": "integer", "minimum": 0},
+        "file": {
+          "type": "string",
+          "description": "Diagnostic display spelling with platform separators normalized to '/'; not necessarily absolute."
+        },
+        "sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the original loaded bytes."
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "description": "One-based Unicode code point position, with line endings counted as LF.",
+      "required": ["line", "column"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "span": {
+      "type": "object",
+      "description": "Half-open [start, end) provenance range. Spans are not unique node identities.",
+      "required": ["source", "start", "end"],
+      "properties": {
+        "source": {"type": "integer", "minimum": 0},
+        "start": {"$ref": "#/$defs/position"},
+        "end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "related": {
+      "type": "object",
+      "description": "A second place a diagnostic points at, such as the first definition.",
+      "required": ["message", "span"],
+      "properties": {
+        "message": {"type": "string"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["severity", "kind", "code", "message", "span", "related"],
+      "properties": {
+        "severity": {"enum": ["error", "warning"]},
+        "kind": {
+          "type": "string",
+          "pattern": "^[a-z]+$",
+          "description": "Open category set (parse, validation, directive, macro, module, render); consumers must accept unknown values."
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][0-9]{3}$",
+          "description": "Stable per-callsite diagnostic code; never renumbered or reused once published."
+        },
+        "message": {"type": "string"},
+        "span": {"$ref": "#/$defs/span"},
+        "related": {
+          "type": "array",
+          "description": "Always present, possibly empty; each entry is a secondary location such as a prior definition.",
+          "items": {"$ref": "#/$defs/related"}
+        }
+      }
+    }
+  }
+}

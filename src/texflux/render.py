@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, TypeAlias
+from typing import ClassVar, Literal, TypeAlias
 
+from .errors import diagnostic_line
 from .syntax import blank, is_escaped
 from .ast import (
     Argument,
@@ -46,11 +47,15 @@ class RenderedFragment:
 class RenderWarning:
     """A rendering hazard the author should look at, not a failure."""
 
+    #: The category this diagnostic reports, beside the error kinds.
+    kind: ClassVar[str] = "render"
+
     message: str
     span: SourceSpan
+    code: str
 
     def diagnostic(self) -> str:
-        return f"{self.span.location}: warning: {self.message}"
+        return diagnostic_line(self.span, "warning", self.message, self.code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,8 +176,8 @@ class MappedEmitter:
             tuple(self._warnings),
         )
 
-    def warn(self, message: str, span: SourceSpan) -> None:
-        self._warnings.append(RenderWarning(message, span))
+    def warn(self, message: str, span: SourceSpan, *, code: str) -> None:
+        self._warnings.append(RenderWarning(message, span, code=code))
 
 
 def _emit_text(
@@ -319,6 +324,7 @@ def _close_hugged(
             "value ends with a comment line, so what follows it stays on "
             "its own line",
             argument.span,
+            code="W001",
         )
         return
     if _comment_index(line) >= 0:
@@ -326,6 +332,7 @@ def _close_hugged(
             "value ends with a line containing '%', so the closing brace and "
             "whatever follows are commented out",
             argument.span,
+            code="W002",
         )
     emitter.drop_trailing_newline()
 

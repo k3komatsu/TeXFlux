@@ -115,6 +115,7 @@ def _scan_raw_regions(
                 raise ParseError(
                     f"'{RAW_END_MARKER}' has no matching '{RAW_BEGIN_MARKER}'",
                     _marker_span(filename, line),
+                    code="P001",
                 )
             begin, indent = index, line.indent
         elif marker == RAW_END_MARKER and line.indent == indent:
@@ -124,6 +125,7 @@ def _scan_raw_regions(
         raise ParseError(
             f"'{RAW_BEGIN_MARKER}' is not closed by '{RAW_END_MARKER}'",
             _marker_span(filename, lines[begin]),
+            code="P002",
         )
     return regions
 
@@ -154,7 +156,7 @@ def scan_group(
                 if text[index] == ">" and not is_escaped(text, index):
                     return index + 1, text[start + 1 : index]
                 index += 1
-            raise ParseError("unclosed overlay group", span)
+            raise ParseError("unclosed overlay group", span, code="P003")
 
         case "{":
             depth = 1
@@ -169,7 +171,7 @@ def scan_group(
                         if depth == 0:
                             return index + 1, text[start + 1 : index]
                 index += 1
-            raise ParseError("unclosed required group", span)
+            raise ParseError("unclosed required group", span, code="P004")
 
         case "[":
             # Brackets nest, but only outside a balanced brace group.
@@ -183,7 +185,11 @@ def scan_group(
                         brace_depth += 1
                     elif char == "}":
                         if brace_depth == 0:
-                            raise ParseError("mismatched group delimiter", span)
+                            raise ParseError(
+                                "mismatched group delimiter",
+                                span,
+                                code="P005",
+                            )
                         brace_depth -= 1
                     elif brace_depth == 0 and char == "[":
                         bracket_depth += 1
@@ -192,7 +198,7 @@ def scan_group(
                         if bracket_depth == 0:
                             return index + 1, text[start + 1 : index]
                 index += 1
-            raise ParseError("unclosed optional group", span)
+            raise ParseError("unclosed optional group", span, code="P006")
 
         case "(":
             # A binding list nests like an optional group, but only outside a
@@ -207,7 +213,11 @@ def scan_group(
                         brace_depth += 1
                     elif char == "}":
                         if brace_depth == 0:
-                            raise ParseError("mismatched group delimiter", span)
+                            raise ParseError(
+                                "mismatched group delimiter",
+                                span,
+                                code="P007",
+                            )
                         brace_depth -= 1
                     elif brace_depth == 0 and char == "(":
                         paren_depth += 1
@@ -216,10 +226,10 @@ def scan_group(
                         if paren_depth == 0:
                             return index + 1, text[start + 1 : index]
                 index += 1
-            raise ParseError("unclosed binding list", span)
+            raise ParseError("unclosed binding list", span, code="P008")
 
         case _:
-            raise ParseError("invalid group opener", span)
+            raise ParseError("invalid group opener", span, code="P009")
 
 
 def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
@@ -270,13 +280,19 @@ class HeaderScanner:
             SourcePosition(self.span.start.line, self.span.start.column + end),
         )
 
-    def _error(self, message: str, offset: int = 0) -> ParseError:
+    def _error(
+        self,
+        message: str,
+        offset: int = 0,
+        *,
+        code: str,
+    ) -> ParseError:
         end = min(offset + 1, self.end)
-        return ParseError(message, self._span(offset, end))
+        return ParseError(message, self._span(offset, end), code=code)
 
     def scan(self) -> HeaderScanResult:
         if self.end == 0:
-            raise self._error("empty structural header")
+            raise self._error("empty structural header", code="P010")
 
         segments: list[ParsedInvocation | SpecialInvocation] = []
         position = 0
@@ -308,7 +324,11 @@ class HeaderScanner:
                     break
                 continue
 
-            raise self._error("unexpected token in structural header", position)
+            raise self._error(
+                "unexpected token in structural header",
+                position,
+                code="P011",
+            )
 
         return HeaderScanResult(
             tuple(segments),
@@ -330,7 +350,11 @@ class HeaderScanner:
             self.saw_structure = True
             position = self._skip_spaces(position + 2)
             if position != self.end:
-                raise self._error("trailing token after suite marker", position)
+                raise self._error(
+                    "trailing token after suite marker",
+                    position,
+                    code="P012",
+                )
             return SuiteMode.SEQUENCE, self._span(marker_start, position)
 
         position = self._skip_spaces(position + 1)
@@ -340,7 +364,11 @@ class HeaderScanner:
 
         if self.text[position] == "|" or self.text.startswith(">>", position):
             self.saw_structure = True
-        raise self._error("unexpected token in structural header", position)
+        raise self._error(
+            "unexpected token in structural header",
+            position,
+            code="P013",
+        )
 
     def _stack_separator(self, position: int, *, spaced: bool) -> int:
         """Return the next segment's offset, or the line end for continuation."""
@@ -352,6 +380,7 @@ class HeaderScanner:
             raise self._error(
                 "stack separator requires surrounding spaces",
                 position,
+                code="P014",
             )
         position += 2
         self.saw_structure = True
@@ -380,7 +409,7 @@ class HeaderScanner:
     ) -> tuple[ParsedInvocation | SpecialInvocation, int]:
         segment_start = position
         if position >= self.end:
-            raise self._error("missing structural segment", position)
+            raise self._error("missing structural segment", position, code="P015")
 
         prefix = self.text[position]
         match prefix:
@@ -396,6 +425,7 @@ class HeaderScanner:
                     if first
                     else "each stack segment must start with '\\', '@', or '!'",
                     position,
+                    code="P016",
                 )
         position += 1
 
@@ -428,7 +458,7 @@ class HeaderScanner:
 
         name_start = position
         if position >= self.end or self.text[position] not in _NAME_START:
-            raise self._error("invalid structural name", position)
+            raise self._error("invalid structural name", position, code="P017")
         position += 1
 
         # TeX environment names are intentionally scanned more broadly than
@@ -446,11 +476,12 @@ class HeaderScanner:
 
         name = self.text[name_start:position]
         if not name:
-            raise self._error("invalid structural name", name_start)
+            raise self._error("invalid structural name", name_start, code="P018")
         if prefix == "!" and name in RAW_MODE_NAMES:
             raise self._error(
                 f"'!{name}' must stand alone on its own line",
                 segment_start,
+                code="P019",
             )
 
         groups: list[Argument] = []
@@ -474,15 +505,18 @@ class HeaderScanner:
                 raise self._error(
                     "a special's '(...)' list must follow its groups",
                     position,
+                    code="P020",
                 )
             if binding is not None and self.text[position] == BINDING_OPENER:
                 raise self._error(
                     "a special accepts at most one '(...)' list",
                     position,
+                    code="P021",
                 )
             raise self._error(
                 "unexpected token after structural name or group",
                 position,
+                code="P022",
             )
 
         segment_span = self._span(segment_start, position)
@@ -564,6 +598,7 @@ class _Parser:
                     SourcePosition(line.number, tab + 1),
                     SourcePosition(line.number, tab + 2),
                 ),
+                code="P023",
             )
 
     def parse(self) -> Document:
@@ -721,6 +756,7 @@ class _Parser:
                 f"'{RAW_LINE_MARKER}' must be followed by one space"
                 " or end the line",
                 self._line_span(line, marker_column, RAW_LINE_MARKER),
+                code="P024",
             )
         return tail[1:]
 
@@ -753,6 +789,7 @@ class _Parser:
         return ParseError(
             "invalid structural indentation",
             self._line_span(line, line.indent + 1),
+            code="P025",
         )
 
     def _scan_command_header(
@@ -820,6 +857,7 @@ class _Parser:
             raise ParseError(
                 "environment directives require a suite marker ':' or '::'",
                 segment.span,
+                code="P026",
             )
         next_index = self._next_nonblank(self.index)
         if next_index is not None and self.lines[next_index].indent >= base + 4:
@@ -827,6 +865,7 @@ class _Parser:
             raise ParseError(
                 "indented lines require a suite marker ':' or '::'",
                 self._line_span(line, line.indent + 1),
+                code="P027",
             )
 
     def _structural_node(
@@ -844,12 +883,14 @@ class _Parser:
                     raise ParseError(
                         "stack separator needs a following segment",
                         result.continuation_span,
+                        code="P028",
                     )
                 line = self.lines[self.index]
                 if line.blank or line.indent != base:
                     raise ParseError(
                         "stack continuation requires the next line at the same indentation",
                         self._line_span(line, line.indent + 1),
+                        code="P029",
                     )
                 line_span = self._header_span(line, base)
                 result = HeaderScanner(line.text[base:], span=line_span).scan()
@@ -899,6 +940,7 @@ class _Parser:
                         self.lines[next_index],
                         self.lines[next_index].indent + 1,
                     ),
+                    code="P030",
                 )
             suite = self._sequence_suite(suite_base, header_span)
             requires_entry = (
@@ -909,6 +951,7 @@ class _Parser:
                 raise ParseError(
                     "sequence suites require at least one '-' or '+' value entry",
                     header_span,
+                    code="P031",
                 )
             return suite
         if (
@@ -935,12 +978,14 @@ class _Parser:
                 raise ParseError(
                     "sequence entries must start at suite indentation",
                     self._line_span(line, line.indent + 1),
+                    code="P032",
                 )
             marker = line.text[base]
             if marker not in "-+":
                 raise ParseError(
                     "sequence suites require '-' or '+' value entries",
                     self._line_span(line, base + 1),
+                    code="P033",
                 )
             entries.append(self._sequence_entry(line, base, marker))
         return Block(tuple(entries), _block_span(boundary, entries))
@@ -1037,6 +1082,7 @@ class _Parser:
                 "explicit sequence entries require one '{...}', '[...]', "
                 "or '<...>' group",
                 payload_span,
+                code="P034",
             )
 
         nodes: list[Node] = [RawTex(payload, payload_span)]
@@ -1051,6 +1097,7 @@ class _Parser:
                 raise ParseError(
                     "explicit sequence entries require opaque raw text",
                     node.span,
+                    code="P035",
                 )
             raw_nodes.append(node)
         text = "\n".join(node.text for node in raw_nodes)
@@ -1062,11 +1109,13 @@ class _Parser:
             raise ParseError(
                 "explicit sequence entries require one balanced group",
                 error.span,
+                code="P036",
             ) from None
         if any(char != " " for char in text[end:]):
             raise ParseError(
                 "explicit sequence entries require exactly one group",
                 payload_span,
+                code="P037",
             )
 
         kept = self._truncate_raw_nodes(raw_nodes, end)
