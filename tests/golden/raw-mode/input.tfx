@@ -6,3 +6,8 @@
     !!baz
       !END_RAW_MODE
     !END_RAW_MODE
+
+@itemize:
+    !| \item Note:
+        !| \item	deeper
+    !!| literal

@@ -55,10 +55,11 @@ special names fail with DirectiveError.
 
 ## 2. Physical lines and indentation
 
-CRLF and CR are normalized to LF. Tabs are rejected outside a raw-mode region.
-Four ASCII spaces are the structural indentation unit. A structural child must
-be at the suite base; extra indentation is retained only for raw TeX lines.
-Structural candidates at invalid indentation are parse errors.
+CRLF and CR are normalized to LF. Tabs are rejected outside a raw-mode region
+and the body of a line-initial `!| ` raw line. Four ASCII spaces are the
+structural indentation unit. A structural child must be at the suite base;
+extra indentation is retained only for raw TeX lines. Structural candidates at
+invalid indentation are parse errors.
 
 Blank lines in a sequence suite are separators and do not create values. Blank
 lines inside a sequence value block or a block suite are content. A trailing
@@ -70,9 +71,35 @@ They are handled before the structural extra-indentation check, preserving
 spaces beyond the block base. The same escapes apply at the start of a `-`
 sequence marker payload: `- !!bar` supplies raw `!bar`. A `+` payload is an
 opaque authored group and never applies the marker escape. Tabs remain invalid
-outside raw-mode regions.
+on an escaped line.
 Thus `!!` emits `!`, `!!!foo` emits `!!foo`, and `!!重要` emits `!重要`.
 Unbalanced braces and trailing `:` or `>>` remain literal on escaped lines.
+
+At the same position, `!|` followed by one ASCII space, or by the end of the
+line, emits everything after that space as one raw TeX line. Because it strips
+the whole marker rather than one prefix character, it is the only escape that
+reaches a `\` line a top-level structural token would otherwise claim, such as
+`!| \item Note:`. The marker and its one separating space are removed and
+nothing else on the line is touched: further spaces are kept, and every
+character up to the newline is emitted verbatim, tabs included. `!|` followed
+by anything else is a parse error. A line consisting of `!|` alone emits an
+empty raw line, which is content rather than a blank line and so is never
+rewound to the enclosing block. The line is verbatim, so macro expansion never
+interpolates it, and `!!| foo` writes the marker literally as `!| foo`.
+
+The same escape applies to a `-` sequence marker payload, with two differences
+from the block-line form. The first it shares with `@@` and `!!`: a payload is
+right-stripped before the escape runs, so trailing spaces are not kept there.
+The second is specific to `!| `, which is the only one of the three that ever
+permits a tab: a tab stays invalid in a payload, because the whole-file tab
+scan classifies a line by its own text and a leading `-` is a sequence marker
+only inside a `::` suite. A tab in a sequence value is written in the entry's
+continuation block instead, where the marker starts the line.
+
+A `+` payload is an opaque authored group and never applies the escape. A
+`!| ` line inside a `+` continuation block is likewise body text rather than an
+escape, so the parser re-checks that block and rejects its tabs, while a
+raw-mode region nested in the same block still allows them.
 
 The two whole-line markers `!BEGIN_RAW_MODE` and `!END_RAW_MODE` delimit a
 raw-mode region. A marker is recognized only when the line consists of that

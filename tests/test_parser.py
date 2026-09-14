@@ -247,6 +247,166 @@ class ParserTests(unittest.TestCase):
                     self.assertEqual(entry.value.nodes[0].text, prefix + tail)
                     self.assertEqual(entry.value.nodes[0].span.start.column, 7)
 
+    def test_raw_line_marker_emits_the_rest_of_the_line_verbatim(self):
+        # The header scanner claims each of these, and '@@' / '!!' cannot
+        # reach them because they do not start with '@' or '!'.
+        for text in ("\\item Note:", "\\textbf{Note}:", "\\emph{x} >> \\emph{y}"):
+            with self.subTest(text=text):
+                node = parse(f"!| {text}\n", "x.tfx").body.nodes[0]
+                self.assertIsInstance(node, RawTex)
+                self.assertEqual(node.text, text)
+                self.assertTrue(node.verbatim)
+                self.assertIsNone(node.parts)
+                self.assertEqual(node.span.file, "x.tfx")
+                self.assertEqual(
+                    (node.span.start.line, node.span.start.column), (1, 1)
+                )
+
+    def test_raw_line_marker_preserves_extra_indentation_and_spans(self):
+        node = parse(
+            "@lstlisting:\n       !| literal { >>:\n",
+            "escape.tfx",
+        ).body.nodes[0].suite.nodes[0]
+        self.assertIsInstance(node, RawTex)
+        self.assertEqual(node.text, "   literal { >>:")
+        self.assertEqual(node.span.file, "escape.tfx")
+        self.assertEqual((node.span.start.line, node.span.start.column), (2, 5))
+
+    def test_raw_line_marker_strips_exactly_the_marker_and_one_space(self):
+        cases = (
+            ("!| foo", "foo"),
+            ("!|   foo", "  foo"),
+            ("!| ", ""),
+            ("!|", ""),
+            ("!| !!foo", "!!foo"),
+            ("!| !BEGIN_RAW_MODE", "!BEGIN_RAW_MODE"),
+            ("!| !text{x}", "!text{x}"),
+        )
+        for source, expected in cases:
+            with self.subTest(source=source):
+                node = parse(source + "\n", "x.tfx").body.nodes[0]
+                self.assertIsInstance(node, RawTex)
+                self.assertEqual(node.text, expected)
+                self.assertTrue(node.verbatim)
+
+    def test_raw_line_marker_is_itself_escaped_by_the_doubling_rule(self):
+        node = parse("!!| foo\n", "x.tfx").body.nodes[0]
+        self.assertEqual(node.text, "!| foo")
+        self.assertFalse(node.verbatim)
+
+    def test_raw_line_marker_requires_one_space_or_the_line_end(self):
+        for source, location in (
+            ("!|foo\n", "1:1"),
+            ("!|\tfoo\n", "1:1"),
+            ("@center:\n    !|foo\n", "2:5"),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ParseError,
+                    rf"x\.tfx:{location}: parse error: "
+                    r"'!\|' must be followed by one space or end the line",
+                ):
+                    parse(source, "x.tfx")
+
+    def test_raw_line_marker_accepts_any_character_up_to_the_newline(self):
+        node = parse("!| \tdef f():\n", "x.tfx").body.nodes[0]
+        self.assertEqual(node.text, "\tdef f():")
+
+    def test_raw_line_marker_tab_exemption_is_one_line_wide(self):
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:2:5: parse error: tab characters are not allowed",
+        ):
+            parse("!| \tok\n\\foo\tbar\n", "x.tfx")
+
+    def test_raw_line_marker_is_literal_inside_a_raw_mode_region(self):
+        nodes = parse(
+            "!BEGIN_RAW_MODE\n!| foo\n!|bar\n!END_RAW_MODE\n",
+            "x.tfx",
+        ).body.nodes
+        self.assertEqual([node.text for node in nodes], ["!| foo", "!|bar"])
+
+    def test_raw_line_marker_works_as_a_sequence_payload(self):
+        entry = parse("\\foo::\n    - !| \\item Note:\n", "x.tfx").body.nodes[0].suite.nodes[0]
+        node = entry.value.nodes[0]
+        self.assertIsInstance(node, RawTex)
+        self.assertEqual(node.text, "\\item Note:")
+        self.assertTrue(node.verbatim)
+        self.assertEqual(node.span.start.column, 7)
+
+    def test_raw_line_marker_payload_rejects_a_missing_space(self):
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:2:7: parse error: "
+            r"'!\|' must be followed by one space or end the line",
+        ):
+            parse("\\foo::\n    - !|bad\n", "x.tfx")
+
+    def test_raw_line_marker_payload_tabs_stay_prohibited(self):
+        # The whole-file tab pre-scan classifies lines by their own text, and
+        # a leading '-' is only a sequence marker inside a '::' suite, so the
+        # exemption deliberately stops at the start of a line.
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:2:10: parse error: tab characters are not allowed",
+        ):
+            parse("\\foo::\n    - !| \tx\n", "x.tfx")
+
+    def test_explicit_sequence_body_never_earns_the_tab_exemption(self):
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:3:12: parse error: tab characters are not allowed",
+        ):
+            parse("\\foo::\n    + {\n        !| \tx\n    }\n", "x.tfx")
+
+    def test_raw_line_marker_payload_keeps_inner_spaces_but_not_trailing_ones(self):
+        # A '-' payload is right-stripped before any escape runs, which the
+        # '@@' / '!!' escapes share, so only the leading spaces survive here.
+        for payload, expected in (("!|   foo", "  foo"), ("!| foo  ", "foo")):
+            with self.subTest(payload=payload):
+                entry = parse(
+                    f"\\foo::\n    - {payload}\n", "x.tfx"
+                ).body.nodes[0].suite.nodes[0]
+                self.assertEqual(entry.value.nodes[0].text, expected)
+
+    def test_raw_line_marker_is_literal_in_an_explicit_group_body(self):
+        entry = parse(
+            "\\foo::\n    + {\n        !| x\n        }\n",
+            "x.tfx",
+        ).body.nodes[0].suite.nodes[0]
+        self.assertEqual([node.text for node in entry.value.nodes], ["{", "!| x", "}"])
+        self.assertFalse(any(node.verbatim for node in entry.value.nodes))
+
+    def test_raw_line_marker_is_not_an_explicit_group_payload(self):
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:2:7: parse error: explicit sequence entries require one",
+        ):
+            parse("\\foo::\n    + !| x\n", "x.tfx")
+
+    def test_raw_line_marker_in_a_generated_continuation_block_allows_tabs(self):
+        # The documented way to put a tab in a sequence value: the '-' payload
+        # cannot, but its continuation block starts the line with the marker.
+        entry = parse(
+            "\\foo::\n    - x\n        !| \\item\ty\n", "x.tfx"
+        ).body.nodes[0].suite.nodes[0]
+        self.assertEqual(
+            [node.text for node in entry.value.nodes], ["x", "\\item\ty"]
+        )
+        self.assertTrue(entry.value.nodes[1].verbatim)
+
+    def test_raw_line_marker_is_rejected_in_a_stack_segment(self):
+        for source, location in (
+            ("\\foo >> !| bar\n", "1:10"),
+            ("\\foo >>\n!| bar\n", "2:2"),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ParseError,
+                    rf"x\.tfx:{location}: parse error: invalid structural name",
+                ):
+                    parse(source, "x.tfx")
+
     def test_raw_mode_region_emits_verbatim_lines_without_scanning(self):
         source = (
             "@lstlisting:\n"
@@ -368,6 +528,22 @@ class ParserTests(unittest.TestCase):
         self.assertFalse(entry.value.nodes[0].verbatim)
         self.assertTrue(entry.value.nodes[1].verbatim)
         self.assertFalse(entry.value.nodes[2].verbatim)
+
+    def test_raw_region_in_an_explicit_sequence_still_allows_tabs(self):
+        # The '+' body re-checks the tab exemption line by line, so a region
+        # nested inside one must still reach _raw_region untouched.
+        entry = parse(
+            "\\foo::\n"
+            "    + {\n"
+            "      !BEGIN_RAW_MODE\n"
+            "      \tdeep\n"
+            "      !END_RAW_MODE\n"
+            "      }\n",
+            "raw.tfx",
+        ).body.nodes[0].suite.nodes[0]
+        self.assertEqual(
+            [node.text for node in entry.value.nodes], ["{", "\tdeep", "}"],
+        )
 
     def test_explicit_sequence_rejects_misaligned_raw_mode_markers(self):
         cases = (

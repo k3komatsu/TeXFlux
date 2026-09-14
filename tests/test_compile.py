@@ -503,6 +503,52 @@ class CompileTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertEqual(compile_text(source), expected)
 
+    def test_raw_line_marker_reaches_command_lines_no_escape_could(self):
+        # Each of these is a raw TeX line that the header scanner claims: the
+        # first two are parse errors today and the last two compile to the
+        # wrong output.  '@@' / '!!' cannot reach any of them because they do
+        # not start with '@' or '!'.
+        for source, expected in (
+            ("!| \\item Note:\n", "\\item Note:\n"),
+            ("!| \\item 手順:\n", "\\item 手順:\n"),
+            ("!| \\textbf{Note}:\n", "\\textbf{Note}:\n"),
+            ("!| \\emph{x} >> \\emph{y}\n", "\\emph{x} >> \\emph{y}\n"),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(compile_text(source), expected)
+
+    def test_raw_line_marker_reaches_sequence_payloads_too(self):
+        for source, expected in (
+            (
+                "@itemize::\n    - !| \\item Note:\n",
+                "\\begin{itemize}\n\\item Note:\n\\end{itemize}\n",
+            ),
+            (
+                "@itemize::\n    - !| \\textbf{Note}:\n",
+                "\\begin{itemize}\n\\textbf{Note}:\n\\end{itemize}\n",
+            ),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(compile_text(source), expected)
+
+    def test_raw_line_marker_alone_is_a_blank_raw_line_not_a_blank_line(self):
+        # This is why a bare '!|' is legal: a real blank line at the end of a
+        # suite is rewound to the enclosing block, a '!|' line is content.
+        self.assertEqual(
+            compile_text("@center:\n    x\n    !|\ny\n"),
+            "\\begin{center}\nx\n\n\\end{center}\ny\n",
+        )
+        self.assertEqual(
+            compile_text("@center:\n    x\n\ny\n"),
+            "\\begin{center}\nx\n\\end{center}\n\ny\n",
+        )
+
+    def test_raw_line_marker_keeps_tabs_the_way_a_region_does(self):
+        self.assertEqual(
+            compile_text("@lstlisting:\n    !| \tdef f():\n"),
+            "\\begin{lstlisting}\n\tdef f():\n\\end{lstlisting}\n",
+        )
+
     def test_special_and_container_errors_have_spans(self):
         with self.assertRaisesRegex(DirectiveError, r"unknown\.tfx:1:1"):
             compile_text("!unknown\n", filename="unknown.tfx")

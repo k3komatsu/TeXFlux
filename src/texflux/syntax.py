@@ -35,6 +35,12 @@ RAW_END_MARKER: Final = "!END_RAW_MODE"
 #: name rather than a line.
 RAW_MODE_NAMES: Final = frozenset({RAW_BEGIN_MARKER[1:], RAW_END_MARKER[1:]})
 
+#: The one-line raw escape. '@@' and '!!' strip a single prefix character, so
+#: they only ever reach a line that already starts with '@' or '!'; this one
+#: strips the whole marker, which makes it the only escape that can reach a
+#: '\' line the header scanner would otherwise claim.
+RAW_LINE_MARKER: Final = "!|"
+
 
 def is_escaped(text: str, index: int) -> bool:
     """Whether the character at ``index`` is escaped by an odd backslash run."""
@@ -151,6 +157,7 @@ __all__ = [
     "optional_text",
     "RAW_BEGIN_MARKER",
     "RAW_END_MARKER",
+    "RAW_LINE_MARKER",
     "RAW_MODE_NAMES",
     "required_text",
     "sequence_entries",

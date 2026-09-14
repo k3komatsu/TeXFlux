@@ -469,6 +469,25 @@ class MacroSourceMapTests(unittest.TestCase):
             (5, 1),
         )
 
+    def test_raw_line_marker_in_a_template_is_verbatim_and_retargeted(self):
+        source = (
+            "!defmacro{m}{x}:\n"
+            "    !| \\foo{!text{x}}\n"
+            "!m{value}\n"
+        )
+        result = compile_with_map(source, filename="m.tfx")
+        self.assertEqual(result.text, "\\foo{!text{x}}\n")
+        fragment = next(
+            fragment for fragment in result.rendered.fragments
+            if fragment.text == "\\foo{!text{x}}"
+        )
+        self.assertEqual(fragment.role, "content")
+        # The line maps to the call site, like any other template literal.
+        self.assertEqual(
+            (fragment.source.start.line, fragment.source.start.column),
+            (3, 1),
+        )
+
 
 class InterpolationSourceMapTests(unittest.TestCase):
     def test_holes_keep_value_spans_and_literals_point_to_call(self):

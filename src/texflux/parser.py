@@ -29,6 +29,7 @@ from .errors import ParseError
 from .syntax import (
     RAW_BEGIN_MARKER,
     RAW_END_MARKER,
+    RAW_LINE_MARKER,
     RAW_MODE_NAMES,
     is_escaped,
 )
@@ -77,6 +78,18 @@ def _line_marker(line: _PhysicalLine) -> str | None:
 
     text = line.text.strip(" ")
     return text if text in (RAW_BEGIN_MARKER, RAW_END_MARKER) else None
+
+
+def _raw_escape_line(line: _PhysicalLine) -> bool:
+    """Whether a whole line is a '!|' raw escape.
+
+    '_block' strips the block base and any extra spaces before classifying a
+    line, so the marker always sits at the line's first non-space character.
+    That makes this decidable here, before any block base is known, which is
+    what the whole-file tab pre-scan needs.
+    """
+
+    return line.text.lstrip(" ").startswith(RAW_LINE_MARKER)
 
 
 def _scan_raw_regions(
@@ -523,24 +536,35 @@ class _Parser:
         )
         self.index = 0
         self.raw_regions = _scan_raw_regions(self.lines, filename)
-        verbatim = {
-            index
-            for begin, end in self.raw_regions.items()
-            for index in range(begin + 1, end)
-        }
+        # Raw regions and '!|' escapes are the two constructs that keep their
+        # body exactly as written, tabs included, so both are exempt here.
+        self.tab_exempt = frozenset(
+            {
+                index
+                for begin, end in self.raw_regions.items()
+                for index in range(begin + 1, end)
+            }
+            | {
+                index
+                for index, line in enumerate(self.lines)
+                if _raw_escape_line(line)
+            }
+        )
         for index, line in enumerate(self.lines):
-            if index in verbatim:
-                continue
-            tab = line.text.find("\t")
-            if tab >= 0:
-                raise ParseError(
-                    "tab characters are not allowed",
-                    SourceSpan(
-                        filename,
-                        SourcePosition(line.number, tab + 1),
-                        SourcePosition(line.number, tab + 2),
-                    ),
-                )
+            if index not in self.tab_exempt:
+                self._reject_tab(line)
+
+    def _reject_tab(self, line: _PhysicalLine) -> None:
+        tab = line.text.find("\t")
+        if tab >= 0:
+            raise ParseError(
+                "tab characters are not allowed",
+                SourceSpan(
+                    self.filename,
+                    SourcePosition(line.number, tab + 1),
+                    SourcePosition(line.number, tab + 2),
+                ),
+            )
 
     def parse(self) -> Document:
         body = self._block(0, self.document_span)
@@ -622,6 +646,22 @@ class _Parser:
                 self.index += 1
                 continue
 
+            if rest[extra : extra + 2] == RAW_LINE_MARKER:
+                tail = self._raw_line_tail(
+                    line,
+                    rest[extra + len(RAW_LINE_MARKER) :],
+                    line.indent + 1,
+                )
+                nodes.append(
+                    RawTex(
+                        rest[:extra] + tail,
+                        self._line_span(line, base + 1, rest),
+                        verbatim=True,
+                    )
+                )
+                self.index += 1
+                continue
+
             if first in {"@", "!"} and line.indent != base:
                 raise self._indent_error(line)
 
@@ -662,6 +702,27 @@ class _Parser:
         raw_text = line.text[base:]
         nodes.append(RawTex(raw_text, self._line_span(line, base + 1, raw_text)))
         self.index += 1
+
+    def _raw_line_tail(
+        self,
+        line: _PhysicalLine,
+        tail: str,
+        marker_column: int,
+    ) -> str:
+        """Read the body of one '!|' escape, or reject a missing separator.
+
+        One space separates the marker from the body and is not part of it.
+        Everything after that space is kept exactly as written up to the
+        newline, the way a raw-mode region keeps its own lines.
+        """
+
+        if tail and not tail.startswith(" "):
+            raise ParseError(
+                f"'{RAW_LINE_MARKER}' must be followed by one space"
+                " or end the line",
+                self._line_span(line, marker_column, RAW_LINE_MARKER),
+            )
+        return tail[1:]
 
     def _raw_region(self, base: int) -> list[Node]:
         """Consume one '!BEGIN_RAW_MODE' region and return its verbatim lines.
@@ -914,6 +975,13 @@ class _Parser:
             payload_span = self._line_span(line, payload_start + 1, payload)
             if payload[:2] in {"@@", "!!"}:
                 nodes.append(RawTex(payload[1:], payload_span))
+            elif payload[:2] == RAW_LINE_MARKER:
+                tail = self._raw_line_tail(
+                    line,
+                    payload[len(RAW_LINE_MARKER) :],
+                    payload_start + 1,
+                )
+                nodes.append(RawTex(tail, payload_span, verbatim=True))
             elif payload[0] in "\\@!":
                 # Only a command payload may turn out to be ordinary TeX; an
                 # '@' or '!' payload must scan as a structural header.
@@ -1048,6 +1116,11 @@ class _Parser:
                 if marker == RAW_BEGIN_MARKER:
                     nodes.extend(self._raw_region(continuation_base))
                     continue
+            if self.index in self.tab_exempt:
+                # An explicit '+' group body is opaque authored TeX, so '!|'
+                # is not an escape here and the line never earned its
+                # exemption from the whole-file tab pre-scan.
+                self._reject_tab(line)
             raw_text = line.text[continuation_base:]
             nodes.append(
                 RawTex(raw_text, self._line_span(line, continuation_base + 1, raw_text))

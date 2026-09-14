@@ -71,6 +71,15 @@ class InterpolationEscapeTests(unittest.TestCase):
                 with self.subTest(source=source):
                     self.assertEqual(compile_text(source), expected + "\n")
 
+    def test_a_raw_line_marker_line_is_not_interpolated_at_all(self):
+        # The escape and the raw marker differ exactly here: '!!' strips one
+        # character and hands the line to interpolation, '!|' makes the line
+        # verbatim, so no stripping can make its marker a hole.
+        self.assertEqual(compile_text(macro("!!text{x}", "!m{A}\n", "{x}")), "A\n")
+        self.assertEqual(
+            compile_text(macro("!| !text{x}", "!m{A}\n", "{x}")), "!text{x}\n"
+        )
+
 
 class InterpolationDiagnosticTests(unittest.TestCase):
     def test_diagnostics_point_at_definition_markers_and_keep_chain(self):
