@@ -2,9 +2,9 @@
 
 !flag{detail}{off}
 
-@frame{2023 年の測定結果}:
-    !highlight:
+@frame{2023 年の測定結果}::
+    !highlight::
         当時のベースラインは p99 で 420 ms でした。
 
-    !when{detail}:
+    !when{detail}::
         測定環境: 4 vCPU / 8 GiB、同時実行数 64。

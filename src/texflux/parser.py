@@ -161,6 +161,14 @@ def _node_end(node: Node) -> SourcePosition:
     return end
 
 
+#: The suite markers, longest first so ':::' wins over the ':' it opens with.
+#: A lone ':' is deliberately absent: TeX prose ends a line with one, which is
+#: why it is the one punctuation TeXFlux leaves entirely to TeX.
+_SUITE_MARKERS: Final = (
+    (":::", SuiteMode.SEQUENCE),
+    ("::", SuiteMode.BLOCK),
+)
+
 #: TeXFlux names are ASCII-only, independent of the host locale.
 _NAME_START: Final = frozenset(string.ascii_letters)
 _NAME_CHARS: Final = frozenset(string.ascii_letters + string.digits + "_")
@@ -240,8 +248,16 @@ def scan_group(
             raise ParseError("unclosed binding list", span, code="P008")
 
 
-def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
-    """Check a failed command scan for a reserved trailing colon."""
+def _has_top_level_suite_marker(text: str, *, span: SourceSpan) -> bool:
+    r"""Check a failed command scan for a reserved trailing suite marker.
+
+    Both markers end in ``::`` and a marker is the last thing on its line, so
+    the only question left is whether that spelling sits at depth zero. A
+    group the scanner cannot balance has no depth-zero end, which keeps a
+    marker spelling inside an unclosed group opaque: ``\newcommand{\x}{a::``
+    is the raw TeX it looks like. A lone trailing colon is TeX prose rather
+    than a marker, so it reserves nothing either way.
+    """
 
     end = len(text.rstrip(" "))
     index = 0
@@ -253,21 +269,7 @@ def _has_top_level_trailing_colon(text: str, *, span: SourceSpan) -> bool:
                 return False
             continue
         index += 1
-    return end > 0 and text[end - 1] == ":"
-
-
-def _has_immediate_command_binding(text: str) -> bool:
-    """Keep ``\\foo(x):`` on the ordinary-TeX path."""
-
-    if not text.startswith("\\"):
-        return False
-    position = 1
-    if position >= len(text) or text[position] not in _NAME_START:
-        return False
-    position += 1
-    while position < len(text) and text[position] in _NAME_CHARS:
-        position += 1
-    return position < len(text) and text[position] == BINDING_OPENER
+    return end > 1 and text[end - 2 : end] == "::"
 
 
 class HeaderScanner:
@@ -333,7 +335,8 @@ class HeaderScanner:
                 continue
 
             raise self._error(
-                "unexpected token in structural header",
+                "unexpected token in structural header; write '!| ' in front "
+                "of a line that has to stay raw TeX",
                 position,
                 code="P011",
             )
@@ -351,32 +354,38 @@ class HeaderScanner:
         return position
 
     def _suite_marker(self, position: int) -> tuple[SuiteMode, SourceSpan]:
-        """Scan the trailing ``:`` block or ``::`` sequence marker."""
+        """Scan the trailing ``::`` block or ``:::`` sequence marker.
+
+        A lone colon is TeX prose rather than a marker, so it reserves no
+        line: a command header ending in one falls back to raw TeX, and an
+        ``@`` or ``!`` header ending in one is a malformed header. A stack
+        separator behind it still reserves the line, because ``>>`` is
+        structural wherever it is written.
+        """
 
         marker_start = position
-        if self.text.startswith("::", position):
-            self.saw_structure = True
-            position = self._skip_spaces(position + 2)
-            if position != self.end:
-                raise self._error(
-                    "trailing token after suite marker",
-                    position,
-                    code="P012",
-                )
-            return SuiteMode.SEQUENCE, self._span(marker_start, position)
+        for marker, mode in _SUITE_MARKERS:
+            if self.text.startswith(marker, position):
+                break
+        else:
+            if self.text.startswith(">>", self._skip_spaces(position + 1)):
+                self.saw_structure = True
+            raise self._error(
+                "unexpected ':' in a structural header; the suite markers are "
+                "'::' and ':::'",
+                position,
+                code="P013",
+            )
 
-        position = self._skip_spaces(position + 1)
-        if position == self.end:
-            self.saw_structure = True
-            return SuiteMode.BLOCK, self._span(marker_start, position)
-
-        if self.text[position] == "|" or self.text.startswith(">>", position):
-            self.saw_structure = True
-        raise self._error(
-            "unexpected token in structural header",
-            position,
-            code="P013",
-        )
+        self.saw_structure = True
+        position = self._skip_spaces(position + len(marker))
+        if position != self.end:
+            raise self._error(
+                "trailing token after suite marker",
+                position,
+                code="P012",
+            )
+        return mode, self._span(marker_start, position)
 
     def _stack_separator(self, position: int, *, spaced: bool) -> int:
         """Return the next segment's offset, or the line end for continuation."""
@@ -536,46 +545,40 @@ class HeaderScanner:
 def _scan_structural_header(
     text: str,
     span: SourceSpan,
-    *,
-    suite_follows: bool,
 ) -> HeaderScanResult | None:
     """Scan one header, or return ``None`` when the line stays raw TeX.
 
     An ordinary ``\\command`` only becomes structural through a top-level
     structural token, so a scan that fails without seeing one is raw TeX.
-
-    A single trailing colon is the one such token that TeX prose also ends a
-    line with, so it claims a command line only when ``suite_follows``: the
-    next non-blank line sits at or beyond the suite base. Without that block the colon
-    is text, whether the header scans (``\\textbf{Note}:``) or not
-    (``\\item Note:``). ``::`` and ``>>`` are never prose, so they claim the
-    line unconditionally.
+    Those tokens are ``::``, ``:::`` and ``>>``, and TeX prose writes none of
+    them. A lone trailing colon is not one of them, so ``\\textbf{Note}:`` and
+    ``\\item Note:`` are raw TeX whatever follows them: a line is classified
+    by reading that line and nothing else.
     """
 
     scanner = HeaderScanner(text, span=span)
     try:
         result = scanner.scan()
     except ParseError:
-        end = len(text.rstrip(" "))
-        single_colon = (
-            end > 0 and text[end - 1] == ":" and not text[:end].endswith("::")
-        )
-        if single_colon and _has_immediate_command_binding(text):
-            return None
         if scanner.saw_structure:
             raise
-        if not _has_top_level_trailing_colon(text, span=span):
-            return None
-        if single_colon and not suite_follows:
+        if not _has_top_level_suite_marker(text, span=span):
             return None
         raise
-    if (
-        result.suite_mode is SuiteMode.BLOCK
-        and len(result.segments) == 1
-        and not suite_follows
-    ):
-        return None
     return result
+
+
+def _requires_value(result: HeaderScanResult) -> bool:
+    """Whether this header's suite has to produce at least one value.
+
+    A command consumes its suite as arguments, so an empty one would emit a
+    silent ``{}``. A container or a special accepts an empty suite.
+    """
+
+    return (
+        isinstance(result.segments[-1], ParsedInvocation)
+        and result.segments[-1].kind is InvocationKind.COMMAND
+    )
 
 
 class _Parser:
@@ -618,7 +621,8 @@ class _Parser:
         tab = line.text.find("\t")
         if tab >= 0:
             raise ParseError(
-                "tab characters are not allowed",
+                "tab characters are not allowed; keep one after '!| ' or "
+                "inside a raw-mode region",
                 SourceSpan(
                     self.filename,
                     SourcePosition(line.number, tab + 1),
@@ -830,7 +834,8 @@ class _Parser:
 
     def _indent_error(self, line: _PhysicalLine) -> ParseError:
         return ParseError(
-            "invalid structural indentation",
+            "invalid structural indentation; a structural line sits at its "
+            "suite base, and a literal '@' or '!' line is written '@@' or '!!'",
             self._line_span(line, line.indent + 1),
             code="P025",
         )
@@ -845,21 +850,9 @@ class _Parser:
         result = _scan_structural_header(
             line.text[base:],
             self._header_span(line, base),
-            suite_follows=self._suite_follows(self.index + 1, base),
         )
         # A closed single-segment command line is ordinary TeX.
         return None if result is None or result.closed_single else result
-
-    def _suite_follows(self, index: int, base: int) -> bool:
-        """Whether the next non-blank line from ``index`` on sits at or beyond ``base + 4``.
-
-        The same lookahead ``_parse_suite`` makes to give a block suite its
-        body, asked one step earlier so that a command header's single colon
-        can stay text when the answer is no.
-        """
-
-        next_index = self._next_nonblank(index)
-        return next_index is not None and self.lines[next_index].indent >= base + 4
 
     def _try_structural_command(
         self,
@@ -901,7 +894,8 @@ class _Parser:
             and segment.kind is InvocationKind.ENVIRONMENT
         ):
             raise ParseError(
-                "environment directives require a suite marker ':' or '::'",
+                "environment directives require a suite marker '::' or "
+                "':::'; a literal '@' line is written '@@'",
                 segment.span,
                 code="P026",
             )
@@ -909,7 +903,7 @@ class _Parser:
         if next_index is not None and self.lines[next_index].indent >= base + 4:
             line = self.lines[next_index]
             raise ParseError(
-                "indented lines require a suite marker ':' or '::'",
+                "indented lines require a suite marker '::' or ':::'",
                 self._line_span(line, line.indent + 1),
                 code="P027",
             )
@@ -989,11 +983,7 @@ class _Parser:
                     code="P030",
                 )
             suite = self._sequence_suite(suite_base, header_span)
-            requires_entry = (
-                isinstance(result.segments[-1], ParsedInvocation)
-                and result.segments[-1].kind is InvocationKind.COMMAND
-            )
-            if not suite.nodes and requires_entry:
+            if not suite.nodes and _requires_value(result):
                 raise ParseError(
                     "sequence suites require at least one '-' or '+' value entry",
                     header_span,
@@ -1005,6 +995,15 @@ class _Parser:
             and self.lines[next_index].indent >= suite_base
         ):
             return self._block(suite_base, header_span)
+        if _requires_value(result):
+            # An empty '{}' is raw TeX the author can write directly, so a
+            # command's marker always owns a body and '\texttt{std}::' cannot
+            # quietly become '\texttt{std}{}'.
+            raise ParseError(
+                "command block suites require an indented body",
+                header_span,
+                code="P038",
+            )
         return Block((), header_span)
 
     def _sequence_suite(self, base: int, boundary: SourceSpan) -> Block:
@@ -1076,11 +1075,7 @@ class _Parser:
                 # Only a command payload may turn out to be ordinary TeX; an
                 # '@' or '!' payload must scan as a structural header.
                 result = (
-                    _scan_structural_header(
-                        payload,
-                        payload_span,
-                        suite_follows=self._suite_follows(self.index, base),
-                    )
+                    _scan_structural_header(payload, payload_span)
                     if payload[0] == "\\"
                     else HeaderScanner(payload, span=payload_span).scan()
                 )
@@ -1098,10 +1093,7 @@ class _Parser:
         value_end = max([entry_span.end, *map(_node_end, nodes)])
         value_span = SourceSpan(entry_span.file, entry_span.start, value_end)
         value = Block(tuple(nodes), value_span)
-        # A value that never leaves its marker line is the compact case; a
-        # suite or a continuation line makes it a multi-line value.
-        spans_one_line = bool(payload) and value_end.line == entry_span.start.line
-        return SequenceEntry(value, marker_span, value_span, spans_one_line)
+        return SequenceEntry(value, marker_span, value_span)
 
     def _explicit_sequence_entry(
         self,
@@ -1162,14 +1154,7 @@ class _Parser:
 
         kept = self._truncate_raw_nodes(raw_nodes, end)
         value = Block(tuple(kept), _block_span(entry_span, kept))
-        spans_one_line = len(kept) == 1 and value.span.end.line == entry_span.start.line
-        return SequenceEntry(
-            value,
-            marker_span,
-            value.span,
-            spans_one_line,
-            kind,
-        )
+        return SequenceEntry(value, marker_span, value.span, kind)
 
     def _raw_sequence_continuation(
         self,

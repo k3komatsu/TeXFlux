@@ -104,7 +104,7 @@ class DiagnoseTests(TempDirTestCase):
     # -- shape ------------------------------------------------------------
 
     def test_a_clean_document_reports_nothing_and_lists_its_root(self):
-        self.write("main.tfx", "@frame{t}:\n    body\n")
+        self.write("main.tfx", "@frame{t}::\n    body\n")
         report = self.report()
 
         self.assertEqual(report.diagnostics, ())
@@ -113,7 +113,7 @@ class DiagnoseTests(TempDirTestCase):
         self.assertEqual(report.by_file(), {str(self.root / "main.tfx"): ()})
 
     def test_an_error_is_reported_rather_than_raised(self):
-        self.write("main.tfx", "@frame{x}:\n    @foo{bad\n")
+        self.write("main.tfx", "@frame{x}::\n    @foo{bad\n")
         diagnostic = self.only()
 
         self.assertIs(diagnostic.severity, Severity.ERROR)
@@ -169,14 +169,14 @@ class DiagnoseTests(TempDirTestCase):
         self.assertEqual(self.relative(report), ["main.tfx"])
         self.assertFalse(self.report(flags={"extra": True}).ok)
 
-    def test_a_warning_leaves_the_compilation_ok(self):
-        self.write("main.tfx", "\\foo::\n    - a % trailing\n")
-        diagnostic = self.only()
+    def test_a_value_holding_a_comment_reports_nothing(self):
+        # The layout rule moved the closing brace below the comment, so the
+        # two render warnings it replaced have nothing left to say.
+        self.write("main.tfx", "\\foo:::\n    - a % trailing\n")
+        report = self.report()
 
-        self.assertIs(diagnostic.severity, Severity.WARNING)
-        self.assertEqual(diagnostic.kind, "render")
-        self.assertEqual(diagnostic.code, "W002")
-        self.assertTrue(self.report().ok)
+        self.assertEqual(report.diagnostics, ())
+        self.assertTrue(report.ok)
 
     def test_a_diagnostic_and_the_error_it_came_from_agree(self):
         self.write("main.tfx", "!nosuch\n")
@@ -194,8 +194,8 @@ class DiagnoseTests(TempDirTestCase):
         self.assertEqual(diagnostic.kind, error.kind)
 
     def test_by_file_covers_every_source_and_clears_the_clean_ones(self):
-        self.write("style.tfxm", "!defmacro{s}:\n    S\n")
-        self.write("broken.tfx", "!defmacro{m}{x}{x}:\n    A\n")
+        self.write("style.tfxm", "!defmacro{s}::\n    S\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}::\n    A\n")
         self.write(
             "main.tfx",
             "!macroimport{style.tfxm}\n\n!import{broken.tfx}\n",
@@ -233,7 +233,7 @@ class DiagnoseTests(TempDirTestCase):
     def test_a_duplicate_macro_points_at_the_first_definition(self):
         self.write(
             "main.tfx",
-            "!defmacro{m}:\n    A\n\n!defmacro{m}:\n    B\n",
+            "!defmacro{m}::\n    A\n\n!defmacro{m}::\n    B\n",
         )
         diagnostic = self.only()
 
@@ -243,7 +243,7 @@ class DiagnoseTests(TempDirTestCase):
 
     def test_a_top_level_expansion_error_adds_no_related_location(self):
         # Its own span is already the call, so there is nothing to add.
-        self.write("main.tfx", "!defmacro{m}{x}:\n    !param{x}\n\n!m\n")
+        self.write("main.tfx", "!defmacro{m}{x}::\n    !param{x}\n\n!m\n")
         diagnostic = self.only()
 
         self.assertEqual(diagnostic.code, "E019")
@@ -253,10 +253,10 @@ class DiagnoseTests(TempDirTestCase):
     def test_an_expansion_error_inside_a_template_points_at_the_call_site(self):
         self.write(
             "main.tfx",
-            "!defmacro{inner}{x}:\n"
+            "!defmacro{inner}{x}::\n"
             "    !param{x}\n"
             "\n"
-            "!defmacro{outer}:\n"
+            "!defmacro{outer}::\n"
             "    !inner\n"
             "\n"
             "!outer\n",
@@ -279,7 +279,7 @@ class DiagnoseTests(TempDirTestCase):
         self.assert_related(diagnostic, [("first bound here", "main.tfx")])
 
     def test_a_double_macro_import_points_at_the_first_one(self):
-        self.write("a.tfxm", "!defmacro{m}:\n    M\n")
+        self.write("a.tfxm", "!defmacro{m}::\n    M\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n!macroimport{a.tfxm}\n")
         diagnostic = self.only()
 
@@ -287,8 +287,8 @@ class DiagnoseTests(TempDirTestCase):
         self.assert_related(diagnostic, [("first imported here", "main.tfx")])
 
     def test_a_macro_name_collision_points_at_the_visible_definition(self):
-        self.write("a.tfxm", "!defmacro{m}:\n    A\n")
-        self.write("b.tfxm", "!defmacro{m}:\n    B\n")
+        self.write("a.tfxm", "!defmacro{m}::\n    A\n")
+        self.write("b.tfxm", "!defmacro{m}::\n    B\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n!macroimport{b.tfxm}\n")
         diagnostic = self.only()
 
@@ -296,7 +296,7 @@ class DiagnoseTests(TempDirTestCase):
         self.assert_related(diagnostic, [("defined here", "a.tfxm")])
 
     def test_an_import_chain_is_carried_innermost_first(self):
-        self.write("broken.tfx", "!defmacro{m}{x}{x}:\n    A\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}::\n    A\n")
         self.write("mid.tfx", "!import{broken.tfx}\n")
         self.write("main.tfx", "!import{mid.tfx}\n")
         diagnostic = self.only()
@@ -311,7 +311,7 @@ class DiagnoseTests(TempDirTestCase):
         )
 
     def test_a_macro_module_error_names_its_import_site(self):
-        self.write("impure.tfxm", "!defmacro{m}:\n    !nosuchmacro\n")
+        self.write("impure.tfxm", "!defmacro{m}::\n    !nosuchmacro\n")
         self.write("main.tfx", "!macroimport{impure.tfxm}\n")
         diagnostic = self.only()
 
@@ -335,17 +335,17 @@ class DiagnoseTests(TempDirTestCase):
     # -- overlays ----------------------------------------------------------
 
     def test_an_overlay_is_read_instead_of_the_file(self):
-        self.write("a.tfxm", "!defmacro{m}:\n    STALE\n")
+        self.write("a.tfxm", "!defmacro{m}::\n    STALE\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n\n!m\n")
-        overlay = {str(self.root / "a.tfxm"): "!defmacro{m}:\n    !nosuchmacro\n"}
+        overlay = {str(self.root / "a.tfxm"): "!defmacro{m}::\n    !nosuchmacro\n"}
 
         self.assertTrue(self.report().ok)
         self.assertFalse(self.report(overlays=overlay).ok)
 
     def test_an_overlay_repairs_a_module_that_is_broken_on_disk(self):
-        self.write("a.tfxm", "!defmacro{m}:\n    !nosuchmacro\n")
+        self.write("a.tfxm", "!defmacro{m}::\n    !nosuchmacro\n")
         self.write("main.tfx", "!macroimport{a.tfxm}\n\n!m\n")
-        overlay = {str(self.root / "a.tfxm"): "!defmacro{m}:\n    FIXED\n"}
+        overlay = {str(self.root / "a.tfxm"): "!defmacro{m}::\n    FIXED\n"}
 
         self.assertFalse(self.report().ok)
         self.assertTrue(self.report(overlays=overlay).ok)
@@ -426,7 +426,7 @@ class SerializeTests(TempDirTestCase):
         return report, json.loads(serialize_diagnostics(report))
 
     def test_a_clean_document_serializes_an_empty_list(self):
-        self.write("main.tfx", "@frame{t}:\n    body\n")
+        self.write("main.tfx", "@frame{t}::\n    body\n")
         report, value = self.payload()
 
         self.assertEqual(value["format"], "texflux-diagnostics")
@@ -446,7 +446,7 @@ class SerializeTests(TempDirTestCase):
         )
 
     def test_an_error_serializes_its_severity_kind_code_and_span(self):
-        self.write("main.tfx", "@frame{x}:\n    @foo{bad\n")
+        self.write("main.tfx", "@frame{x}::\n    @foo{bad\n")
         _, value = self.payload()
         diagnostic = value["diagnostics"][0]
 
@@ -464,15 +464,21 @@ class SerializeTests(TempDirTestCase):
         )
         self.assertEqual(diagnostic["related"], [])
 
-    def test_a_warning_serializes_as_a_warning(self):
-        self.write("main.tfx", "\\foo::\n    - a % trailing\n")
-        _, value = self.payload()
+    def test_a_render_warning_still_maps_to_a_warning_diagnostic(self):
+        # No site raises one today. The mapping stays because 'warning' is
+        # part of the published report format that consumers read.
+        span = SourceSpan("main.tfx", SourcePosition(1, 1), SourcePosition(1, 2))
+        diagnostic = Diagnostic.from_warning(
+            RenderWarning("careful", span, code="W002")
+        )
 
-        self.assertEqual(value["diagnostics"][0]["severity"], "warning")
-        self.assertEqual(value["diagnostics"][0]["kind"], "render")
+        self.assertIs(diagnostic.severity, Severity.WARNING)
+        self.assertEqual(diagnostic.kind, "render")
+        self.assertEqual(diagnostic.code, "W002")
+        self.assertEqual(diagnostic.span, span)
 
     def test_related_locations_index_the_source_table(self):
-        self.write("broken.tfx", "!defmacro{m}{x}{x}:\n    A\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}::\n    A\n")
         self.write("mid.tfx", "!import{broken.tfx}\n")
         self.write("main.tfx", "!import{mid.tfx}\n")
         _, value = self.payload()

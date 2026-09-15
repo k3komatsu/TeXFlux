@@ -34,8 +34,10 @@ CODE = re.compile(r"^[PVDEMW][0-9]{3}$")
 
 #: The highest number each kind has ever used. A new diagnostic takes the
 #: next one and bumps this; a deleted one leaves its number behind as a gap,
-#: because a code that has been published is never reused or renumbered.
-HIGHEST = {"P": 37, "V": 43, "D": 1, "E": 19, "M": 30, "W": 2}
+#: because a code that has been published is never reused or renumbered. A
+#: kind can reach zero live codes that way -- W did, when the comment layout
+#: rule replaced its two -- and still keeps its mark.
+HIGHEST = {"P": 38, "V": 43, "D": 1, "E": 19, "M": 30, "W": 2}
 
 #: A hole in a message: a template's ``{name}`` and a table row's ellipsis
 #: stand for the same thing, so both reduce to nothing before comparison.
@@ -168,7 +170,7 @@ class DiagnosticCodeTests(unittest.TestCase):
         numbers = {}
         for code in owned_codes():
             numbers.setdefault(code[0], set()).add(int(code[1:]))
-        self.assertEqual(sorted(numbers), sorted(HIGHEST))
+        self.assertLessEqual(set(numbers), set(HIGHEST))
         for letter, used in sorted(numbers.items()):
             with self.subTest(letter=letter):
                 self.assertLessEqual(max(used), HIGHEST[letter])
@@ -180,7 +182,7 @@ class DiagnosticCodeTests(unittest.TestCase):
         counted = Counter(code[0] for code in owned_codes())
         self.assertEqual(
             dict(sorted(counted.items())),
-            {"P": 37, "V": 43, "D": 1, "E": 19, "M": 30, "W": 2},
+            {"D": 1, "E": 19, "M": 30, "P": 38, "V": 43},
         )
 
     def test_the_source_and_the_published_table_list_the_same_codes(self):

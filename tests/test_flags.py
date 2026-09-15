@@ -60,7 +60,7 @@ class FlagDeclarationTests(unittest.TestCase):
         self.assertIn("f.tfx:1:1", str(caught.exception))
 
     def test_declaration_below_the_top_level_is_rejected(self):
-        source = "@frame:\n    !flag{draft}{off}\n"
+        source = "@frame::\n    !flag{draft}{off}\n"
 
         with self.assertRaises(ValidationError) as caught:
             collect(source)
@@ -75,7 +75,7 @@ class FlagDeclarationTests(unittest.TestCase):
 
     def test_declaration_accepts_no_suite(self):
         with self.assertRaises(ValidationError) as caught:
-            collect("!flag{draft}{off}:\n    body\n")
+            collect("!flag{draft}{off}::\n    body\n")
 
         self.assertIn("suite", str(caught.exception))
 
@@ -97,13 +97,13 @@ class ConditionalTests(unittest.TestCase):
         self.assertEqual(self.compile(body, draft=True), "\n")
 
     def test_a_block_suite_splices_every_node_it_holds(self):
-        body = "!when{notes}:\n    \\one\n    \\two\n"
+        body = "!when{notes}::\n    \\one\n    \\two\n"
 
         self.assertEqual(self.compile(body), "\n\\one\n\\two\n")
         self.assertEqual(self.compile(body, notes=False), "\n")
 
     def test_a_dropped_block_leaves_no_brace_group_behind(self):
-        body = "@frame:\n    a\n    !when{draft}:\n        b\n    c\n"
+        body = "@frame::\n    a\n    !when{draft}::\n        b\n    c\n"
 
         self.assertEqual(
             self.compile(body),
@@ -120,10 +120,10 @@ class ConditionalTests(unittest.TestCase):
     def test_conditionals_work_inside_a_macro_template(self):
         source = (
             DECLARED
-            + "!defmacro{point}{body}:\n"
+            + "!defmacro{point}{body}::\n"
             + "    !param{body}\n"
             + "    !when{draft} >> \\marginpar{TODO}\n"
-            + "\n!point:\n    text\n"
+            + "\n!point::\n    text\n"
         )
 
         self.assertEqual(compile_text(source), "\n\ntext\n")
@@ -146,7 +146,7 @@ class ConditionalTests(unittest.TestCase):
 
     def test_a_sequence_suite_is_rejected(self):
         with self.assertRaises(ValidationError) as caught:
-            self.compile("!when{draft}::\n    - a\n    - b\n")
+            self.compile("!when{draft}:::\n    - a\n    - b\n")
 
         self.assertIn("sequence", str(caught.exception))
 
@@ -161,22 +161,22 @@ class ConditionalTests(unittest.TestCase):
         for name in ("flag", "when", "unless"):
             with self.subTest(name=name):
                 with self.assertRaises(ValidationError) as caught:
-                    compile_text(f"!defmacro{{{name}}}:\n    x\n")
+                    compile_text(f"!defmacro{{{name}}}::\n    x\n")
 
                 self.assertIn("reserved", str(caught.exception))
 
     def test_a_dropped_branch_is_not_checked(self):
         # The author disabled this branch; its macro call is never bound.
-        body = "!when{draft}:\n    !nosuchmacro{a}\n"
+        body = "!when{draft}::\n    !nosuchmacro{a}\n"
 
         self.assertEqual(self.compile(body), "\n")
         # A prose colon inside the branch is a raw line and goes with it.
-        self.assertEqual(self.compile("!when{draft}:\n    \\item Note:\n"), "\n")
+        self.assertEqual(self.compile("!when{draft}::\n    \\item Note:\n"), "\n")
 
     def test_a_dropped_branch_still_cannot_hide_a_misplaced_declaration(self):
         # Flags are collected before any conditional is resolved, so this one
         # structural rule outlives the branch that would have dropped it.
-        body = "!when{draft}:\n    !flag{extra}{on}\n"
+        body = "!when{draft}::\n    !flag{extra}{on}\n"
 
         with self.assertRaises(ValidationError) as caught:
             self.compile(body)
@@ -185,9 +185,9 @@ class ConditionalTests(unittest.TestCase):
 
     def test_a_conditional_value_empties_its_argument_rather_than_removing_it(self):
         # !when drops statements, not arguments: the '-' entry still exists.
-        body = "\\cmd::\n    - !when{draft} >> \\x\n    - tail\n"
+        body = "\\cmd:::\n    - !when{draft} >> \\x\n    - tail\n"
 
-        self.assertEqual(self.compile(body), "\n\\cmd{}{tail}\n")
+        self.assertEqual(self.compile(body), "\n\\cmd{%\n}{%\ntail\n}\n")
 
 
 class CombinatorTests(unittest.TestCase):
@@ -319,7 +319,7 @@ class FlagSourceMapTests(TempDirTestCase):
     SOURCE = (
         "!flag{draft}{off}\n"
         "\\keep{one}\n"
-        "!when{draft}:\n"
+        "!when{draft}::\n"
         "    \\gone\n"
         "    \\also{gone}\n"
         "\\keep{two}\n"

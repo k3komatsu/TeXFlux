@@ -115,7 +115,6 @@ class ArgumentLayout(StrEnum):
 
     INLINE = "inline"
     BLOCK = "block"
-    HUGGED = "hugged"
     EXPLICIT = "explicit"
 
 
@@ -190,13 +189,15 @@ class SequenceEntry:
     generated required group during normalization.  A ``+`` entry records
     the delimiter kind of the one group the author wrote and is rendered
     explicitly.
+
+    An entry keeps no record of the shape it was written in. Where the author
+    broke the line decides nothing about the output, so there is nothing here
+    for a renderer to read it from.
     """
 
     value: Block
     marker_span: SourceSpan
     span: SourceSpan
-    #: A value confined to the marker line renders with braces that hug it.
-    spans_one_line: bool = False
     #: The authored group's kind for ``+`` entries; ``None`` means ``-``.
     argument_kind: GroupKind | None = None
 

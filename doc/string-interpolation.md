@@ -397,9 +397,9 @@ command / environment / special / macro の名前は `parser.HeaderScanner._segm
 |---|---|---|
 | `!foo{hello}` | `(RawTex("hello"),)` | ✅ `"hello"` |
 | `!foo{}` | `(RawTex(""),)` | ✅ `""`（空文字は正当） |
-| `!foo:` ＋ 1 行 | `(RawTex("LINE"),)` | ✅ |
-| `!foo:` ＋ 2 行 | `(RawTex, RawTex)` | ❌ E003 |
-| `!foo:` ＋ `@center:` | `(ParsedInvocation,)` | ❌ E003 |
+| `!foo::` ＋ 1 行 | `(RawTex("LINE"),)` | ✅ |
+| `!foo::` ＋ 2 行 | `(RawTex, RawTex)` | ❌ E003 |
+| `!foo::` ＋ `@center::` | `(ParsedInvocation,)` | ❌ E003 |
 | rest パラメータ本体 | `tuple[Value, ...]` | ❌ E001 |
 | `!each` の item が 1 行 | `(RawTex("alpha"),)` | ✅ |
 | `!each` の item が環境 | `(ParsedInvocation,)` | ❌ E003 |
@@ -432,9 +432,9 @@ command / environment / special / macro の名前は `parser.HeaderScanner._segm
 ### 9.3 期待される provenance（規範例）
 
 ```text
-1: !defmacro{m}{x}:
+1: !defmacro{m}{x}::
 2:     \foo{pre-!text{x}-post}
-3: !m:
+3: !m::
 4:     VALUE
 ```
 
@@ -468,7 +468,7 @@ command / environment / special / macro の名前は `parser.HeaderScanner._segm
 2 つだけである。どちらも E009 になる。
 
 1. 行頭の `!text{x}` — `SpecialInvocation(name="text")` として構造化される。
-2. `::` sequence suite の `- !text{x}` — sequence entry の通常の構造化値として同じノードを作る。
+2. `:::` sequence suite の `- !text{x}` — sequence entry の通常の構造化値として同じノードを作る。
    `+ {!text{x}}` は明示グループ内の raw text field なので、マクロテンプレート内では `!text` が補間される。
 
 ### 10.3 `normalize.py`
@@ -488,7 +488,7 @@ fragment provenance を素朴に入れると、§9.3 の例で `\foo{pre-` が `
 へ下がり、`!param` と同じく「呼び出し側の値が勝つ」序列が再現される。
 
 なお `remap._rewrite_link` は `mapping.source_start.line` **だけ**を使う。列の精度は逆引き結果に影響しない。
-差が出るのは「呼び出し行と値の行が異なる」場合、すなわち `:` ブロックスイートで値を渡した場合だけである。
+差が出るのは「呼び出し行と値の行が異なる」場合、すなわち `::` ブロックスイートで値を渡した場合だけである。
 
 残る曖昧性: 1 つの生成行に**異なるソース行由来の hole が 2 つ以上**並んだ場合（`\foo{!text{a}!text{b}}` の
 `a` と `b` を別々の suite 行で渡した場合）は依然として ambiguous になる。compact group 呼び出しでは起こらない。
@@ -550,12 +550,12 @@ m.tfx:2:11: macro error: macro parameter 'body' is not a text value; use !param 
 ### 12.1 画像
 
 ```text
-!defmacro{figure}{name}{width}{caption}:
+!defmacro{figure}{name}{width}{caption}::
     \includegraphics[width=!text{width}]{fig/!text{name}.pdf}
-    @center:
-        @minipage{!text{width}}:
+    @center::
+        @minipage{!text{width}}::
             !param{caption}
-!figure{result}{0.8\textwidth}:
+!figure{result}{0.8\textwidth}::
     Result of the experiment
 ```
 
@@ -571,8 +571,8 @@ Result of the experiment
 ### 12.2 環境引数（text）と本体（AST）の併用
 
 ```text
-!defmacro{styled}{style}{body}:
-    @foo >> @bar >> @hoge{!text{style}}:
+!defmacro{styled}{style}{body}::
+    @foo >> @bar >> @hoge{!text{style}}::
         !param{body}
 ```
 
@@ -581,21 +581,21 @@ Result of the experiment
 ### 12.3 ラベル生成と macro composition
 
 ```text
-!defmacro{label}{id}:
+!defmacro{label}{id}::
     \label{!text{id}}
 
-!defmacro{sectionlabel}{prefix}{id}:
+!defmacro{sectionlabel}{prefix}{id}::
     !label{!text{prefix}:!text{id}}
 ```
 
 ### 12.4 `!each` の item
 
 ```text
-!defmacro{labels}{...items}:
-    !each{items}{item}:
+!defmacro{labels}{...items}::
+    !each{items}{item}::
         \label{item:!text{item}}
 
-!labels::
+!labels:::
     - alpha
     - beta
 ```
@@ -603,18 +603,18 @@ Result of the experiment
 ### 12.5 不正例
 
 ```text
-!defmacro{bad1}{x}:
-    @hoge{!param{x}}:        # E008
+!defmacro{bad1}{x}::
+    @hoge{!param{x}}::       # E008
         A
 
-!defmacro{bad2}{flag}{body}:
-    !when{!text{flag}}:      # E004
+!defmacro{bad2}{flag}{body}::
+    !when{!text{flag}}::     # E004
         !param{body}
 
-!defmacro{bad3}{x}:
+!defmacro{bad3}{x}::
     !text{x}                   # E009
 
-!defmacro{bad4}{...items}:
+!defmacro{bad4}{...items}::
     \foo{!text{items}}         # E001
 ```
 

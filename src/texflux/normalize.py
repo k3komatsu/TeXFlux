@@ -128,7 +128,7 @@ def _normalize_node(
             return _normalize_special(node, registry)
         case SequenceEntry():
             raise ValidationError(
-                "sequence entries are only valid inside a '::' suite",
+                "sequence entries are only valid inside a ':::' suite",
                 node.span,
                 code="V035",
             )
@@ -189,12 +189,9 @@ def _argument_from_entry(
             ArgumentLayout.EXPLICIT,
             entry.span,
         )
-    layout = (
-        ArgumentLayout.HUGGED
-        if entry.spans_one_line
-        else ArgumentLayout.BLOCK
-    )
-    return Argument(GroupKind.REQUIRED, value, layout, entry.span)
+    # A '-' always generates one required group, laid out the one way a
+    # generated group is laid out. The value's shape decides nothing.
+    return Argument(GroupKind.REQUIRED, value, ArgumentLayout.BLOCK, entry.span)
 
 
 def _sequence_body(suite: Block, registry: DirectiveRegistry) -> Block:
@@ -345,7 +342,8 @@ def _normalize_special(
     handler = registry.get(node.name)
     if handler is None:
         raise DirectiveError(
-            f"unknown special directive '!{node.name}'",
+            f"unknown special directive '!{node.name}'; a literal '!' line is "
+            "written '!!', and a run of them goes in a raw-mode region",
             node.span,
             code="D001",
         )

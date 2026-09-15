@@ -164,7 +164,7 @@ def _definition(
 ) -> MacroDefinition:
     if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
         raise ValidationError(
-            "!defmacro requires a ':' template suite",
+            "!defmacro requires a '::' template suite",
             node.span,
             code="V016",
         )
@@ -256,7 +256,7 @@ def validate_macro_forms(document: Document) -> None:
                 # Composing a definition would nest it under the segments to
                 # its left, and a definition must be a top-level statement.
                 raise ValidationError(
-                    "!defmacro must be a top-level ':' definition and "
+                    "!defmacro must be a top-level '::' definition and "
                     "cannot be a '>>' segment",
                     segment.span,
                     code="V025",
@@ -267,7 +267,7 @@ def validate_macro_forms(document: Document) -> None:
             )
             if segment.name == Reserved.EACH and not writes_own_suite:
                 raise ValidationError(
-                    "!each requires a ':' template suite of its own",
+                    "!each requires a '::' template suite of its own",
                     segment.span,
                     code="V026",
                 )
@@ -641,7 +641,7 @@ class _Expander:
         frame = self._template_frame(node, frame)
         if node.suite is None or node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError(
-                "!each requires a ':' template suite",
+                "!each requires a '::' template suite",
                 node.span,
                 code="V030",
             )
@@ -699,13 +699,13 @@ class _Expander:
         keep = evaluate_conditional(node, self._flags)
         if node.suite is None:
             raise ValidationError(
-                f"!{node.name} requires a ':' suite or a '>>' payload",
+                f"!{node.name} requires a '::' suite or a '>>' payload",
                 node.span,
                 code="V032",
             )
         if node.suite_mode is not SuiteMode.BLOCK:
             raise ValidationError(
-                f"!{node.name} does not accept a '::' sequence suite",
+                f"!{node.name} does not accept a ':::' sequence suite",
                 node.span,
                 code="V033",
             )

@@ -34,7 +34,7 @@ class DiagnosticsSchemaTests(unittest.TestCase):
         return json.loads(serialize_diagnostics(report))
 
     def test_a_clean_document_validates_with_no_diagnostics(self):
-        value = self.payload("@frame{t}:\n    body\n")
+        value = self.payload("@frame{t}::\n    body\n")
         self.validator.validate(value)
         self.assertEqual(value["diagnostics"], [])
 
@@ -48,7 +48,7 @@ class DiagnosticsSchemaTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
 
     def test_a_render_warning_validates(self):
-        value = self.payload("\\foo::\n    - a % trailing\n")
+        value = self.payload("\\foo:::\n    - a % trailing\n")
         self.validator.validate(value)
         warnings = [d for d in value["diagnostics"] if d["severity"] == "warning"]
         self.assertEqual(len(warnings), 1)
@@ -60,7 +60,7 @@ class DiagnosticsSchemaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "broken.tfx").write_text(
-                "!defmacro{m}{x}{x}:\n    A\n", encoding="utf-8"
+                "!defmacro{m}{x}{x}::\n    A\n", encoding="utf-8"
             )
             (root / "mid.tfx").write_text("!import{broken.tfx}\n", encoding="utf-8")
             main_path = root / "main.tfx"
@@ -72,7 +72,7 @@ class DiagnosticsSchemaTests(unittest.TestCase):
         self.assertTrue(any(d["related"] for d in value["diagnostics"]))
 
     def test_unknown_members_are_allowed_everywhere(self):
-        value = self.payload("@frame{t}:\n    body\n")
+        value = self.payload("@frame{t}::\n    body\n")
 
         def extend(obj):
             if isinstance(obj, dict):

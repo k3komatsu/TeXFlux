@@ -174,10 +174,10 @@ flag-name     ::= [A-Za-z][A-Za-z0-9_-]*
 % quiz.tfx
 !flag{answers}{off}
 
-@frame{Question}:
+@frame{Question}::
     Question text
 
-    !when{answers}:
+    !when{answers}::
         Answer: 42
 ```
 
@@ -263,7 +263,7 @@ import してはならない（循環 import になる）ので、末尾の `can
 パスが解決できること、循環がないことは、すべて手順 8、すなわち条件分岐が解決された**後**に検査する。
 
 ```text
-!when{appendix}:
+!when{appendix}::
     !import{broken-or-missing.tfx}
 ```
 
@@ -444,10 +444,10 @@ main.tfx:
 いずれの中でも有効である。
 
 ```text
-!when{appendix}:
+!when{appendix}::
     !import{appendix.tfx}
 
-\twocolumn::
+\twocolumn:::
     - !import{left.tfx}
     - !import{right.tfx}
 ```
@@ -458,11 +458,11 @@ main.tfx:
 一方、**マクロの引数として渡された `!import` は有効**である。
 
 ```text
-!defmacro{framed}{body}:
-    @frame:
+!defmacro{framed}{body}::
+    @frame::
         !param{body}
 
-!framed:
+!framed::
     !import{slide.tfx}
 ```
 

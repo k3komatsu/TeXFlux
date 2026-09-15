@@ -21,8 +21,8 @@ The fixed suite model is:
 
 ~~~text
 no suffix = one already-closed RHS value
-:         = one multiline block value
-::        = one marked value per '-' or '+'; the next sibling marker is its boundary
+::        = one multiline block value
+:::       = one marked value per '-' or '+'; the next sibling marker is its boundary
 ~~~
 
 ## 1. Lexical model
@@ -39,14 +39,14 @@ literal-brace containers:
 ~~~text
 @name
 @
-@:
 @::
+@:::
 @{}
 @{RAW_TEX}
 ~~~
 
 @{RAW_TEX} scans balanced braces and preserves RAW_TEX as leading opaque TeX.
-@ and @: never create a TeX wrapper. @{} and @{RAW_TEX} always create a
+@ and @:: never create a TeX wrapper. @{} and @{RAW_TEX} always create a
 literal TeX brace group when completed.
 
 Named environment names are not looked up and may include a trailing star and
@@ -79,8 +79,8 @@ At the same position, `!|` followed by one ASCII space, or by the end of the
 line, emits everything after that space as one raw TeX line. Because it strips
 the whole marker rather than one prefix character, it is the only escape that
 reaches a `\` line a top-level structural token would otherwise claim:
-`!| \emph{x} >> \emph{y}`, or `!| \textbf{Note}:` when an indented block
-follows the colon (section 3). The marker and its one separating space are
+`!| \emph{x} >> \emph{y}`, or `!| \cmd::` when that spelling is meant as
+TeX rather than as a suite marker (section 3). The marker and its one separating space are
 removed and nothing else on the line is touched: further spaces are kept, and
 every character up to the newline is emitted verbatim, tabs included. `!|`
 followed by anything else is a parse error. A line consisting of `!|` alone
@@ -132,52 +132,51 @@ of these: a trailing `(...)` binding list, which `!import` reads (section 12).
 `(` opens no group anywhere else, so a command header, an environment name and
 raw TeX all read it as ordinary text.
 
-Only depth-zero trailing colon and space-separated >> are structural. Group
-internal colon, pipe, and >> remain raw text. Structural header trailing TeX
-comments are unsupported.
+Only a depth-zero trailing suite marker and a space-separated >> are
+structural. Group internal colon, pipe, and >> remain raw text. A lone colon
+is not structural anywhere, so TeXFlux shares no single-character operator
+with TeX prose (section 16). Structural header trailing TeX comments are
+unsupported.
 
 A depth-zero `>>` at the end of a structural header line continues that header
 on the immediately following physical line (section 8). The newline replaces
 the spaces after `>>`; at least one space before it is still required.
 
-A suite suffix is either a single colon or two adjacent colons, optionally
-followed by spaces. The single colon selects block mode; the double colon
-selects sequence mode. A pipe is never part of suite syntax:
+A suite suffix is either two or three adjacent colons, optionally followed
+by spaces. The double colon selects block mode; the triple colon selects
+sequence mode. Neither a single colon nor a pipe is part of suite syntax:
 
 ~~~text
-\foo:
-    BODY
 \foo::
+    BODY
+\foo:::
     - ITEM
 ~~~
 
 Any trailing token after this suffix is a ParseError. A pipe elsewhere in raw
 TeX is not syntax.
 
-The ordinary-TeX spelling with parenthesized text attached to a command
-name, `\foo(x):`, remains raw TeX: the `(...)` here is not a TeXFlux binding
-list. This exception does not apply to `::`; `\foo(x)::` is a structural
-parse error. For an ordinary command, a single colon followed by non-space
-text is not a suffix: `\texttt{std}:vector` remains raw TeX. The `|` and `>>`
-tokens are the deliberate exceptions: they make the failed structural scan
-stay an error, so a malformed suite marker or stack header fails rather than
-degrading to raw TeX. Once `::` is recognized, a following token is an error,
-so `\texttt{std}::vector` is invalid.
+A lone colon is TeX prose, never a suffix, so a command line that ends with
+one is raw TeX: `\textbf{Note}:` and `\item Note:` both are, whatever sits
+under them. A line is classified by reading that line alone, so no lookahead
+decides what a line means, and indenting the line below one changes nothing
+about it. A lone colon is equally inert in the middle of a line, so
+`\texttt{std}:vector` and `\foo(x):` remain raw TeX; a `\` line whose lone
+colon is followed by `>>` is still reserved, because `>>` is structural
+wherever it is written. On an `@` or `!` header, which has no raw-TeX
+fallback, a lone trailing colon is a malformed header.
 
-A single trailing colon is also the one structural token that ordinary TeX
-prose ends a line with, so a command header owns its colon only when a suite
-follows it: the next non-blank line must sit at or past the suite base, four
-spaces beyond the header's own indentation. Otherwise the whole line is raw TeX,
-whether the header scans (`\textbf{Note}:`) or not (`\item Note:`, where
-`Note` is no structural token). The same lookahead applies to a `-` sequence
-payload, measured from the sequence base, and to a `\` line indented beyond
-its block base, which is then a raw line rather than a misplaced candidate.
-When an indented block does follow, the line is a structural candidate as
-before, so `\item Note:` above such a block is a parse error and is written
-`!| \item Note:` or `\item Note:{}`. `::` and `>>` are never prose and claim
-the line unconditionally: `\foo::` without an entry stays an error, and
-`@center >> \foo:` is how an empty command suite is written. `@` and `!`
-headers are unaffected, so an empty `@foo:` or `!foo:` suite is still valid.
+`::`, `:::` and `>>` never appear in TeX prose, so each reserves its line
+unconditionally: a failed scan on such a line is an error rather than raw
+TeX, and `\foo(x)::`, `\texttt{std}::vector` and `\foo:: |` are all parse
+errors. A reserved line also has to honour the marker it carries, so a command's
+`::` requires an indented body and its `:::` requires at least one `-` or `+`
+entry. Neither requirement is about the value: a bare `-` writes an empty
+argument on purpose, and `\foo:::` above one renders `\foo{}`. What the rules
+rule out is a marker with nothing under it at all, which is how
+`\texttt{std}::` written as prose would otherwise become `\texttt{std}{}`.
+An empty argument is also written `\foo{}` in raw TeX; `@` and `!` accept an
+empty suite, so `@foo::` and `!foo::` stay valid.
 
 At-sign classification has this precedence:
 
@@ -199,6 +198,9 @@ The parser keeps syntax shape and source spans. The relevant syntax nodes are:
 - SpecialInvocation(name, groups, suite, suite_mode, span)
 - Stack(segments, suite, suite_mode, span)
 - SequenceEntry(value, marker_span, span, argument_kind)
+
+A `SequenceEntry` records no measure of the shape it was written in, because
+nothing downstream may read one.
 - Block(nodes, span)
 
 Invocation kinds include command, named environment, brace container, and
@@ -215,11 +217,11 @@ on its rightmost segment after desugaring.
 
 ### 5.1 Sequence mode
 
-A double-colon suite contains marked sequence entries. A structured command
+A triple-colon suite contains marked sequence entries. A structured command
 sequence must contain at least one entry:
 
 ~~~text
-\foo::
+\foo:::
     - A
     - B
 ~~~
@@ -235,11 +237,11 @@ scanned. The delimiter is part of the value, so `+ {x}` emits `{x}` rather
 than a generated pair around it.
 
 ~~~text
-\foo::
+\foo:::
     - short
       long line 1
       long line 2
-    - @center:
+    - @center::
         BODY
 ~~~
 
@@ -255,20 +257,19 @@ tokens after its group is a ParseError.
 
 ### 5.2 Block mode
 
-A single-colon suite is exactly one block value:
+A double-colon suite is exactly one block value:
 
 ~~~text
-\foo:
+\foo::
     A
-    @center:
+    @center::
         B
 ~~~
 
 Its content is parsed as a normal TeXFlux block, including raw TeX, containers,
-specials, stacks, and blank lines. An empty block suite is valid, though a
-lone command header cannot write one: a colon no block follows is text
-(section 3), so `@center >> \foo:` is the spelling that passes `\foo` an
-empty block.
+specials, stacks, and blank lines. An empty block suite is valid on a container
+and on a special. A command's is not: it would emit a silent `{}`, and an
+empty argument is raw TeX the author writes directly as `\foo{}`.
 
 ## 6. Value consumption
 
@@ -280,7 +281,7 @@ entry contributes exactly the one required, optional, or overlay group it
 contains, including its authored delimiters.
 
 ~~~text
-\foo{COMPACT}::
+\foo{COMPACT}:::
     - A
     - B
 ~~~
@@ -294,7 +295,7 @@ renders as:
 Mixed entries make the distinction explicit:
 
 ~~~text
-\command::
+\command:::
     - simple
     - {group as content}
     + {explicit required argument}
@@ -309,7 +310,7 @@ Mixed entries make the distinction explicit:
 A block suite produces one long required argument:
 
 ~~~text
-\foo:
+\foo::
     A
     B
 ~~~
@@ -317,7 +318,7 @@ A block suite produces one long required argument:
 renders as:
 
 ~~~tex
-\foo{
+\foo{%
 A
 B
 }
@@ -327,16 +328,16 @@ A structural sequence value is wrapped in one required argument. Literal brace
 containers are not absorbed by that outer argument:
 
 ~~~text
-\foo::
-    - @{}:
+\foo:::
+    - @{}::
         A
 ~~~
 
 renders conceptually as:
 
 ~~~tex
-\foo{
-{
+\foo{%
+{%
 A
 }
 }
@@ -356,10 +357,10 @@ either generated required arguments (`-`) or explicit groups (`+`); the final
 entry must be `-` so that body ownership is unambiguous:
 
 ~~~text
-@myenv::
+@myenv:::
     - ARG1
     - ARG2
-    - @:
+    - @::
         BODY
 ~~~
 
@@ -374,10 +375,10 @@ BODY
 An explicit argument can precede the generated arguments and body:
 
 ~~~text
-@myenv::
+@myenv:::
     + [opt]
     - ARG
-    - @:
+    - @::
         BODY
 ~~~
 
@@ -392,21 +393,21 @@ end with its generated body entry.
 
 The final block value contributes its canonical nodes as the body. An empty
 sequence environment is a validation error. An empty body is written as an
-empty @: value.
+empty @:: value.
 
 ## 7. Anonymous containers
 
-@: is a transparent one-block value and emits only its body. The `@::`
+@:: is a transparent one-block value and emits only its body. The `@:::`
 sequence form combines its values into one composite body without a wrapper.
 An empty transparent sequence is valid and emits nothing. An empty sequence
 for a literal brace container is valid and emits an empty literal brace group.
-Use `@:` or `@{}:` when the empty block form should be explicit.
+Use `@::` or `@{}::` when the empty block form should be explicit.
 
-@{}: and @{RAW_TEX}: emit literal brace groups. RAW_TEX is emitted as
+@{}:: and @{RAW_TEX}:: emit literal brace groups. RAW_TEX is emitted as
 leading opaque TeX inside the braces. Literal braces remain in all contexts,
 including command argument context.
 
-Anonymous `@:` and `@{...}:` containers accept only `-` sequence entries. A
+Anonymous `@::` and `@{...}::` containers accept only `-` sequence entries. A
 `+` entry is reserved for command arguments and named-environment begin
 arguments, so using it in an anonymous sequence is a ValidationError.
 
@@ -433,7 +434,7 @@ An open stack gives its suffix to the rightmost segment and passes the completed
 value to the left:
 
 ~~~text
-@frame{Title} >> @center >> @{\small}:
+@frame{Title} >> @center >> @{\small}::
     BODY
 ~~~
 
@@ -451,7 +452,7 @@ A stack header may be split immediately after any `>>`:
 ~~~text
 @hoge >>
 @fuga >>
-@fuge:
+@fuge::
     foobarhoge
 ~~~
 
@@ -503,7 +504,7 @@ either kind of module, is a validation error rather than a shadowing.
 ~~~text
 !before{\smallskip} >> \foo
 !after{\smallskip} >> \foo
-!around{\vspace{-1em}}{\vspace{2em}}:
+!around{\vspace{-1em}}{\vspace{2em}}::
     contents
 ~~~
 
@@ -523,8 +524,8 @@ nothing:
 ~~~
 
 Every rule of section 10 applies to these five, and no rule of its own does.
-A payload written with a `':'` block suite and a payload written as the rest
-of a `>>` composition are the same single value (section 10.2), and a `'::'`
+A payload written with a `'::'` block suite and a payload written as the rest
+of a `>>` composition are the same single value (section 10.2), and a `':::'`
 sequence suite binds one value per `-` entry; as at any macro call, a `+`
 entry is rejected (section 10.2). A wrong value count is the ordinary arity
 diagnostic, and provenance follows section 15, so each value keeps the span
@@ -549,9 +550,9 @@ There is no spacing special. Spacing is the TeX the author chose, placed by
 the generic combinators:
 
 ~~~text
-!before{\vspace{-1em}}:
+!before{\vspace{-1em}}::
     contents
-!around{\vspace{-1em}}{\vspace{2em}}:
+!around{\vspace{-1em}}{\vspace{2em}}::
     contents
 ~~~
 
@@ -581,19 +582,18 @@ environment holding raw `\item` lines, which already carries every overlay,
 optional label, continuation, and nesting:
 
 ~~~text
-@itemize:
+@itemize::
     \item<2->[Label] item
-    @itemize:
+    @itemize::
         \item nested
 ~~~
 
 An environment body is an ordinary block suite, so every rule in sections 2
 through 7 applies to the lines inside it, `\item` included, and nothing is
-exempt: a depth-zero trailing colon makes `\item Summary:` a structural
-command candidate, and so a parse error, when an indented block follows it
-(write `!| \item Summary:`, or `\item Summary:{}` -- an empty group leaves
-`\spacefactor` alone, so the colon's end-of-sentence space survives), while
-without such a block the colon is text (section 3); a line beginning `@` or
+exempt: `\item Summary:` is raw TeX, because a lone colon is no suite marker
+and an indented block under one is raw TeX too (section 3), while a depth-zero
+`::` would make the same line a structural candidate and so a parse error
+(write `!| \item Summary::` for a literal one); a line beginning `@` or
 `!` is a header unless `@@` or `!!` escapes it, inside `@verbatim` and
 `@lstlisting` bodies too; `\item >> \foo` is a stack, which section 14
 renders over three lines. A block suite keeps blank lines as document
@@ -611,11 +611,11 @@ or parsed (section 10.6).
 ### 10.1 Definition
 
 ~~~text
-!defmacro{name}{param}{...rest}:
+!defmacro{name}{param}{...rest}::
     TEMPLATE
 ~~~
 
-A definition takes a `:` block suite; a sequence suite is a validation
+A definition takes a `::` block suite; a sequence suite is a validation
 error. The first required group is the macro name, which uses the special-name
 grammar so the macro is callable as `!name`. Every later required group is a
 parameter. Definitions emit no TeX. Lines around a definition, including blank
@@ -631,7 +631,7 @@ expanded, which makes forward references valid:
 ~~~text
 !foo >> \TextCA{A}
 
-!defmacro{foo}{body}:
+!defmacro{foo}{body}::
     @{\small} >> !param{body}
 ~~~
 
@@ -650,8 +650,8 @@ values its suite produces.
 
 ~~~text
 !foo{A}{B}          two inline values
-!foo:              one block value
-!foo::             one value per '-' or '+' entry (but '+' is rejected at macro calls)
+!foo::              one block value
+!foo:::             one value per '-' or '+' entry (but '+' is rejected at macro calls)
 !foo >> VALUE       the closed stack payload as one value
 ~~~
 
@@ -679,7 +679,7 @@ parameter is a sequence rather than a value, so it is reached only with
 (section 10.6). For AST insertion, use structural form:
 
 ~~~text
-@infobox::
+@infobox:::
     - !param{title}
     - !param{body}
 ~~~
@@ -687,23 +687,23 @@ parameter is a sequence rather than a value, so it is reached only with
 ### 10.4 !each
 
 ~~~text
-!each{rest-param}{item}:
+!each{rest-param}{item}::
     TEMPLATE
 ~~~
 
 `!each` walks a rest parameter's values in source order, binds each one to
 `item`, instantiates the template per iteration, and concatenates the
 iterations into the enclosing block. An empty sequence produces nothing. It
-requires a `:` suite, is valid only inside a template, and its first group
+requires a `::` suite, is valid only inside a template, and its first group
 must name a rest parameter. An item name that shadows a bound parameter is a
 macro error. `!each` may nest; each iteration binds its own item.
 
 `!each` may be the rightmost segment of a stack when the stack's suffix is
-`:`, because that segment keeps the block suffix and so still writes its own
+`::`, because that segment keeps the block suffix and so still writes its own
 template:
 
 ~~~text
-@{\bfseries} >> !each{items}{item}:
+@{\bfseries} >> !each{items}{item}::
     \item
     !param{item}
 ~~~
@@ -843,14 +843,14 @@ therefore never silently does nothing.
 ~~~text
 !when{draft} >> \marginpar{re-measure before the talk}
 
-!unless{handout}:
+!unless{handout}::
     \pause
     @{\small} >> \textit{Ask about the tail latency here.}
 ~~~
 
 Each takes one or more required inline groups, every one naming a declared
-flag, and a payload written either as a `':'` block suite or as the rest of a
-`>>` composition. A `'::'` sequence suite is a validation error, as is a
+flag, and a payload written either as a `'::'` block suite or as the rest of a
+`>>` composition. A `':::'` sequence suite is a validation error, as is a
 missing payload, a flag no declaration matches, or the same flag listed twice.
 
 A kept payload is spliced into the enclosing block; it is not wrapped in a
@@ -862,7 +862,7 @@ A leading optional group folds several flags into one answer:
 
 ~~~text
 !when[or]{draft}{internal} >> \marginpar{re-measure before the talk}
-!when[and]{notes}{handout}:
+!when[and]{notes}{handout}::
     ...
 ~~~
 
@@ -915,12 +915,13 @@ A conditional keeps or drops statements, not arguments. A sequence entry whose
 value is dropped remains an entry, and renders as an empty argument:
 
 ~~~text
-\cmd::
+\cmd:::
     - !when{draft} >> \x
     - tail
 ~~~
 
-renders `\cmd{}{tail}` while `draft` is off.
+renders `\cmd{%` / `}{%` / `tail` / `}` while `draft` is off: the entry
+is still an entry, and its generated braces enclose nothing.
 
 ## 12. Modules
 
@@ -1164,38 +1165,48 @@ build flags either.
 
 ## 14. Argument brace placement
 
-A `-` sequence value's shape decides where its generated required braces go. A
-value confined to one line renders with braces that hug it; a value that needs
-more than one line renders with the braces on their own lines. Nothing is
-marked: the compact case stays compact and the structural case stays readable.
+A generated required brace is laid out one way and only one way. It opens
+with `{%` on its own line, so the newline behind it reaches TeX as nothing
+rather than as a space token, and it closes with `}` on the line after the
+value. The value's shape decides nothing: a `-` that fits on its marker line
+and a `-` that spans a whole environment render identically, and no parser
+state travels to the renderer to say which one it was.
 
 ~~~text
-\command::
+\command:::
     - short
-    - @center:
+    - @center::
         figure
 ~~~
 
 ~~~tex
-\command{short}{
+\command{%
+short
+}{%
 \begin{center}
 figure
 \end{center}
 }
 ~~~
 
+Where the author breaks a line therefore changes nothing about what TeX
+reads, which is the same guarantee every other construct gives. The newline
+before the closing brace is one space token, present in every generated
+argument; an author who must remove it ends the value's last line with `%` or
+writes the argument as a `+` group.
+
 The `-` marker always means "generate one required group". In particular, a
 brace-looking value is content, not syntax:
 
 ~~~text
-\command::
+\command:::
     - {fooo
       bar
       }
 ~~~
 
 ~~~tex
-\command{
+\command{%
 {fooo
 bar
 }
@@ -1207,7 +1218,7 @@ It accepts exactly one balanced required, optional, or overlay group, including
 multiline groups, and copies the complete raw text without header scanning:
 
 ~~~text
-\command::
+\command:::
     + {fooo
       bar
       }
@@ -1225,12 +1236,17 @@ Multiple groups, an unbalanced group, or trailing tokens after a `+` group are
 ParseErrors. The `+` group's delimiter is not generated a second time, and its
 contents remain opaque TeX.
 
-A hugged closing brace is unsafe after a TeX comment, which would swallow it.
-When the value's last rendered line is entirely a comment, the closing brace
-keeps its own line and TeXFlux warns. When that line merely contains an
-unescaped `%`, TeXFlux warns and leaves the brace hugged, because moving it
-would require rewriting the author's TeX. An escaped `\%` is not a comment.
-Warnings name the value's span and never fail the compilation.
+A generated brace always closes on its own line, so a comment inside the
+value can never reach it. What follows an authored `+` group is another
+matter: its delimiters are the author's, but where the next argument starts is
+not, and a `%` on the group's last rendered line would comment that argument
+out. Such a group therefore keeps its newline and the next argument begins
+underneath; without a `%` the next argument follows the group on its line. An
+escaped `\%` is not a comment, and the rule reads the rendered text rather
+than the author's intent. Nothing is reported: the layout is the whole answer.
+
+The newline after `\begin{env}` is untouched, because an environment body is
+read in a vertical context where the space token is discarded.
 
 ## 15. Source spans and SyncTeX
 
@@ -1238,11 +1254,11 @@ Every major syntax/canonical node and diagnostic has file, one-based line, and
 one-based column in a half-open SourceSpan. The implementation retains
 provenance for:
 
-- colon and double-colon suite markers
+- double-colon and triple-colon suite markers
 - each sequence `-` / `+` marker and explicit group kind
 - each sequence value block boundary
 - @{} / @{RAW_TEX} headers
-- @: / @:: headers
+- @:: / @::: headers
 - stack segments and closed terminals
 - sequence/block value boundaries
 - item metadata
@@ -1323,7 +1339,11 @@ v1 does not include:
 - renderer backend frameworks
 - runtime dependencies
 - structural trailing comments
-- pipe-based suite markers such as `:|` and `: |`
+- pipe-based suite markers such as `::|` and `:: |`
+- any structural token TeX prose also writes. Every TeXFlux operator that can
+  appear at the end or in the middle of a line is a repeated character --
+  `::`, `:::`, `>>` -- so a single `:`, `>` or `|` always belongs to TeX. A
+  future construct may not spend a one-character operator on the line
 
 ## 17. Conceptual grammar
 
@@ -1331,8 +1351,8 @@ v1 does not include:
 document          ::= statement*
 
 suite-suffix      ::= sequence-suffix | block-suffix
-sequence-suffix   ::= "::" SP*
-block-suffix      ::= ":" SP*
+sequence-suffix   ::= ":::" SP*
+block-suffix      ::= "::" SP*
 
 sequence-suite    ::= sequence-entry*
 sequence-entry   ::= ("-" SP* generated-block)
@@ -1383,9 +1403,10 @@ each-construct    ::= "!each" "{" parameter-name "}" "{" parameter-name "}"
 This grammar is conceptual; item metadata and balanced raw groups are scanned by
 the handwritten parser. A sequence entry continues until the next sibling `-`
 or `+` marker. Its normative distinctions are generated required values from
-`-`, authored groups from `+`, the single-colon block, and suffix-less closed
-values. A lone command segment with a block-suffix is a statement only when a
-suite body follows it; otherwise the line is raw TeX (section 3).
+`-`, authored groups from `+`, the double-colon block, and suffix-less closed
+values. A lone colon is not a suffix, so a command line ending in one is raw
+TeX; a command segment carrying a block-suffix requires a suite body
+(section 3).
 
 ## 18. Executable examples
 

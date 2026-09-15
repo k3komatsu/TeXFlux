@@ -96,13 +96,13 @@ PYTHONPATH=src python -m unittest tests.test_ast_schema
 - 引数: `kind`は`required`・`optional`・`overlay`。`binding`（`!import`の`(...)`）は
   module resolutionで消えるため、canonical external ASTには出現してはならない。
   `layout: "inline"`の`value`は`{"type": "text", "text": "..."}`、
-  `block`・`hugged`・`explicit`の`value`はBlock。各引数は`span`も持つ。
+  `block`・`explicit`の`value`はBlock。各引数は`span`も持つ。
   `layout`はTeXの中括弧の配置を表す情報なので、Web等のconsumerは無視してよい。
 
 `layout: "explicit"` はシーケンスの `+` エントリーから生成される。value の Block には
 著者が書いた `{...}`、`[...]`、`<...>` の区切り文字も含まれるため、consumer は別の
-区切り文字を追加してはならない。`-` エントリーは `block` または `hugged` となり、
-必須グループが生成される。
+区切り文字を追加してはならない。`-` エントリーは常に `block` となり、必須グループが
+生成される。値が 1 行に収まるかどうかで `layout` が変わることはない。
 
 `span`は`source`（source ID）、`start`、`end`を持つ。位置は1始まりの
 `line`・`column`で、Unicode code point単位、LF改行、半開区間`[start, end)`。

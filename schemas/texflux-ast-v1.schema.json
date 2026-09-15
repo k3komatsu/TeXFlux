@@ -124,7 +124,7 @@
       "required": ["kind", "layout", "value", "span"],
       "properties": {
         "kind": {"enum": ["required", "optional", "overlay"]},
-        "layout": {"enum": ["inline", "block", "hugged", "explicit"]},
+        "layout": {"enum": ["inline", "block", "explicit"]},
         "value": {"oneOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/block"}]},
         "span": {"$ref": "#/$defs/span"}
       },

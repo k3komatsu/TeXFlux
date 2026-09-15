@@ -52,11 +52,11 @@ class StandardFlowBehaviourTests(unittest.TestCase):
 
     def test_block_and_stack_payloads_agree(self):
         for block, stack in (
-            ("!before{A}:\n    \\B\n", "!before{A} >> \\B\n"),
-            ("!after{B}:\n    \\A\n", "!after{B} >> \\A\n"),
-            ("!around{A}{C}:\n    \\B\n", "!around{A}{C} >> \\B\n"),
-            ("!off{A}:\n    \\B\n", "!off{A} >> \\B\n"),
-            ("!drop:\n    \\B\n", "!drop >> \\B\n"),
+            ("!before{A}::\n    \\B\n", "!before{A} >> \\B\n"),
+            ("!after{B}::\n    \\A\n", "!after{B} >> \\A\n"),
+            ("!around{A}{C}::\n    \\B\n", "!around{A}{C} >> \\B\n"),
+            ("!off{A}::\n    \\B\n", "!off{A} >> \\B\n"),
+            ("!drop::\n    \\B\n", "!drop >> \\B\n"),
         ):
             with self.subTest(block=block):
                 self.assertEqual(compile_text(block), compile_text(stack))
@@ -64,18 +64,18 @@ class StandardFlowBehaviourTests(unittest.TestCase):
     def test_a_sequence_suite_is_one_value_per_entry(self):
         # No rule of their own: a ':' suite feeds these calls the way it feeds
         # any other, so one entry is the payload and two are an arity error.
-        self.assertEqual(compile_text("!off{X}::\n    - \\a\n"), "\\a\n")
-        self.assertEqual(compile_text("!drop::\n    - \\a\n"), "\n")
-        self.assertEqual(compile_text("!before{A}::\n    - \\a\n"), "A\n\\a\n")
+        self.assertEqual(compile_text("!off{X}:::\n    - \\a\n"), "\\a\n")
+        self.assertEqual(compile_text("!drop:::\n    - \\a\n"), "\n")
+        self.assertEqual(compile_text("!before{A}:::\n    - \\a\n"), "A\n\\a\n")
         with self.assertRaisesRegex(
             MacroExpansionError,
             r"'!off' expects \{ignored\}\{body\}, exactly 2 value\(s\), got 3",
         ):
-            compile_text("!off{X}::\n    - \\a\n    - \\b\n")
+            compile_text("!off{X}:::\n    - \\a\n    - \\b\n")
 
     def test_a_payload_keeps_its_blank_lines_and_nesting(self):
         self.assertEqual(
-            compile_text("!before{A}:\n    first\n\n    @center:\n        B\n"),
+            compile_text("!before{A}::\n    first\n\n    @center::\n        B\n"),
             "A\nfirst\n\n\\begin{center}\nB\n\\end{center}\n",
         )
 
@@ -125,18 +125,18 @@ class StandardFlowModuleTests(TempDirTestCase):
     def test_a_macro_module_template_may_use_them(self):
         self.write(
             "style.tfxm",
-            "!defmacro{compact}{body}:\n"
+            "!defmacro{compact}{body}::\n"
             "    !before{\\smallskip} >>\n"
             "    !after{\\smallskip} >>\n"
             "    !param{body}\n",
         )
         self.assertEqual(
-            self.build("!macroimport{style.tfxm}\n!compact:\n    \\x\n"),
+            self.build("!macroimport{style.tfxm}\n!compact::\n    \\x\n"),
             "\\smallskip\n\\x\n\\smallskip\n",
         )
 
     def test_a_macro_module_may_not_define_a_standard_name(self):
-        self.write("style.tfxm", "!defmacro{before}{a}{b}:\n    A\n")
+        self.write("style.tfxm", "!defmacro{before}{a}{b}::\n    A\n")
         with self.assertRaisesRegex(
             ValidationError,
             "macro '!before' conflicts with a TeXFlux standard flow macro",
@@ -146,18 +146,18 @@ class StandardFlowModuleTests(TempDirTestCase):
     def test_standard_names_do_not_leak_between_macro_modules(self):
         # Seeding every environment must not turn a private import into a
         # transitive one: only the standard names are shared.
-        self.write("inner.tfxm", "!defmacro{inner}{body}:\n    !param{body}\n")
+        self.write("inner.tfxm", "!defmacro{inner}{body}::\n    !param{body}\n")
         self.write(
             "outer.tfxm",
             "!macroimport{inner.tfxm}\n"
-            "!defmacro{outer}{body}:\n    !inner:\n        !param{body}\n",
+            "!defmacro{outer}{body}::\n    !inner::\n        !param{body}\n",
         )
         self.assertEqual(
-            self.build("!macroimport{outer.tfxm}\n!outer:\n    \\x\n"),
+            self.build("!macroimport{outer.tfxm}\n!outer::\n    \\x\n"),
             "\\x\n",
         )
         with self.assertRaisesRegex(Exception, "unknown special directive"):
-            self.build("!macroimport{outer.tfxm}\n!inner:\n    \\x\n")
+            self.build("!macroimport{outer.tfxm}\n!inner::\n    \\x\n")
 
     def test_the_cli_and_the_python_api_agree(self):
         from texflux.cli import main
@@ -183,26 +183,26 @@ class StandardFlowDropTests(TempDirTestCase):
         return compile_text(source, filename=str(self.root / "main.tfx"))
 
     def test_a_dropped_import_never_opens_its_file(self):
-        self.assertEqual(self.build("!drop:\n    !import{missing.tfx}\n"), "\n")
+        self.assertEqual(self.build("!drop::\n    !import{missing.tfx}\n"), "\n")
         self.assertEqual(self.build("!drop >> !import{missing.tfx}\n"), "\n")
 
     def test_a_dropped_payload_is_never_normalized(self):
         for payload in (
-            "!nosuchspecial:\n        A\n",
-            "@unknown:\n        A\n",
+            "!nosuchspecial::\n        A\n",
+            "@unknown::\n        A\n",
         ):
             with self.subTest(payload=payload):
-                self.assertEqual(self.build("!drop:\n    " + payload), "\n")
+                self.assertEqual(self.build("!drop::\n    " + payload), "\n")
 
     def test_a_dropped_payload_may_hold_macro_calls_and_conditionals(self):
         self.assertEqual(
             self.build(
                 "!flag{d}{off}\n"
-                "!defmacro{m}{x}:\n    !param{x}\n"
-                "!drop:\n"
-                "    !m:\n        A\n"
-                "    !when{d}:\n        B\n"
-                "    !unless{d}:\n        C\n"
+                "!defmacro{m}{x}::\n    !param{x}\n"
+                "!drop::\n"
+                "    !m::\n        A\n"
+                "    !when{d}::\n        B\n"
+                "    !unless{d}::\n        C\n"
             ),
             "\n",
         )
@@ -222,19 +222,19 @@ class StandardFlowDropTests(TempDirTestCase):
         # build, so both are pinned here.
         for payload, error in (
             ("!m{a}{b}", MacroExpansionError),
-            ("!defmacro{q}{y}:\n        A", ValidationError),
+            ("!defmacro{q}{y}::\n        A", ValidationError),
             ("!param{a}", MacroExpansionError),
         ):
             with self.subTest(payload=payload):
-                source = "!defmacro{m}{x}:\n    A\n!drop:\n    " + payload + "\n"
+                source = "!defmacro{m}{x}::\n    A\n!drop::\n    " + payload + "\n"
                 with self.assertRaises(error):
                     self.build(source)
                 # The same payload under a dropped conditional is never
                 # expanded, so it compiles.
                 self.assertEqual(
                     self.build(
-                        "!flag{d}{off}\n!defmacro{m}{x}:\n    A\n"
-                        "!when{d}:\n    " + payload + "\n"
+                        "!flag{d}{off}\n!defmacro{m}{x}::\n    A\n"
+                        "!when{d}::\n    " + payload + "\n"
                     ),
                     "\n",
                 )
@@ -315,7 +315,7 @@ class BundledModuleTests(unittest.TestCase):
         # never the caller's, so a document's own macros cannot reach into one.
         session = CompilationSession()
         session.compile_root(
-            "!defmacro{mine}{x}:\n    !param{x}\n!mine:\n    A\n",
+            "!defmacro{mine}{x}::\n    !param{x}\n!mine::\n    A\n",
             filename="a.tfx",
             data=b"",
         )

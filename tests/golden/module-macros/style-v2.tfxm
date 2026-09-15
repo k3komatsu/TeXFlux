@@ -1,5 +1,5 @@
 !macroimport{core-v2.tfxm}
 
-!defmacro{note}{body}:
-    !shell:
+!defmacro{note}{body}::
+    !shell::
         !param{body}

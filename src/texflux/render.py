@@ -213,12 +213,6 @@ def _emit_group(emitter: MappedEmitter, argument: Argument) -> None:
     emitter.emit(closer, source=argument.span, role="close")
 
 
-def _comment_start(line: str) -> bool:
-    """Whether a rendered line is entirely a TeX comment."""
-
-    return line.lstrip().startswith("%")
-
-
 def _comment_index(line: str) -> int:
     """The offset of the first unescaped ``%``, or ``-1`` when there is none."""
 
@@ -255,7 +249,7 @@ def _render_block(
             case GenericInvocation():
                 _render_invocation(emitter, node, source_comments)
             case BraceGroup(body=body, header_raw=header_raw):
-                emitter.line("{", source=node.span, role="open")
+                emitter.line("{%", source=node.span, role="open")
                 if header_raw:
                     _emit_text(emitter, header_raw, node.header_parts, node.span, "content")
                     emitter.newline()
@@ -290,64 +284,44 @@ def _render_block_argument(
     argument: Argument,
     source_comments: bool,
 ) -> None:
-    """Render a block value inside generated braces, or an explicit group as is.
+    """Render a generated block value in its braces, or an explicit group as is.
 
-    A block value opens on its own line; a hugged or explicit one is pulled
-    onto its last line, so the closing delimiter follows the content.
+    A generated required argument always opens with ``{%`` on its own line and
+    closes with ``}`` on the next, whatever shape its value has: the ``%`` eats
+    the newline behind the opening brace, and nothing about where the author
+    broke a line reaches the output. An explicit ``+`` group is the author's
+    own text, so only what follows it is TeXFlux's to place.
     """
 
-    if argument.layout not in (
-        ArgumentLayout.BLOCK,
-        ArgumentLayout.HUGGED,
-        ArgumentLayout.EXPLICIT,
-    ):
-        raise TypeError("renderer received an invalid argument layout")
-    generated = argument.layout is not ArgumentLayout.EXPLICIT
-    if generated:
-        emitter.emit("{", source=argument.span, role="open")
-    if argument.layout is ArgumentLayout.BLOCK:
-        emitter.newline()
-    mark = emitter.mark()
-    _render_block(emitter, argument.value, source_comments)
-    if argument.layout is not ArgumentLayout.BLOCK:
-        _close_hugged(emitter, argument, mark)
-    if generated:
-        emitter.emit("}", source=argument.span, role="close")
+    match argument.layout:
+        case ArgumentLayout.BLOCK:
+            emitter.line("{%", source=argument.span, role="open")
+            _render_block(emitter, argument.value, source_comments)
+            emitter.emit("}", source=argument.span, role="close")
+        case ArgumentLayout.EXPLICIT:
+            mark = emitter.mark()
+            _render_block(emitter, argument.value, source_comments)
+            _close_hugged(emitter, mark)
+        case _:
+            raise TypeError("renderer received an invalid argument layout")
 
 
-def _close_hugged(
-    emitter: MappedEmitter,
-    argument: Argument,
-    mark: int,
-) -> None:
-    """Pull what follows onto the value's last line, when that is safe.
+def _close_hugged(emitter: MappedEmitter, mark: int) -> None:
+    r"""Pull what follows onto an explicit group's last line, when that is safe.
 
-    A ``%`` on that line would comment out whatever is pulled up, so a fully
-    commented line keeps its newline. A trailing comment after real content
-    cannot be rescued without rewriting the author's TeX, so it only earns a
-    warning. Author-written braces take the same path: identical output has
-    to produce an identical diagnostic.
+    The group's own delimiters are the author's, but where the next argument
+    starts is not. A ``%`` on that last line would comment out whatever is
+    pulled up, so such a group keeps its newline and the next argument begins
+    underneath. The rule reads the rendered text rather than the author's
+    intent, so an escaped ``\%`` is not a comment.
     """
 
     # Only the value's own text can carry a comment, so read back exactly
     # what it emitted rather than the whole output line.
     text = emitter.text_since(mark)
     line = text.removesuffix("\n").rpartition("\n")[2]
-    if _comment_start(line):
-        emitter.warn(
-            "value ends with a comment line, so what follows it stays on "
-            "its own line",
-            argument.span,
-            code="W001",
-        )
-        return
     if _comment_index(line) >= 0:
-        emitter.warn(
-            "value ends with a line containing '%', so the closing brace and "
-            "whatever follows are commented out",
-            argument.span,
-            code="W002",
-        )
+        return
     emitter.drop_trailing_newline()
 
 

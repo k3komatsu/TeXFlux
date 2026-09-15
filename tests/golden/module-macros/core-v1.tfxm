@@ -1,2 +1,2 @@
-!defmacro{shell}{body}:
+!defmacro{shell}{body}::
     @{\small} >> !param{body}

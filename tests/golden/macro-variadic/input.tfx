@@ -1,12 +1,12 @@
-!defmacro{emph}{body}:
+!defmacro{emph}{body}::
     @{\bfseries} >> !param{body}
-!defmacro{warning}{head}{...rest}:
-    @alertblock::
+!defmacro{warning}{head}{...rest}::
+    @alertblock:::
         - !param{head}
-        - @:
+        - @::
             !emph >> \leading
-            !each{rest}{line}:
+            !each{rest}{line}::
                 @{\itshape} >> !param{line}
-!warning{Caution}::
+!warning{Caution}:::
     - first detail
     - second detail

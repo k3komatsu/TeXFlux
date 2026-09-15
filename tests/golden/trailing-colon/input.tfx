@@ -1,14 +1,25 @@
-@frame{Prose colons}:
+@frame{Prose colons}::
     \textbf{Note}:
-    The colon above owns no block, so the line is raw TeX.
-    \emph{Caption}:
-        An indented block turns the same shape into a structured command.
-    @itemize:
+    A lone colon is no suite marker, so the line above is raw TeX.
+    \emph{Caption}::
+        A real marker turns the same shape into a structured command.
+    @itemize::
         \item Summary:
+            An indented block under a prose colon is raw TeX too, so a
+            list item reads the way TeX reads it.
         \item \textbf{Detail}:
           A shallower continuation line leaves the colon as text.
-            \textbf{Deeper}:
-    \cmd::
+    \cmd:::
         - \textbf{Term}:
         - \textbf{Body}:
           continues on a continuation line
+
+% LaTeX3 writes end-of-line colons in its control sequences and indents its
+% code, so the lone-colon rule is what keeps expl3 readable and intact.
+\ExplSyntaxOn
+\group_begin:
+    \cs_set:Npn \my_cmd:n #1 { \textbf{#1} }
+    \my_cmd:n { indented~expl3~code }
+\group_end:
+\scan_stop:
+\ExplSyntaxOff

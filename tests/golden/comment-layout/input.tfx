@@ -1,0 +1,30 @@
+% A generated required argument is laid out the one way, whatever shape its
+% value has: '{%' opens it so the newline behind the brace reaches TeX as
+% nothing, and the closing brace sits on its own line. A comment inside the
+% value can never reach that brace, so none of these needs a special case.
+\cmd:::
+    - plain
+    - trailing % comment
+    - 50\% off
+    - % a whole line of comment
+    -
+        a continuation
+        over two lines
+
+% An explicit group is the author's own text, delimiters included, so only
+% where the next argument starts is TeXFlux's to decide. An unescaped '%' on
+% the group's last line sends it to the next line; without one it follows.
+\pair:::
+    + {authored % comment}
+    - tail
+
+\pair:::
+    + {authored\% group}
+    - tail
+
+% A literal brace container opens the same way.
+@{\small\color{gray}}::
+    A block value inside a literal brace container.
+
+\scalebox{0.9}::
+    \input{figure.tex}%

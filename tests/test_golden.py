@@ -12,6 +12,7 @@ class GoldenTests(unittest.TestCase):
             {path.parent.name for path in input_paths},
             {
                 "build-flags",
+                "comment-layout",
                 "generic-groups",
                 "macro-each",
                 "macro-interpolation",

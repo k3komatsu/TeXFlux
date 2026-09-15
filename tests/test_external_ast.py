@@ -63,11 +63,11 @@ class ExternalAstTests(TempDirTestCase):
 
     def test_structures_and_all_argument_layouts(self):
         source = (
-            "@unknown*{title}[opt]<2->:\n"
-            "    @{\\small}:\n        \\item opaque\n"
-            "\\foo::\n    - short\n    + {explicit}\n"
+            "@unknown*{title}[opt]<2->::\n"
+            "    @{\\small}::\n        \\item opaque\n"
+            "\\foo:::\n    - short\n    + {explicit}\n"
             "    -\n        long\n        value\n"
-            "\\bar:\n    body\n"
+            "\\bar::\n    body\n"
             "!before{\\vspace{1em}} >> \\padded\n"
         )
         result = compile_ast(source)
@@ -84,7 +84,7 @@ class ExternalAstTests(TempDirTestCase):
         self.assertEqual(command["form"], "command")
         self.assertNotIn("body", command)
         self.assertEqual([a["layout"] for a in command["arguments"]],
-                         ["hugged", "explicit", "block"])
+                         ["block", "explicit", "block"])
         self.assertEqual([a["kind"] for a in command["arguments"]],
                          ["required", "required", "required"])
         self.assertTrue(all(a["value"]["type"] == "block" for a in command["arguments"]))
@@ -97,7 +97,7 @@ class ExternalAstTests(TempDirTestCase):
 
     def test_explicit_sequence_group_kinds_are_preserved(self):
         result = compile_ast(
-            "\\foo::\n"
+            "\\foo:::\n"
             "    + {required}\n"
             "    + [optional]\n"
             "    + <2->\n"
@@ -109,12 +109,12 @@ class ExternalAstTests(TempDirTestCase):
         )
 
     def test_session_dependencies_scope_bindings_and_repeated_spans(self):
-        core = self.write("core.tfxm", "!defmacro{inner}{x}:\n    @box{!text{x}}:\n        !param{x}\n")
-        style = self.write("style.tfxm", "!macroimport{core.tfxm}\n!defmacro{outer}{x}:\n    !inner{!text{x}}\n")
+        core = self.write("core.tfxm", "!defmacro{inner}{x}::\n    @box{!text{x}}::\n        !param{x}\n")
+        style = self.write("style.tfxm", "!macroimport{core.tfxm}\n!defmacro{outer}{x}::\n    !inner{!text{x}}\n")
         child = self.write("child.tfx", "!flag{show}{off}\n!when{show} >> !outer{日本}\n".replace(
             "!flag", "!macroimport{style.tfxm}\n!flag", 1))
         source = ("!flag{show}{off}\n!when{show} >> !import{missing.tfx}\n"
-                  "@frame:\n    !import{child.tfx}(show=on)\n"
+                  "@frame::\n    !import{child.tfx}(show=on)\n"
                   "    !import{./child.tfx}(show=on)\n")
         root = self.write("main.tfx", source)
         result = compile_ast(source, filename=str(root))
@@ -143,8 +143,8 @@ class ExternalAstTests(TempDirTestCase):
         self.assertEqual(compiled.sources, result.sources)
 
     def test_sources_include_modules_that_produce_no_nodes(self):
-        self.write("unused.tfxm", "!defmacro{unused}:\n    unused\n")
-        self.write("empty.tfx", "!flag{show}{off}\n!when{show}:\n    !unknown\n")
+        self.write("unused.tfxm", "!defmacro{unused}::\n    unused\n")
+        self.write("empty.tfx", "!flag{show}{off}\n!when{show}::\n    !unknown\n")
         source = "!macroimport{unused.tfxm}\n!import{empty.tfx}\n"
         result = compile_ast(source, filename=str(self.root / "main.tfx"))
         payload = json.loads(serialize_ast(result))
@@ -173,7 +173,7 @@ class ExternalAstTests(TempDirTestCase):
 
     def test_serializer_rejects_syntax_nodes_and_noncanonical_arguments(self):
         result = compile_ast("raw")
-        for source in ("@frame:\n    x", "!before{1em}:\n    x", "@frame >> \\foo"):
+        for source in ("@frame::\n    x", "!before{1em}::\n    x", "@frame >> \\foo"):
             with self.subTest(source=source), self.assertRaises((TypeError, ValueError)):
                 serialize_ast(replace(result, document=parse(source)))
         span = result.document.span
@@ -203,7 +203,7 @@ class AstCliTests(TempDirTestCase):
         self.assertEqual(process.stderr, b"")
 
     def test_file_stdout_pretty_flags_and_no_sidecar(self):
-        path = self.write("slides.tfx", b"!flag{draft}{off}\r\n!when{draft}:\r\n    YES\r\n")
+        path = self.write("slides.tfx", b"!flag{draft}{off}\r\n!when{draft}::\r\n    YES\r\n")
         output = self.root / "slides.json"
         args = ["ast", str(path), "-o", str(output), "--flag", "draft"]
         self.assertEqual(main(args), 0)

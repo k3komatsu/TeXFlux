@@ -1,4 +1,10 @@
-@foo:
+@foo::
     raw
+
+\cmd:::
+    - value
+    -
+        two
+        lines
 
 @@literal-at

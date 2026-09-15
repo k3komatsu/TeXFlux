@@ -91,7 +91,7 @@ class RelatedLocation:            # errors.py で定義、ここから再公開
 class Diagnostic:
     severity: Severity
     kind: str                     # "parse" | "validation" | "directive" | "macro" | "module" | "render"
-    code: str                     # "P004", "W001" など（§2）
+    code: str                     # "P004", "M012" など（§2）
     message: str                  # 例外・警告メッセージそのもの
     span: SourceSpan
     related: tuple[RelatedLocation, ...] = ()
@@ -371,7 +371,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 
 下表の生成箇所は「ファイル 関数（またはクラス）」で示す。同定は「ファイル・関数・メッセージ」で行う。
 
-### 2.2 P — `ParseError`（`parser.py`、37 件）
+### 2.2 P — `ParseError`（`parser.py`、38 件）
 
 | コード | 生成箇所 | メッセージ |
 | --- | --- | --- |
@@ -385,9 +385,9 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | P008 | parser.py `scan_group` | `unclosed binding list` |
 | P009 | parser.py `scan_group` | `invalid group opener` |
 | P010 | parser.py `HeaderScanner` | `empty structural header` |
-| P011 | parser.py `HeaderScanner` | `unexpected token in structural header` |
+| P011 | parser.py `HeaderScanner` | `unexpected token in structural header; write '!\| ' in front of a line that has to stay raw TeX` |
 | P012 | parser.py `HeaderScanner` | `trailing token after suite marker` |
-| P013 | parser.py `HeaderScanner` | `unexpected token in structural header` |
+| P013 | parser.py `HeaderScanner` | `unexpected ':' in a structural header; the suite markers are '::' and ':::'` |
 | P014 | parser.py `HeaderScanner` | `stack separator requires surrounding spaces` |
 | P015 | parser.py `HeaderScanner` | `missing structural segment` |
 | P016 | parser.py `HeaderScanner` | `structural header must start with '\', '@', or '!'` / `each stack segment must start with '\', '@', or '!'` |
@@ -397,11 +397,11 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | P020 | parser.py `HeaderScanner` | `a special's '(...)' list must follow its groups` |
 | P021 | parser.py `HeaderScanner` | `a special accepts at most one '(...)' list` |
 | P022 | parser.py `HeaderScanner` | `unexpected token after structural name or group` |
-| P023 | parser.py `_Parser` | `tab characters are not allowed` |
+| P023 | parser.py `_Parser` | `tab characters are not allowed; keep one after '!\| ' or inside a raw-mode region` |
 | P024 | parser.py `_Parser` | `'!|' must be followed by one space or end the line` |
-| P025 | parser.py `_Parser` | `invalid structural indentation` |
-| P026 | parser.py `_Parser` | `environment directives require a suite marker ':' or '::'` |
-| P027 | parser.py `_Parser` | `indented lines require a suite marker ':' or '::'` |
+| P025 | parser.py `_Parser` | `invalid structural indentation; a structural line sits at its suite base, and a literal '@' or '!' line is written '@@' or '!!'` |
+| P026 | parser.py `_Parser` | `environment directives require a suite marker '::' or ':::'; a literal '@' line is written '@@'` |
+| P027 | parser.py `_Parser` | `indented lines require a suite marker '::' or ':::'` |
 | P028 | parser.py `_Parser` | `stack separator needs a following segment` |
 | P029 | parser.py `_Parser` | `stack continuation requires the next line at the same indentation` |
 | P030 | parser.py `_Parser` | `sequence suite entries require four-space indentation` |
@@ -412,6 +412,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | P035 | parser.py `_Parser` | `explicit sequence entries require opaque raw text` |
 | P036 | parser.py `_Parser` | `explicit sequence entries require one balanced group` |
 | P037 | parser.py `_Parser` | `explicit sequence entries require exactly one group` |
+| P038 | parser.py `_Parser` | `command block suites require an indented body` |
 
 ### 2.3 V — `ValidationError`（43 件）
 
@@ -432,7 +433,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | V013 | macros.py `_parameters` | `invalid macro parameter name '…'` |
 | V014 | macros.py `_parameters` | `duplicate macro parameter '…'` |
 | V015 | macros.py `_parameters` | `a rest parameter must be the last macro parameter` |
-| V016 | macros.py `_definition` | `!defmacro requires a ':' template suite` |
+| V016 | macros.py `_definition` | `!defmacro requires a '::' template suite` |
 | V017 | macros.py `_definition` | `!defmacro requires a macro name group` |
 | V018 | macros.py `_definition` | `invalid macro name '…'` |
 | V019 | macros.py `_definition` | `'!…' is reserved by TeXFlux` |
@@ -441,17 +442,17 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | V022 | macros.py `_definition` | `macro '!…' is already defined at {loc}` **related: "first defined here" → `defined[name].span`** |
 | V023 | macros.py `_definition` | `!defmacro is only valid at the top level`（テンプレート内） |
 | V024 | macros.py `_definition` | `!{import|macroimport} is not allowed inside a macro template` |
-| V025 | macros.py `validate_macro_forms` | `!defmacro must be a top-level ':' definition and cannot be a '>>' segment` |
-| V026 | macros.py `validate_macro_forms` | `!each requires a ':' template suite of its own` |
+| V025 | macros.py `validate_macro_forms` | `!defmacro must be a top-level '::' definition and cannot be a '>>' segment` |
+| V026 | macros.py `validate_macro_forms` | `!each requires a '::' template suite of its own` |
 | V027 | macros.py `_Expander` | `!defmacro is only valid at the top level`（収集後の残存） |
 | V028 | macros.py `_Expander` | `{label} requires exactly {count} required group(s)` |
 | V029 | macros.py `_Expander` | `!param does not accept a suite` |
-| V030 | macros.py `_Expander` | `!each requires a ':' template suite` |
+| V030 | macros.py `_Expander` | `!each requires a '::' template suite` |
 | V031 | macros.py `_Expander` | `invalid !each item name '…'` |
-| V032 | macros.py `_Expander` | `!{name} requires a ':' suite or a '>>' payload` |
-| V033 | macros.py `_Expander` | `!{name} does not accept a '::' sequence suite` |
+| V032 | macros.py `_Expander` | `!{name} requires a '::' suite or a '>>' payload` |
+| V033 | macros.py `_Expander` | `!{name} does not accept a ':::' sequence suite` |
 | V034 | normalize.py `_desugar_stack` | `stack requires at least two segments` |
-| V035 | normalize.py `_normalize_node` | `sequence entries are only valid inside a '::' suite` |
+| V035 | normalize.py `_normalize_node` | `sequence entries are only valid inside a ':::' suite` |
 | V036 | normalize.py `_sequence_body` | `anonymous containers do not accept '+' sequence entries` |
 | V037 | normalize.py `_normalize_environment` | `environment sequence suites require a body value` |
 | V038 | normalize.py `_normalize_environment` | `environment sequence suites require the final '-' entry to be the body` |
@@ -465,7 +466,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 
 | コード | 生成箇所 | メッセージ |
 | --- | --- | --- |
-| D001 | normalize.py `_normalize_special` | `unknown special directive '!…'` |
+| D001 | normalize.py `_normalize_special` | `unknown special directive '!…'; a literal '!' line is written '!!', and a run of them goes in a raw-mode region` |
 
 ### 2.5 E — `MacroExpansionError`（19 件 + 包み直し 2 箇所）
 
@@ -544,12 +545,21 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
   （`error.span.file != site.file`）で積み、`error.chained(message, *related)` を送出する
   （related が空なら元の例外をそのまま再送出する）。
 
-### 2.7 W — `RenderWarning`（2 件）
+### 2.7 W — `RenderWarning`（0 件。W001 / W002 は退役）
 
-| コード | 生成箇所 | メッセージ |
+この種別を生成する箇所は現在1つも無い。`_close_hugged` の 2 件は、値の最終行に
+エスケープされていない `%` があれば閉じ中括弧を次の行に置く、という決定論的な
+レイアウト規則に吸収された（規範仕様 §14）。警告そのものは診断 API から消して
+いない。`severity: "warning"` は公開済みの `texflux-diagnostics` v1 の一部であり、
+`Diagnostic.from_warning` はその写像を保つ。
+
+退役したコードは再利用も改番もしない。表に残すのは、過去のログや外部ツールが
+これらのコードを持っていても意味を引けるようにするためである。
+
+| 退役コード | 当時の生成箇所 | 当時のメッセージ |
 | --- | --- | --- |
-| W001 | render.py `_close_hugged` | `value ends with a comment line, so what follows it stays on its own line` |
-| W002 | render.py `_close_hugged` | `value ends with a line containing '%', so the closing brace and whatever follows are commented out` |
+| `W001` | render.py `_close_hugged` | `value ends with a comment line, so what follows it stays on its own line` |
+| `W002` | render.py `_close_hugged` | `value ends with a line containing '%', so the closing brace and whatever follows are commented out` |
 
 ---
 
@@ -558,7 +568,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | ファイル | 役割 |
 | --- | --- |
 | `src/texflux/errors.py` | `RelatedLocation`、`diagnostic_line()`、`TeXFluxError(message, span, *, code, related=())`。`code` は必須キーワード引数で、省略した生成箇所は実行時 `TypeError` になる。`chained(message, *related)` は同じ型・コード・span で message と related を伸ばす。`InternalError` / `FlagError` は span も code も持たない |
-| `src/texflux/render.py` | `RenderWarning(message, span, code)`。`kind = "render"`。`_close_hugged` が W001 / W002 を出す |
+| `src/texflux/render.py` | `RenderWarning(message, span, code)`。`kind = "render"`。生成箇所は現在無い（§2.7） |
 | `src/texflux/modules.py` | `SourceReader` フック（下記の契約）。`CompilationSession._register` はパースより前に `LoadedSource` を記録する。`_importing` が関連位置付きで import 連鎖を包む |
 | `src/texflux/diagnostics.py` | `Severity`、`Diagnostic`、`DiagnosticReport`、`overlay_reader`、`diagnose`、`serialize_diagnostics` |
 | `src/texflux/interchange.py` | 外部 AST と共有する JSON のヘッダー・span・出力規約 |

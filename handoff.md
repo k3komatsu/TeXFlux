@@ -12,7 +12,8 @@ v1 の言語機能はすべて実装・検証済みで、`main` に統合され�
 | --- | --- | --- |
 | パーサ・正規化・レンダラ | `parser.py` `normalize.py` `render.py` | spec §1〜§8, §13〜§15 / `doc/dsl.md` |
 | 行単位 raw mode（`!BEGIN_RAW_MODE` / `!END_RAW_MODE`）と raw escape（`!\| `） | `parser.py` `syntax.py` | `doc/raw-mode.md` / spec §2 / `doc/dsl.md` §3 |
-| コマンド行の末尾コロンの先読み（続くブロックが無ければ生 TeX） | `parser.py` | `doc/raw-mode.md` §6 / spec §3 / `doc/dsl.md` §4 |
+| suite marker `::` / `:::`（単独のコロンは構造化トークンではない） | `parser.py` | spec §3 / `doc/dsl.md` §4 / `doc/v1-spec-freeze-review.md` §8 |
+| 生成中括弧の配置（`{%` と、`%` を含む値の閉じ方） | `render.py` | spec §14 / `doc/dsl.md` §15 / `doc/v1-spec-freeze-review.md` §9 |
 | ソースマクロと標準フロー制御（同梱 `prelude.tfxm`） | `macros.py` `modules.py` | spec §9, §10, §12.9 / `doc/dsl.md` §11, §12, §14.10 |
 | 文字列 interpolation（`!text`） | `interpolate.py` `macros.py` | `doc/string-interpolation.md` / spec §10.6 / `doc/dsl.md` §12.7 |
 | ビルドフラグ（`!flag` / `!when` / `!unless`） | `flags.py` | spec §11 / `doc/dsl.md` §13 |

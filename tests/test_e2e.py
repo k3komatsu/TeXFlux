@@ -19,9 +19,9 @@ class EndToEndTests(TempDirTestCase):
         source_text = (
             "\\documentclass{article}\n"
             "\\begin{document}\n"
-            "@center:\n"
+            "@center::\n"
             "    First block\n"
-            "@center:\n"
+            "@center::\n"
             "    End-to-end marker\n"
             "\\end{document}\n"
         )
@@ -137,12 +137,12 @@ class EndToEndTests(TempDirTestCase):
         generated_path = self.root / "generated.tex"
         part_path = self.write(
             "part.tfx",
-            "@center:\n    Imported marker\n",
+            "@center::\n    Imported marker\n",
         )
         source_path.write_text(
             "\\documentclass{article}\n"
             "\\begin{document}\n"
-            "@center:\n"
+            "@center::\n"
             "    Root marker\n"
             "!import{part.tfx}\n"
             "\\end{document}\n",

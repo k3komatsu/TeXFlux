@@ -21,7 +21,7 @@ from .support import TempDirTestCase
 
 class SourceMapTests(TempDirTestCase):
     def test_serialization_is_deterministic_and_omits_unmapped_fragments(self):
-        source = "raw 日本語\n@center:\n    BODY\n"
+        source = "raw 日本語\n@center::\n    BODY\n"
         source_bytes = source.encode("utf-8")
 
         result = compile_with_map(source, filename=str(self.root / "input.tfx"))
@@ -148,7 +148,7 @@ class SourceMapTests(TempDirTestCase):
 
     def test_a_document_without_imports_keeps_one_source_at_id_zero(self):
         result = compile_with_map(
-            "raw\n@center:\n    BODY\n",
+            "raw\n@center::\n    BODY\n",
             filename=str(self.root / "input.tfx"),
         )
         payload = json.loads(
@@ -167,7 +167,7 @@ class SourceMapTests(TempDirTestCase):
 
     def test_imported_content_maps_to_the_file_that_wrote_it(self):
         self.write("part.tfx", "\\imported{x}\n")
-        self.write("style.tfxm", "!defmacro{m}:\n    M\n")
+        self.write("style.tfxm", "!defmacro{m}::\n    M\n")
         source_path = self.write(
             "input.tfx",
             "!macroimport{style.tfxm}\n\\root{y}\n!import{part.tfx}\n",
@@ -278,9 +278,9 @@ class SourceMapTests(TempDirTestCase):
     def test_representative_constructs_produce_source_mappings(self):
         sources = (
             "raw\n",
-            "\\foo:\n    @{}:\n        body\n",
-            "@frame >> @center:\n    body\n",
-            "!around{\\vspace{1em}}{\\vspace{2em}}:\n    body\n",
+            "\\foo::\n    @{}::\n        body\n",
+            "@frame >> @center::\n    body\n",
+            "!around{\\vspace{1em}}{\\vspace{2em}}::\n    body\n",
         )
         for index, source in enumerate(sources):
             with self.subTest(index=index):
@@ -298,20 +298,20 @@ class SourceMapTests(TempDirTestCase):
     def test_representative_constructs_preserve_exact_source_spans(self):
         cases = (
             (
-                "\\foo:\n    @{}:\n        body\n",
+                "\\foo::\n    @{}::\n        body\n",
                 [
-                    ("open", (1, 1, 1, 6)),
-                    ("open", (1, 5, 1, 6)),
-                    ("open", (2, 5, 2, 9)),
+                    ("open", (1, 1, 1, 7)),
+                    ("open", (1, 5, 1, 7)),
+                    ("open", (2, 5, 2, 10)),
                     ("content", (3, 9, 3, 13)),
-                    ("close", (2, 5, 2, 9)),
-                    ("close", (1, 5, 1, 6)),
+                    ("close", (2, 5, 2, 10)),
+                    ("close", (1, 5, 1, 7)),
                 ],
             ),
             (
-                "\\foo::\n    - A\n      continuation\n    - B\n",
+                "\\foo:::\n    - A\n      continuation\n    - B\n",
                 [
-                    ("open", (1, 1, 1, 7)),
+                    ("open", (1, 1, 1, 8)),
                     ("open", (2, 5, 3, 19)),
                     ("content", (2, 7, 2, 8)),
                     ("content", (3, 7, 3, 19)),
@@ -322,7 +322,7 @@ class SourceMapTests(TempDirTestCase):
                 ],
             ),
             (
-                "@frame >> @center:\n    body\n",
+                "@frame >> @center::\n    body\n",
                 [
                     ("open", (1, 1, 1, 7)),
                     ("open", (1, 11, 1, 18)),
@@ -332,7 +332,7 @@ class SourceMapTests(TempDirTestCase):
                 ],
             ),
             (
-                "!around{\\vspace{1em}}{\\vspace{2em}}:\n    body\n",
+                "!around{\\vspace{1em}}{\\vspace{2em}}::\n    body\n",
                 [
                     # A standard flow macro's values are raw TeX the author
                     # wrote, so each maps to its own '{...}' group.

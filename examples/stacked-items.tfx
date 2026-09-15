@@ -1,7 +1,7 @@
-@frame{Stacked lists} >> @center >> @itemize:
+@frame{Stacked lists} >> @center >> @itemize::
     \item<1->[A] First item
       Continuation keeps extra raw indentation.
-    @itemize:
+    @itemize::
         \item Nested item
         \item Another nested item
     \item<2-> Second item

@@ -1,14 +1,14 @@
-!defmacro{smallred}{body}:
+!defmacro{smallred}{body}::
     @{\small\color{red}} >> !param{body}
-!defmacro{box}{title}{body}:
-    @infobox::
+!defmacro{box}{title}{body}::
+    @infobox:::
         - !param{title}
         - !param{body}
-@frame{Macros}:
-    !smallred:
+@frame{Macros}::
+    !smallred::
         Hello
         World
     !smallred >> \TextCA{Important}
-    !box{Result}:
+    !box{Result}::
         Long
         body

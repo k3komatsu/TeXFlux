@@ -8,26 +8,26 @@
 % states what a new one would have to justify.
 
 % Emit one value before a payload.
-!defmacro{before}{prefix}{body}:
+!defmacro{before}{prefix}{body}::
     !param{prefix}
     !param{body}
 
 % Emit one value after a payload.
-!defmacro{after}{suffix}{body}:
+!defmacro{after}{suffix}{body}::
     !param{body}
     !param{suffix}
 
 % Wrap a payload in a pair. Composable from !before and !after, and kept
 % because a paired transformation is one conceptual operation.
-!defmacro{around}{prefix}{suffix}{body}:
+!defmacro{around}{prefix}{suffix}{body}::
     !param{prefix}
     !param{body}
     !param{suffix}
 
 % Drop one segment of a composition and keep the rest of the pipeline.
-!defmacro{off}{ignored}{body}:
+!defmacro{off}{ignored}{body}::
     !param{body}
 
 % Discard a payload whole. The template is deliberately empty: a value that
 % no template position reads contributes nothing.
-!defmacro{drop}{body}:
+!defmacro{drop}{body}::

@@ -19,7 +19,7 @@ class CliTests(TempDirTestCase):
     def test_success_writes_utf8_output(self):
         input_path = self.root / "slides.tfx"
         output_path = self.root / "out.tex"
-        input_path.write_text("@frame{日本語}:\n    本文\n", encoding="utf-8")
+        input_path.write_text("@frame{日本語}::\n    本文\n", encoding="utf-8")
 
         self.assertEqual(
             main(["compile", str(input_path), "-o", str(output_path)]),
@@ -154,7 +154,7 @@ def stdin_bytes(data: bytes):
 
 
 class CliCheckTests(TempDirTestCase):
-    BAD = "@frame{x}:\n    @foo{bad\n"
+    BAD = "@frame{x}::\n    @foo{bad\n"
 
     def check(self, *arguments, stdin=None):
         """Run 'texflux check', returning its status, stdout and stderr."""
@@ -169,7 +169,7 @@ class CliCheckTests(TempDirTestCase):
         return status, out.getvalue(), err.getvalue()
 
     def test_a_clean_document_says_nothing_at_all(self):
-        path = self.write("slides.tfx", "@frame{t}:\n    body\n")
+        path = self.write("slides.tfx", "@frame{t}::\n    body\n")
         self.assertEqual(self.check(str(path)), (0, "", ""))
 
     def test_an_error_is_one_line_on_stdout_and_exit_one(self):
@@ -183,16 +183,17 @@ class CliCheckTests(TempDirTestCase):
         )
         self.assertEqual(err, "")
 
-    def test_a_warning_is_reported_but_still_exits_zero(self):
-        path = self.write("slides.tfx", "\\foo::\n    - a % trailing\n")
+    def test_a_comment_in_a_value_is_laid_out_rather_than_reported(self):
+        # The closing brace moves below the comment instead of being
+        # commented out, so there is nothing left to report.
+        path = self.write("slides.tfx", "\\foo:::\n    - a % trailing\n")
         status, out, _ = self.check(str(path))
 
         self.assertEqual(status, 0)
-        self.assertIn("warning:", out)
-        self.assertIn("[W002]", out)
+        self.assertEqual(out, "")
 
     def test_related_locations_print_as_indented_notes(self):
-        self.write("broken.tfx", "!defmacro{m}{x}{x}:\n    A\n")
+        self.write("broken.tfx", "!defmacro{m}{x}{x}::\n    A\n")
         self.write("mid.tfx", "!import{broken.tfx}\n")
         path = self.write("main.tfx", "!import{mid.tfx}\n")
         status, out, _ = self.check(str(path))
@@ -302,7 +303,7 @@ class CliCheckTests(TempDirTestCase):
         # The byte branch exists so a non-UTF-8 console encoding and CRLF
         # translation cannot corrupt the JSON; a StringIO would skip it.
         # The message quotes the name, so non-ASCII reaches the output.
-        path = self.write("slides.tfx", "!defmacro{\u65e5}:\n    A\n")
+        path = self.write("slides.tfx", "!defmacro{\u65e5}::\n    A\n")
         captured = io.BytesIO()
         original = sys.stdout
         sys.stdout = SimpleNamespace(

@@ -1,4 +1,4 @@
-@lstlisting:
+@lstlisting::
     !BEGIN_RAW_MODE
     def f(x):
     	return !x
@@ -7,7 +7,7 @@
       !END_RAW_MODE
     !END_RAW_MODE
 
-@itemize:
+@itemize::
     !| \item Note:
         !| \item	deeper
     !!| literal
