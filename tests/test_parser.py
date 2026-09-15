@@ -248,8 +248,10 @@ class ParserTests(unittest.TestCase):
                     self.assertEqual(entry.value.nodes[0].span.start.column, 7)
 
     def test_raw_line_marker_emits_the_rest_of_the_line_verbatim(self):
-        # The header scanner claims each of these, and '@@' / '!!' cannot
-        # reach them because they do not start with '@' or '!'.
+        # '@@' / '!!' cannot reach any of these because they do not start
+        # with '@' or '!'. The marker works whether or not the header scanner
+        # would claim the line: the '>>' one it always does, the colon ones
+        # only once a block follows.
         for text in ("\\item Note:", "\\textbf{Note}:", "\\emph{x} >> \\emph{y}"):
             with self.subTest(text=text):
                 node = parse(f"!| {text}\n", "x.tfx").body.nodes[0]
@@ -694,14 +696,118 @@ class ParserTests(unittest.TestCase):
                     parse(source, "x.tfx")
 
     def test_empty_block_suites_are_allowed(self):
+        # A lone '\\foo:' is the exception: a colon no block follows is text,
+        # so a command reaches an empty suite only through a stack.
+        for source in ("@:\n", "@foo:\n", "!foo:\n", "@center >> \\foo:\n"):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    parse(source, "x.tfx").body.nodes[0].suite.nodes,
+                    (),
+                )
+
+    def test_command_trailing_colon_is_a_suite_only_when_a_block_follows(self):
+        # A single trailing colon is the one structural token TeX prose also
+        # ends a line with, so a command line keeps it as text unless the
+        # next non-blank line sits at the suite base.
+        raw, tail = parse("\\textbf{Note}:\nfoo\n", "x.tfx").body.nodes
+        self.assertIsInstance(raw, RawTex)
+        self.assertEqual(raw.text, "\\textbf{Note}:")
+        self.assertEqual((raw.span.start.column, raw.span.end.column), (1, 15))
+        self.assertEqual(tail.text, "foo")
+
+        node = parse("\\textbf{Note}:\n    body\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(node, ParsedInvocation)
+        self.assertEqual(node.suite_mode, SuiteMode.BLOCK)
+        self.assertEqual(node.suite.nodes[0].text, "body")
+
+        # Blank lines never separate a header from its suite.
+        node = parse("\\foo:\n\n\n    body\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(node, ParsedInvocation)
+        self.assertEqual([child.text for child in node.suite.nodes], ["", "", "body"])
+
+        # The suite base is a lower bound: a first suite line indented beyond
+        # it is still the suite, and keeps its extra spaces.
+        node = parse("\\foo:\n     body\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(node, ParsedInvocation)
+        self.assertEqual([child.text for child in node.suite.nodes], [" body"])
+
+        # The last line of a document, or of a suite, has no block to own.
+        self.assertIsInstance(parse("\\foo:\n", "x.tfx").body.nodes[0], RawTex)
+        self.assertIsInstance(parse("\\foo:  \n", "x.tfx").body.nodes[0], RawTex)
+        outer = parse("@center:\n    \\foo:\n@center:\n    x\n", "x.tfx").body.nodes[0]
+        self.assertEqual([type(child) for child in outer.suite.nodes], [RawTex])
+
+        # A body indented by fewer than four spaces is not a suite either;
+        # both lines stay raw, the second with its extra indentation.
+        nodes = parse("\\foo:\n  body\n", "x.tfx").body.nodes
+        self.assertEqual([node.text for node in nodes], ["\\foo:", "  body"])
+
+    def test_unscannable_command_with_trailing_colon_is_raw_without_a_block(self):
+        # '\\item Note:' does not scan as a header, and the colon used to turn
+        # that failure into an error regardless. The line is ambiguous only
+        # when a block follows, so only then is it still an error.
+        for source in ("\\item Note:\n", "\\item \\textbf{Note}:\n", "\\item 手順:\n"):
+            with self.subTest(source=source):
+                node = parse(source, "x.tfx").body.nodes[0]
+                self.assertIsInstance(node, RawTex)
+                self.assertEqual(node.text, source.rstrip("\n"))
+        with self.assertRaisesRegex(
+            ParseError,
+            r"x\.tfx:1:7: parse error: unexpected token in structural header",
+        ):
+            parse("\\item Note:\n    body\n", "x.tfx")
+
+    def test_trailing_colon_lookahead_applies_to_indented_command_lines(self):
+        # A raw line may sit deeper than the block base; a structural
+        # candidate may not. Without a block the colon makes no candidate.
+        node = parse(
+            "@itemize:\n    \\item a\n        \\textbf{Note}:\n",
+            "x.tfx",
+        ).body.nodes[0]
+        deeper = node.suite.nodes[1]
+        self.assertIsInstance(deeper, RawTex)
+        self.assertEqual(deeper.text, "    \\textbf{Note}:")
+        with self.assertRaisesRegex(ParseError, "invalid structural indentation"):
+            parse(
+                "@itemize:\n    \\item a\n        \\textbf{Note}:\n            body\n",
+                "x.tfx",
+            )
+
+    def test_trailing_colon_lookahead_applies_to_sequence_payloads(self):
+        # The suite base of a payload is four spaces beyond the marker, so a
+        # continuation line indented less than that leaves the colon as text.
+        first, second, third = parse(
+            "\\foo::\n"
+            "    - \\textbf{Note}:\n"
+            "    - \\bar:\n"
+            "        body\n"
+            "    - \\item Note:\n"
+            "      cont\n",
+            "x.tfx",
+        ).body.nodes[0].suite.nodes
+        self.assertIsInstance(first.value.nodes[0], RawTex)
+        self.assertEqual(first.value.nodes[0].text, "\\textbf{Note}:")
+        self.assertIsInstance(second.value.nodes[0], ParsedInvocation)
+        self.assertEqual(second.value.nodes[0].suite.nodes[0].text, "body")
         self.assertEqual(
-            parse("@:\n", "x.tfx").body.nodes[0].suite.nodes,
-            (),
+            [child.text for child in third.value.nodes],
+            ["\\item Note:", "cont"],
         )
-        self.assertEqual(
-            parse("\\foo:\n", "x.tfx").body.nodes[0].suite.nodes,
-            (),
-        )
+
+    def test_double_colon_and_stack_claim_a_command_line_without_a_block(self):
+        # Neither '::' nor '>>' is TeX prose, so neither waits for a block.
+        with self.assertRaisesRegex(ParseError, "sequence suites require at least one"):
+            parse("\\foo::\n", "x.tfx")
+        with self.assertRaisesRegex(
+            ParseError, "unexpected token after structural name or group"
+        ):
+            parse("\\vspace{1em}(x)::\n", "x.tfx")
+        with self.assertRaisesRegex(ParseError, "unexpected token in structural header"):
+            parse("\\foo: |\n", "x.tfx")
+        stack = parse("\\foo >> \\bar:\n", "x.tfx").body.nodes[0]
+        self.assertIsInstance(stack, Stack)
+        self.assertEqual(stack.suite_mode, SuiteMode.BLOCK)
+        self.assertEqual(stack.suite.nodes, ())
 
     def test_special_segments_accept_one_trailing_binding_list(self):
         node = parse("!import{a.tfx}(answers=on, memo=$memo)\n", "x.tfx").body.nodes[0]

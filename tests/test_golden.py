@@ -32,6 +32,7 @@ class GoldenTests(unittest.TestCase):
                 "structured-command",
                 "structured-environment",
                 "structured-mixed",
+                "trailing-colon",
             },
         )
         for input_path in input_paths:

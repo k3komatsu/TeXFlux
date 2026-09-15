@@ -41,6 +41,9 @@ class CompileTests(unittest.TestCase):
             "@outer:\n    @center >>\n    \\textbf{A}\n",
             "!off{unused} >>\n!before{\\vspace{1em}} >>\n\\x\n",
             "@center >>\n@itemize:\n    \\item A\n",
+            # A continuation line is scanned as a header outright, so its
+            # trailing colon needs no block, exactly as on the joined line.
+            "\\a >>\n\\b:\n",
         ):
             with self.subTest(source=source):
                 joined = source.replace(">>\n    ", ">> ").replace(">>\n", ">> ")
@@ -108,8 +111,42 @@ class CompileTests(unittest.TestCase):
             "\\foo{\nA\nB\n}\n",
         )
 
-    def test_command_empty_block_is_one_empty_long_argument(self):
-        self.assertEqual(compile_text("\\foo:\n"), "\\foo{\n}\n")
+    def test_command_trailing_colon_without_a_block_is_raw_tex(self):
+        # '\\textbf{Note}:' is how TeX prose ends a line, so a command header
+        # owns its colon only when a block follows. Each of these used to
+        # compile silently to '\\textbf{Note}{' + '}'.
+        for source, expected in (
+            ("\\textbf{Note}:\n", "\\textbf{Note}:\n"),
+            ("\\textbf{Note}:\nfoo\n", "\\textbf{Note}:\nfoo\n"),
+            ("\\textbf{Note}:\n  two-space body\n", "\\textbf{Note}:\n  two-space body\n"),
+            (
+                "@center:\n    \\textbf{Note}:\n",
+                "\\begin{center}\n\\textbf{Note}:\n\\end{center}\n",
+            ),
+            (
+                "@itemize:\n    \\item a\n        \\textbf{Note}:\n",
+                "\\begin{itemize}\n\\item a\n    \\textbf{Note}:\n\\end{itemize}\n",
+            ),
+            ("\\foo::\n    - \\textbf{Note}:\n    - b\n", "\\foo{\\textbf{Note}:}{b}\n"),
+            (
+                "\\foo::\n    - \\textbf{Note}:\n      cont\n",
+                "\\foo{\n\\textbf{Note}:\ncont\n}\n",
+            ),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(compile_text(source), expected)
+        # An empty command suite is still reachable through a stack, whose
+        # '>>' claims the line unconditionally.
+        self.assertEqual(
+            compile_text("@center >> \\foo:\n"),
+            "\\begin{center}\n\\foo{\n}\n\\end{center}\n",
+        )
+
+    def test_trailing_colon_lookahead_applies_inside_a_macro_template(self):
+        self.assertEqual(
+            compile_text("!defmacro{m}{x}:\n    \\textbf{Note}:\n    !param{x}\n!m{A}\n"),
+            "\\textbf{Note}:\nA\n",
+        )
 
     def test_mixed_inline_and_multiline_arguments(self):
         self.assertEqual(
@@ -410,7 +447,6 @@ class CompileTests(unittest.TestCase):
         # so each of these has to keep behaving like the raw line it is --
         # and each escape has to keep working.
         for body, message in (
-            ("\\item Summary:", "unexpected token in structural header"),
             ("\\TextCA{Note}::", "sequence suites require at least one"),
             ("@foo{A}", "environment directives require a suite marker"),
         ):
@@ -419,8 +455,13 @@ class CompileTests(unittest.TestCase):
                     compile_text(f"@itemize:\n    {body}\n")
         with self.assertRaisesRegex(DirectiveError, "unknown special"):
             compile_text("@itemize:\n    !foo\n")
+        # A single trailing colon claims the line only when a block follows
+        # it; then 'Summary' is the unexpected token it always was.
+        with self.assertRaisesRegex(ParseError, "unexpected token in structural header"):
+            compile_text("@itemize:\n    \\item Summary:\n        body\n")
 
         for body, expected in (
+            ("\\item Summary:", "\\item Summary:"),
             ("\\item Summary:{}", "\\item Summary:{}"),
             ("\\TextCA{Note}:{}", "\\TextCA{Note}:{}"),
             ("@@foo{A}", "@foo{A}"),
@@ -504,14 +545,16 @@ class CompileTests(unittest.TestCase):
                 self.assertEqual(compile_text(source), expected)
 
     def test_raw_line_marker_reaches_command_lines_no_escape_could(self):
-        # Each of these is a raw TeX line that the header scanner claims: the
-        # first two are parse errors today and the last two compile to the
-        # wrong output.  '@@' / '!!' cannot reach any of them because they do
-        # not start with '@' or '!'.
+        # '@@' / '!!' cannot reach a '\\' line because it does not start with
+        # '@' or '!'. The marker is what keeps such a line raw where the
+        # header scanner would claim it: a '>>' stack, or a trailing colon
+        # that an indented block follows. It keeps working on lines the
+        # scanner no longer claims, too.
         for source, expected in (
             ("!| \\item Note:\n", "\\item Note:\n"),
             ("!| \\item 手順:\n", "\\item 手順:\n"),
             ("!| \\textbf{Note}:\n", "\\textbf{Note}:\n"),
+            ("!| \\textbf{Note}:\n    indented\n", "\\textbf{Note}:\n    indented\n"),
             ("!| \\emph{x} >> \\emph{y}\n", "\\emph{x} >> \\emph{y}\n"),
         ):
             with self.subTest(source=source):

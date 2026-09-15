@@ -78,14 +78,15 @@ Unbalanced braces and trailing `:` or `>>` remain literal on escaped lines.
 At the same position, `!|` followed by one ASCII space, or by the end of the
 line, emits everything after that space as one raw TeX line. Because it strips
 the whole marker rather than one prefix character, it is the only escape that
-reaches a `\` line a top-level structural token would otherwise claim, such as
-`!| \item Note:`. The marker and its one separating space are removed and
-nothing else on the line is touched: further spaces are kept, and every
-character up to the newline is emitted verbatim, tabs included. `!|` followed
-by anything else is a parse error. A line consisting of `!|` alone emits an
-empty raw line, which is content rather than a blank line and so is never
-rewound to the enclosing block. The line is verbatim, so macro expansion never
-interpolates it, and `!!| foo` writes the marker literally as `!| foo`.
+reaches a `\` line a top-level structural token would otherwise claim:
+`!| \emph{x} >> \emph{y}`, or `!| \textbf{Note}:` when an indented block
+follows the colon (section 3). The marker and its one separating space are
+removed and nothing else on the line is touched: further spaces are kept, and
+every character up to the newline is emitted verbatim, tabs included. `!|`
+followed by anything else is a parse error. A line consisting of `!|` alone
+emits an empty raw line, which is content rather than a blank line and so is
+never rewound to the enclosing block. The line is verbatim, so macro expansion
+never interpolates it, and `!!| foo` writes the marker literally as `!| foo`.
 
 The same escape applies to a `-` sequence marker payload, with two differences
 from the block-line form. The first it shares with `@@` and `!!`: a payload is
@@ -162,6 +163,21 @@ tokens are the deliberate exceptions: they make the failed structural scan
 stay an error, so a malformed suite marker or stack header fails rather than
 degrading to raw TeX. Once `::` is recognized, a following token is an error,
 so `\texttt{std}::vector` is invalid.
+
+A single trailing colon is also the one structural token that ordinary TeX
+prose ends a line with, so a command header owns its colon only when a suite
+follows it: the next non-blank line must sit at or past the suite base, four
+spaces beyond the header's own indentation. Otherwise the whole line is raw TeX,
+whether the header scans (`\textbf{Note}:`) or not (`\item Note:`, where
+`Note` is no structural token). The same lookahead applies to a `-` sequence
+payload, measured from the sequence base, and to a `\` line indented beyond
+its block base, which is then a raw line rather than a misplaced candidate.
+When an indented block does follow, the line is a structural candidate as
+before, so `\item Note:` above such a block is a parse error and is written
+`!| \item Note:` or `\item Note:{}`. `::` and `>>` are never prose and claim
+the line unconditionally: `\foo::` without an entry stays an error, and
+`@center >> \foo:` is how an empty command suite is written. `@` and `!`
+headers are unaffected, so an empty `@foo:` or `!foo:` suite is still valid.
 
 At-sign classification has this precedence:
 
@@ -249,7 +265,10 @@ A single-colon suite is exactly one block value:
 ~~~
 
 Its content is parsed as a normal TeXFlux block, including raw TeX, containers,
-specials, stacks, and blank lines. An empty block suite is valid.
+specials, stacks, and blank lines. An empty block suite is valid, though a
+lone command header cannot write one: a colon no block follows is text
+(section 3), so `@center >> \foo:` is the spelling that passes `\foo` an
+empty block.
 
 ## 6. Value consumption
 
@@ -571,12 +590,14 @@ optional label, continuation, and nesting:
 An environment body is an ordinary block suite, so every rule in sections 2
 through 7 applies to the lines inside it, `\item` included, and nothing is
 exempt: a depth-zero trailing colon makes `\item Summary:` a structural
-command candidate (write `\item Summary:{}` -- an empty group leaves
-`\spacefactor` alone, so the colon's end-of-sentence space survives); a line
-beginning `@` or `!` is a header unless `@@` or `!!` escapes it, inside
-`@verbatim` and `@lstlisting` bodies too; `\item >> \foo` is a stack, which
-section 14 renders over three lines. A block suite keeps blank lines as
-document content.
+command candidate, and so a parse error, when an indented block follows it
+(write `!| \item Summary:`, or `\item Summary:{}` -- an empty group leaves
+`\spacefactor` alone, so the colon's end-of-sentence space survives), while
+without such a block the colon is text (section 3); a line beginning `@` or
+`!` is a header unless `@@` or `!!` escapes it, inside `@verbatim` and
+`@lstlisting` bodies too; `\item >> \foo` is a stack, which section 14
+renders over three lines. A block suite keeps blank lines as document
+content.
 
 ## 10. Source macros
 
@@ -1363,7 +1384,8 @@ This grammar is conceptual; item metadata and balanced raw groups are scanned by
 the handwritten parser. A sequence entry continues until the next sibling `-`
 or `+` marker. Its normative distinctions are generated required values from
 `-`, authored groups from `+`, the single-colon block, and suffix-less closed
-values.
+values. A lone command segment with a block-suffix is a statement only when a
+suite body follows it; otherwise the line is raw TeX (section 3).
 
 ## 18. Executable examples
 

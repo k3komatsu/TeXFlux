@@ -170,6 +170,8 @@ class ConditionalTests(unittest.TestCase):
         body = "!when{draft}:\n    !nosuchmacro{a}\n"
 
         self.assertEqual(self.compile(body), "\n")
+        # A prose colon inside the branch is a raw line and goes with it.
+        self.assertEqual(self.compile("!when{draft}:\n    \\item Note:\n"), "\n")
 
     def test_a_dropped_branch_still_cannot_hide_a_misplaced_declaration(self):
         # Flags are collected before any conditional is resolved, so this one

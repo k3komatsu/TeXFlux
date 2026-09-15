@@ -1,0 +1,14 @@
+@frame{Prose colons}:
+    \textbf{Note}:
+    The colon above owns no block, so the line is raw TeX.
+    \emph{Caption}:
+        An indented block turns the same shape into a structured command.
+    @itemize:
+        \item Summary:
+        \item \textbf{Detail}:
+          A shallower continuation line leaves the colon as text.
+            \textbf{Deeper}:
+    \cmd::
+        - \textbf{Term}:
+        - \textbf{Body}:
+          continues on a continuation line

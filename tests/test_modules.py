@@ -546,6 +546,8 @@ class MacroModulePurityTests(ModuleTestCase):
             "@center:\n    X\n",
             "\\foo:\n    X\n",
             "@center >> \\foo{x}\n",
+            # A prose colon is a raw line, so it is content like any other.
+            "\\item Note:\n",
         ):
             with self.subTest(macro_module=macro_module):
                 self.check(macro_module, "may contain only !defmacro")

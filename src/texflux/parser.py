@@ -536,28 +536,46 @@ class HeaderScanner:
 def _scan_structural_header(
     text: str,
     span: SourceSpan,
+    *,
+    suite_follows: bool,
 ) -> HeaderScanResult | None:
     """Scan one header, or return ``None`` when the line stays raw TeX.
 
     An ordinary ``\\command`` only becomes structural through a top-level
     structural token, so a scan that fails without seeing one is raw TeX.
+
+    A single trailing colon is the one such token that TeX prose also ends a
+    line with, so it claims a command line only when ``suite_follows``: the
+    next non-blank line sits at or beyond the suite base. Without that block the colon
+    is text, whether the header scans (``\\textbf{Note}:``) or not
+    (``\\item Note:``). ``::`` and ``>>`` are never prose, so they claim the
+    line unconditionally.
     """
 
     scanner = HeaderScanner(text, span=span)
     try:
-        return scanner.scan()
+        result = scanner.scan()
     except ParseError:
         end = len(text.rstrip(" "))
-        if (
-            end > 0
-            and text[end - 1] == ":"
-            and not text[:end].endswith("::")
-            and _has_immediate_command_binding(text)
-        ):
+        single_colon = (
+            end > 0 and text[end - 1] == ":" and not text[:end].endswith("::")
+        )
+        if single_colon and _has_immediate_command_binding(text):
             return None
-        if scanner.saw_structure or _has_top_level_trailing_colon(text, span=span):
+        if scanner.saw_structure:
             raise
+        if not _has_top_level_trailing_colon(text, span=span):
+            return None
+        if single_colon and not suite_follows:
+            return None
+        raise
+    if (
+        result.suite_mode is SuiteMode.BLOCK
+        and len(result.segments) == 1
+        and not suite_follows
+    ):
         return None
+    return result
 
 
 class _Parser:
@@ -827,9 +845,21 @@ class _Parser:
         result = _scan_structural_header(
             line.text[base:],
             self._header_span(line, base),
+            suite_follows=self._suite_follows(self.index + 1, base),
         )
         # A closed single-segment command line is ordinary TeX.
         return None if result is None or result.closed_single else result
+
+    def _suite_follows(self, index: int, base: int) -> bool:
+        """Whether the next non-blank line from ``index`` on sits at or beyond ``base + 4``.
+
+        The same lookahead ``_parse_suite`` makes to give a block suite its
+        body, asked one step earlier so that a command header's single colon
+        can stay text when the answer is no.
+        """
+
+        next_index = self._next_nonblank(index)
+        return next_index is not None and self.lines[next_index].indent >= base + 4
 
     def _try_structural_command(
         self,
@@ -1046,7 +1076,11 @@ class _Parser:
                 # Only a command payload may turn out to be ordinary TeX; an
                 # '@' or '!' payload must scan as a structural header.
                 result = (
-                    _scan_structural_header(payload, payload_span)
+                    _scan_structural_header(
+                        payload,
+                        payload_span,
+                        suite_follows=self._suite_follows(self.index, base),
+                    )
                     if payload[0] == "\\"
                     else HeaderScanner(payload, span=payload_span).scan()
                 )
