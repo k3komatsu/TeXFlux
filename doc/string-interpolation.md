@@ -497,7 +497,7 @@ fragment provenance を素朴に入れると、§9.3 の例で `\foo{pre-` が `
 ### 10.5 `modules.py`
 
 `_TEMPLATE_NAMES` に `Reserved.TEXT` が含まれる。`_check_self_contained` は `.tfxm` の template 内の
-`SpecialInvocation` 名を走査するので、これが無いと AST 位置の `!text` が誤った M029 になり、正しい E009 が
+`SpecialInvocation` 名を走査するので、これが無いと AST 位置の `!text` が誤った M028 になり、正しい E009 が
 expander から出なくなる。
 
 lexical scope と import graph は補間の有無で変化しない。`!text` はマクロ名を一切 lookup しないし、

@@ -1,14 +1,14 @@
 """Structured diagnostics for editors and language servers.
 
-``diagnose`` runs the compilation ``compile_with_map`` runs, but reports what
-it found instead of raising the first thing that went wrong. It returns every
-file the compilation read together with every diagnostic it produced, which is
-what a language server needs: one publish per open file, and an empty list for
-a file that is now clean.
+``diagnose`` runs the compilation ``compile_with_map`` runs, short of
+rendering, and reports what it found instead of raising the first thing that
+went wrong. It returns every file the compilation read together with every
+diagnostic it produced, which is what a language server needs: one publish
+per open file, and an empty list for a file that is now clean. Rendering is
+skipped because the renderer reports nothing: a document that compiles renders.
 
-Nothing here interprets a document. A ``Diagnostic`` is one ``TeXFluxError`` or
-one ``RenderWarning`` with the message, span, code and related locations that
-error or warning already carried.
+Nothing here interprets a document. A ``Diagnostic`` is one ``TeXFluxError``
+with the message, span, code and related locations that error already carried.
 """
 
 from __future__ import annotations
@@ -23,11 +23,15 @@ from .flags import Flags
 from .interchange import dump_json, header, span_encoder
 from .modules import CompilationSession, SourceReader, read_source
 from .paths import normalized_path
-from .render import LoadedSource, RenderWarning, render_with_provenance
+from .render import LoadedSource
 
 
 class Severity(StrEnum):
-    """Whether a diagnostic stopped the compilation or only warned about it."""
+    """Whether a diagnostic stopped the compilation or only warned about it.
+
+    Every diagnostic v1 produces is an ``ERROR``. ``WARNING`` is part of the
+    published report format and stays reserved for a channel no site uses.
+    """
 
     ERROR = "error"
     WARNING = "warning"
@@ -71,16 +75,6 @@ class Diagnostic:
             error.related,
         )
 
-    @classmethod
-    def from_warning(cls, warning: RenderWarning) -> "Diagnostic":
-        return cls(
-            Severity.WARNING,
-            warning.kind,
-            warning.code,
-            warning.message,
-            warning.span,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticReport:
@@ -89,8 +83,7 @@ class DiagnosticReport:
     #: The root first, then each module in the order the session loaded it.
     sources: tuple[LoadedSource, ...]
     #: In the order the compilation produced them. Compilation stops at its
-    #: first error and rendering runs only after it succeeds, so a report
-    #: holds either one error or any number of warnings, never both.
+    #: first error, so a report holds either nothing or exactly one error.
     diagnostics: tuple[Diagnostic, ...]
 
     def __post_init__(self) -> None:
@@ -103,7 +96,7 @@ class DiagnosticReport:
 
     @property
     def ok(self) -> bool:
-        """Whether nothing stopped the compilation; warnings still allow it."""
+        """Whether no diagnostic is an error; only an error stops a compilation."""
 
         return all(
             diagnostic.severity != Severity.ERROR
@@ -176,7 +169,7 @@ def diagnose(
     )
     data = source.encode("utf-8") if source_bytes is None else source_bytes
     try:
-        document = session.compile_root(
+        session.compile_root(
             source,
             filename=filename,
             data=data,
@@ -187,11 +180,7 @@ def diagnose(
             session.loaded(),
             (Diagnostic.from_error(error),),
         )
-    rendered = render_with_provenance(document)
-    return DiagnosticReport(
-        session.loaded(),
-        tuple(Diagnostic.from_warning(warning) for warning in rendered.warnings),
-    )
+    return DiagnosticReport(session.loaded(), ())
 
 
 def serialize_diagnostics(

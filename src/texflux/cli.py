@@ -163,8 +163,6 @@ def _compile(args: argparse.Namespace) -> int:
             map_path=map_path,
             generated_bytes=output_bytes,
         )
-        for warning in result.rendered.warnings:
-            print(warning.diagnostic(), file=sys.stderr)
         output_path.write_bytes(output_bytes)
         map_path.write_text(map_text, encoding="utf-8", newline="\n")
         return 0

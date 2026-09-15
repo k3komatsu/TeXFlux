@@ -13,7 +13,10 @@ except ImportError:
 from texflux import compile_ast, serialize_ast
 
 
-@unittest.skipIf(Draft202012Validator is None, "install jsonschema to validate the AST schema")
+@unittest.skipIf(
+    Draft202012Validator is None,
+    "install the dev extra (pip install -e '.[dev]') to validate the AST schema",
+)
 class AstSchemaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

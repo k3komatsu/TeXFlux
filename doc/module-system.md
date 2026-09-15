@@ -223,7 +223,7 @@ flag-name     ::= [A-Za-z][A-Za-z0-9_-]*
 import してはならない（循環 import になる）ので、末尾の `canonicalize()` を公開し、`modules.py` がそれを呼ぶ。
 
 `normalize()` の直呼びで `!import` / `!macroimport` に出会ったときのために、
-`BUILTIN_DIRECTIVES` にはこの 2 名のガードハンドラだけが登録されている。ガードは M030 を
+`BUILTIN_DIRECTIVES` にはこの 2 名のガードハンドラだけが登録されている。ガードは M029 を
 送出し、副次効果として 2 名を `!defmacro` から予約する。モジュール経路では手順 4 と 8 で
 取り除かれるので、ガードに到達することはない。標準フロー制御（`!before` 等）はセッションが
 環境に seed する普通のマクロなので、`normalize()` の直呼びでは未知の special になる。
@@ -328,10 +328,10 @@ import してはならない（循環 import になる）ので、末尾の `can
 {"param", "each", "text"}  ∪  registry（組み込み特殊）  ∪  そのモジュールの環境
 ```
 
-属さなければ M029。呼び出し側の無関係な名前空間が、本来不正なマクロモジュールを
+属さなければ M028。呼び出し側の無関係な名前空間が、本来不正なマクロモジュールを
 正当化することは決してない。環境は一度構築されたら変わらないので、各モジュールは
 ちょうど 1 回だけ検査する。検査は閉包の新しい環境を**すべて**構築し終えた後に行うので、
-名前の衝突（M021）は自己完結性違反（M029）より常に先に報告される。
+名前の衝突（M021）は自己完結性違反（M028）より常に先に報告される。
 
 **この検査は `.tfx` のローカルマクロには適用しない**（D5）。未使用マクロのテンプレートに
 未知の `!名前` があってもエラーにしないことで、`!when` で無効化されたマクロ定義を含む `.tfx`
@@ -426,9 +426,9 @@ main.tfx:
 
 | 条件 | 診断 | span |
 | --- | --- | --- |
-| suite を持つ（明示的 suite と、`>>` の左側に置かれて合成 suite が付いた場合の両方） | M023 | ノード |
-| 必須インライン群が 2 個以上 / 0 個 | M024 / M026 | ノード |
-| `[...]` または `<...>` 群がある | M025 | 群 |
+| suite を持つ（明示的 suite と、`>>` の左側に置かれて合成 suite が付いた場合の両方） | M022 | ノード |
+| 必須インライン群が 2 個以上 / 0 個 | M023 / M025 | ノード |
+| `[...]` または `<...>` 群がある | M024 | 群 |
 
 有効な用法:
 
@@ -471,7 +471,7 @@ main.tfx:
 
 ### 8.3 循環検出
 
-コンテンツ import の循環は M027 である。判定は**アクティブな import スタック**
+コンテンツ import の循環は M026 である。判定は**アクティブな import スタック**
 （正準パスのタプル、ルートが先頭）に対して行い、「一度でも見たパスか」では判定しない。
 経路は display パスで、スタック順＋対象を連結して表示する。
 
@@ -521,7 +521,7 @@ imported from b.tfx:3:1; imported from main.tfx:7:1 [V014]
 コンテキストマネージャがこの木を根まで辿って各段の site を追記する。
 
 - **1 段ごとに** `error.span.file == site.file` を判定し、等しい段だけ読み飛ばす。そこで
-  **打ち切ってはならない**。ロード失敗（M028）やパス解決の失敗は span が `!macroimport` を書いた
+  **打ち切ってはならない**。ロード失敗（M027）やパス解決の失敗は span が `!macroimport` を書いた
   側にあるので、その段は読み飛ばされるが、その 1 つ上の段——そのファイル自身がどう取り込まれたか——
   は依然として必要である。
 - 木を辿るので必ず停止する。念のため訪問済み集合も持つ。
@@ -535,7 +535,7 @@ imported from b.tfx:3:1; imported from main.tfx:7:1 [V014]
 ```text
 impure.tfxm:2:5: module error: '!nosuchmacro' is not defined in impure.tfxm
 and is not available through its own !macroimport;
-imported from mid.tfx:1:13; imported from main.tfx:1:1 [M029]
+imported from mid.tfx:1:13; imported from main.tfx:1:1 [M028]
 ```
 
 内側がマクロ import の site、外側がコンテンツ import の site である。
@@ -566,7 +566,7 @@ TeXFlux の名前空間システムの外にある。TeX レベルのグルー�
 3. `\` を含む → M003。
 4. 絶対パス → M004（D6）。
 5. 種別の拡張子で終わらない → M005。
-6. display の算出（§9.2）。読み込みに失敗すれば M028（`OSError`・`UnicodeError`・`ValueError` を
+6. display の算出（§9.2）。読み込みに失敗すれば M027（`OSError`・`UnicodeError`・`ValueError` を
    `load()` が捕まえる）。
 7. identity = `paths.normalized_path(display)`。
 
@@ -609,7 +609,7 @@ display = os.path.normpath(
 | メンバー | 役割 |
 | --- | --- |
 | `CompilationSession(registry=, reader=)` | `reader` は表示綴りからバイト列を返すフック。エディタが未保存バッファを差し込むために使う（`doc/diagnostics.md`） |
-| `load(display, span)` | 1 ファイルを読んでパースし、正準パス identity でキャッシュする。失敗は `span` を責める M028 |
+| `load(display, span)` | 1 ファイルを読んでパースし、正準パス identity でキャッシュする。失敗は `span` を責める M027 |
 | `loaded()` | 読んだ全ファイル（`LoadedSource`）。ルートが先頭、以降はロード順。パースより前に記録するので、パースに失敗したファイルも載る |
 | `display(path)` | ロード済みモジュールの display 綴り |
 | `compile_root(text, filename=, data=, flags=)` | 呼び出し側が文字列で渡した文書のコンパイル |
@@ -689,14 +689,13 @@ texflux compile main.tfx -o main.tex --flag draft --flag handout=off
 | M019 | 同一モジュールの二重取り込み（関連位置: 最初の取り込み） | 群 |
 | M020 | `!macroimport` が非トップレベル | ノード |
 | M021 | 取り込みマクロ名の衝突（関連位置: 定義位置） | `!macroimport` |
-| M022 | 同梱の標準マクロモジュールが `!macroimport` を持つ（`InternalError` に変換されるので到達不能） | ノード |
-| M023 | `!import` に suite | ノード |
-| M024 / M026 | `!import` の必須群が 2 個以上 / 0 個 | ノード |
-| M025 | `!import` に `[...]` / `<...>` | 群 |
-| M027 | コンテンツ import の循環 | ノード |
-| M028 | ファイルが読めない | 群 |
-| M029 | `.tfxm` の自己完結性違反 | ノード |
-| M030 | `normalize()` 直呼び | ノード |
+| M022 | `!import` に suite | ノード |
+| M023 / M025 | `!import` の必須群が 2 個以上 / 0 個 | ノード |
+| M024 | `!import` に `[...]` / `<...>` | 群 |
+| M026 | コンテンツ import の循環 | ノード |
+| M027 | ファイルが読めない | 群 |
+| M028 | `.tfxm` の自己完結性違反 | ノード |
+| M029 | `normalize()` 直呼び | ノード |
 
 モジュール構文に関係するが他の種別で報告するもの:
 
@@ -705,7 +704,7 @@ texflux compile main.tfx -o main.tex --flag draft --flag handout=off
 | V024 | テンプレート内の `!import` / `!macroimport`（モジュール経路では `!macroimport` は M020 が先に出るので、この分岐が実際に使われるのは `normalize()` 直呼びの経路と `!import`） |
 | V022 | 取り込み名とローカル定義名の衝突 |
 | V021 | 標準フロー制御と同名の定義 |
-| P005 / P007 / P008 / P020 / P021 | `(...)` の走査（ブレースの不釣り合い、閉じない、群より前、2 個以上） |
+| P005 / P007 / P008 / P019 / P020 | `(...)` の走査（ブレースの不釣り合い、閉じない、群より前、2 個以上） |
 
 ---
 

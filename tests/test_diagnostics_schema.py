@@ -11,12 +11,20 @@ try:
 except ImportError:
     Draft202012Validator = None
 
-from texflux import diagnose, serialize_diagnostics
+from texflux import (
+    Diagnostic,
+    DiagnosticReport,
+    LoadedSource,
+    Severity,
+    diagnose,
+    serialize_diagnostics,
+)
+from texflux.ast import SourcePosition, SourceSpan
 
 
 @unittest.skipIf(
     Draft202012Validator is None,
-    "install jsonschema to validate the diagnostics schema",
+    "install the dev extra (pip install -e '.[dev]') to validate the diagnostics schema",
 )
 class DiagnosticsSchemaTests(unittest.TestCase):
     @classmethod
@@ -47,11 +55,26 @@ class DiagnosticsSchemaTests(unittest.TestCase):
         errors = [d for d in value["diagnostics"] if d["severity"] == "error"]
         self.assertEqual(len(errors), 1)
 
-    def test_a_render_warning_validates(self):
+    def test_a_value_holding_a_comment_validates_with_no_diagnostics(self):
+        # The brace layout rule replaced the two render warnings this input
+        # used to raise, so a clean report is the whole contract here.
         value = self.payload("\\foo:::\n    - a % trailing\n")
         self.validator.validate(value)
-        warnings = [d for d in value["diagnostics"] if d["severity"] == "warning"]
-        self.assertEqual(len(warnings), 1)
+        self.assertEqual(value["diagnostics"], [])
+
+    def test_the_reserved_warning_severity_validates(self):
+        # No site produces one, but the value stays in the closed enum so a
+        # future warning needs no version bump; a consumer must accept it.
+        # Built from a real report, so the schema sees the producer's own
+        # spelling of the value rather than a hand-edited string.
+        span = SourceSpan("main.tfx", SourcePosition(1, 1), SourcePosition(1, 2))
+        report = DiagnosticReport(
+            (LoadedSource("main.tfx", "/w/main.tfx", b"x\n"),),
+            (Diagnostic(Severity.WARNING, "texflux", "X001", "careful", span),),
+        )
+        value = json.loads(serialize_diagnostics(report))
+        self.validator.validate(value)
+        self.assertEqual(value["diagnostics"][0]["severity"], "warning")
 
     def test_an_import_chain_validates_and_has_related_locations(self):
         # main imports mid imports broken; broken's invalid macro definition

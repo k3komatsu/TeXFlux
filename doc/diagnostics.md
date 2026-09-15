@@ -14,7 +14,6 @@
 
 TeXFlux のエラーは `TeXFluxError(message, span, code=)` の例外として送出され、CLI が
 `file:line:col: parse error: message [P004]` の 1 行を stderr に印字して終了コード 1 を返す。
-レンダリング警告 `RenderWarning` は `compile_with_map(...).rendered.warnings` に現れる。
 VSCode 拡張や Language Server は、位置・重大度・コード・関連位置を**構造化された形**で、
 しかも**例外ではなく戻り値**として受け取る必要があり、未保存バッファも扱わねばならない。
 
@@ -32,9 +31,9 @@ VSCode 拡張や Language Server は、位置・重大度・コード・関連�
 | 論点 | 決定 |
 | --- | --- |
 | 関連位置情報 | 構造化する（`TeXFluxError.related`） |
-| 診断コード | 全 raise 箇所に付与する（`P/V/D/E/M/W` + 3 桁）。改番・再利用しない |
+| 診断コード | 全 raise 箇所に付与する（`P/V/D/E/M` + 3 桁）。v1 以降は改番・再利用しない |
 | 未保存バッファの overlay | Python API に含める（`CompilationSession(reader=)`）。CLI は root の stdin のみ |
-| エラー件数 | fail-fast のまま。エラー最大 1 件 + 警告 N 件 |
+| エラー件数 | fail-fast のまま。エラー最大 1 件。`severity: "warning"` は予約値で、生成箇所は無い |
 
 ---
 
@@ -45,7 +44,6 @@ VSCode 拡張や Language Server は、位置・重大度・コード・関連�
                                   │
       CompilationSession(reader=overlay_reader)  ── load() が reader 経由で読む
                                   │  compile_root()      ← TeXFluxError なら捕捉
-                                  │  render_with_provenance()   ← warnings
                                   ▼
       DiagnosticReport(sources=session.loaded(), diagnostics=(Diagnostic, ...))
              │                         │
@@ -58,8 +56,8 @@ VSCode 拡張や Language Server は、位置・重大度・コード・関連�
 
 - `diagnose()` は `TeXFluxError` を**決して**送出しない。`FlagError`・`InternalError`・
   `RecursionError` は文書の問題ではないので**そのまま伝播**する（`compile_*` と同じ分類）。
-- 診断は「エラーちょうど 1 件（警告 0 件）」または「エラー 0 件・警告 0 件以上」のどちらか。
-  レンダリングはコンパイル成功後にしか走らないため、これは構造上の帰結である。
+- 診断は 0 件か、エラーちょうど 1 件。`severity: "warning"` は形式上の予約値で、v1 のコンパイラは
+  生成しない。`diagnose` はレンダリングを行わない: レンダラは診断を生まないので、コンパイルが通れば描ける。
 - `report.sources` は常に root を先頭に含む。**root のパースが失敗しても含む**
   （`CompilationSession._register` はパースより前にファイルを記録する）。
 - 位置は 1 始まり行・1 始まり列（Unicode code point）・半開区間。JSON もそのまま出す。
@@ -90,20 +88,18 @@ class RelatedLocation:            # errors.py で定義、ここから再公開
 @dataclass(frozen=True, slots=True)
 class Diagnostic:
     severity: Severity
-    kind: str                     # "parse" | "validation" | "directive" | "macro" | "module" | "render"
+    kind: str                     # "parse" | "validation" | "directive" | "macro" | "module"
     code: str                     # "P004", "M012" など（§2）
-    message: str                  # 例外・警告メッセージそのもの
+    message: str                  # 例外メッセージそのもの
     span: SourceSpan
     related: tuple[RelatedLocation, ...] = ()
 
     @property
-    def label(self) -> str:       # "parse error" / "warning"
+    def label(self) -> str:       # "{kind} error"。予約値 WARNING なら "warning"
     def line(self) -> str:        # "file:l:c: parse error: message [P004]"
     def __str__(self) -> str:     # == line()
     @classmethod
     def from_error(cls, error: TeXFluxError) -> Diagnostic
-    @classmethod
-    def from_warning(cls, warning: RenderWarning) -> Diagnostic
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticReport:
@@ -139,10 +135,9 @@ overlays に root のパスがあっても無視される。
 
 `diagnose` の振る舞いで固定している細部:
 
-- `ok` は「`severity == ERROR` の診断が無い」と同値。レンダリングはコンパイル成功後にしか走らないので、
-  1 つの報告がエラーと警告を同時に持つことはない。
+- `ok` は「`severity == ERROR` の診断が無い」と同値。v1 では診断が 1 件も無いことと同じである。
 - `sources` / `by_file()` に載るのは**読めて UTF-8 として復号できたファイル**。存在しない・読めない・
-  UTF-8 でない import 先は `load()` が M028 を import 行の span で報告し、そのファイル自体は表に載らない。
+  UTF-8 でない import 先は `load()` が M027 を import 行の span で報告し、そのファイル自体は表に載らない。
   パースに失敗したファイルは（読めているので）載る。
 - import 先が root を `!import` で参照し返す場合、`filename` が実際のパスと同じファイルに正規化されるときだけ
   セッションのキャッシュに当たり循環として検出される。`filename="<string>"` / `<stdin>` のままだと
@@ -195,7 +190,7 @@ texflux check INPUT [--format {text,json}] [--pretty] [--flag NAME[=on|off]]... 
 
 | コード | 意味 |
 | --- | --- |
-| 0 | エラー診断なし（警告は 0 のまま） |
+| 0 | 診断なし |
 | 1 | エラー診断が 1 件ある（stdout に診断） |
 | 2 | 報告を作れなかった: 使用法エラー、入力が読めない、UTF-8 でない、`FlagError`、`InternalError`、`RecursionError`、内部 `ValueError`。stderr に `texflux: ...`、stdout には何も出さない |
 
@@ -257,11 +252,11 @@ LSP からは **絶対パス**を `INPUT` / `--stdin-filename` に渡すこと�
 | `producer` | `{"name": "texflux", "version": __version__}`。形式判定に使ってはならない |
 | `root` | root の source ID。常に `0` |
 | `sources` | 外部 AST と同じ表。`id` は読み込み順、`file` は診断と同じ display 綴りを `/` 区切りに正規化、`sha256` は読んだバイト列（stdin / overlay ならその内容）の小文字 hex。**パースに失敗したファイルも含む**。`.tfxm` も含む。落ちた条件分岐で読まなかったファイルは含まない |
-| `diagnostics` | コンパイラが生成した順。エラーは最大 1 件で、エラーがあれば警告は無い |
-| `severity` | `"error"` / `"warning"`（閉じた列挙。追加は version bump） |
-| `kind` | 小文字英字。現在 `parse` `validation` `directive` `macro` `module` `render`。consumer は未知の値も受け入れる（表示用） |
+| `diagnostics` | コンパイラが生成した順。fail-fast なので最大 1 件 |
+| `severity` | `"error"` / `"warning"`（閉じた列挙。追加は version bump）。`"warning"` は予約値で、v1 の producer は `"error"` だけを出す。consumer は両方を扱うこと |
+| `kind` | 小文字英字。現在 `parse` `validation` `directive` `macro` `module`。consumer は未知の値も受け入れる（表示用） |
 | `code` | `^[A-Z][0-9]{3}$`。§2 の表。一度公開したコードは再利用・改番しない |
-| `message` | 例外/警告のメッセージそのもの（コード・位置プレフィックスを含まない） |
+| `message` | 例外のメッセージそのもの（コード・位置プレフィックスを含まない） |
 | `span` | 外部 AST と同一: `source` は source ID、`start`/`end` は 1 始まり行・1 始まり列（code point）、半開 `[start, end)`。`end` は別行でもよい |
 | `related` | 常に存在する配列（空でもよい）。各要素は `message` と `span` |
 
@@ -283,8 +278,8 @@ member 追加は v1 内、意味変更・必須 member の削除・位置意味�
   {file}:{line}:{column}: note: {related.message}
 ```
 
-- `label` はエラーなら `"{kind} error"`（`parse error` 等）、警告なら `warning`。
-- **`compile` の stderr も同じ形**である（`TeXFluxError.diagnostic()` / `RenderWarning.diagnostic()` が
+- `label` はエラーなら `"{kind} error"`（`parse error` 等）、予約値 `warning` なら `warning`。
+- **`compile` の stderr も同じ形**である（`TeXFluxError.diagnostic()` と `Diagnostic.line()` が
   単一の `diagnostic_line()` を使うため）。`compile` は `note:` 行を出さない（メッセージが既に位置を含む）。
   `check` の text 形式だけが `note:` 行を出す。
 - VSCode problem matcher 用正規表現（参考）:
@@ -351,11 +346,12 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 
 ### 2.1 規則
 
-- 形式: 種別 1 文字 + 3 桁。`P` parse、`V` validation、`D` directive、`E` macro expansion、`M` module、`W` warning。
-  `kind` との対応: P→parse、V→validation、D→directive、E→macro、M→module、W→render。
+- 形式: 種別 1 文字 + 3 桁。`P` parse、`V` validation、`D` directive、`E` macro expansion、`M` module。
+  `kind` との対応: P→parse、V→validation、D→directive、E→macro、M→module。
 - **1 生成箇所 = 1 コード**。同じメッセージでも生成箇所が違えば別コード（例: P005/P007）。
   1 箇所が f-string で複数の文言を出す場合は 1 コード（例: P016、E004、M005）。
-- 番号は付与順。**以後は改番しない**。新規箇所はその種別の末尾番号 + 1。
+- 番号は付与順。v1 リリース前に一度だけ欠番を圧縮した（到達不能だった当時の P018 と M022 を削除し、
+  それより上の番号を 1 つずつ前に詰めた）。**v1 以降は改番しない**。新規箇所はその種別の末尾番号 + 1。
   削除されたコードは欠番のまま残す。
 - 既存の例外を別の例外に作り直す箇所は 5 つあり、扱いを次のとおり固定する。
   - **内側のコードを引き継ぐ（新コードなし）**: `macros._Expander._reject`（`reject_markers` の E004 を frame 付きに）、
@@ -364,14 +360,13 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
     E001〜E004 は**この転送経由でしか出力に現れない**が、自分のコードで現れる。
   - **新コードを振る**: `_Parser._explicit_sequence_entry` の
     `raise ParseError("explicit sequence entries require one balanced group", error.span) from None`
-    はメッセージを置き換える別の条件なので P036。`scan_group` の P003〜P009 はヘッダー走査経路から従来どおり現れる。
-- M022（`load_standard_macros`）は `InternalError` に変換されるため出力に到達しない。表には載せ、到達不能と注記する。
+    はメッセージを置き換える別の条件なので P035。`scan_group` の P003〜P009 はヘッダー走査経路から従来どおり現れる。
 - `tests/test_diagnostic_codes.py` が「全生成箇所に `code=` がある」「リテラルが一意」「本表と一致」
   「各コードが生成箇所のファイルの行に載っている」を機械的に検査する。
 
 下表の生成箇所は「ファイル 関数（またはクラス）」で示す。同定は「ファイル・関数・メッセージ」で行う。
 
-### 2.2 P — `ParseError`（`parser.py`、38 件）
+### 2.2 P — `ParseError`（`parser.py`、37 件）
 
 | コード | 生成箇所 | メッセージ |
 | --- | --- | --- |
@@ -392,27 +387,26 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | P015 | parser.py `HeaderScanner` | `missing structural segment` |
 | P016 | parser.py `HeaderScanner` | `structural header must start with '\', '@', or '!'` / `each stack segment must start with '\', '@', or '!'` |
 | P017 | parser.py `HeaderScanner` | `invalid structural name` |
-| P018 | parser.py `HeaderScanner` | `invalid structural name` |
-| P019 | parser.py `HeaderScanner` | `'!BEGIN_RAW_MODE' must stand alone on its own line`（END も同文） |
-| P020 | parser.py `HeaderScanner` | `a special's '(...)' list must follow its groups` |
-| P021 | parser.py `HeaderScanner` | `a special accepts at most one '(...)' list` |
-| P022 | parser.py `HeaderScanner` | `unexpected token after structural name or group` |
-| P023 | parser.py `_Parser` | `tab characters are not allowed; keep one after '!\| ' or inside a raw-mode region` |
-| P024 | parser.py `_Parser` | `'!|' must be followed by one space or end the line` |
-| P025 | parser.py `_Parser` | `invalid structural indentation; a structural line sits at its suite base, and a literal '@' or '!' line is written '@@' or '!!'` |
-| P026 | parser.py `_Parser` | `environment directives require a suite marker '::' or ':::'; a literal '@' line is written '@@'` |
-| P027 | parser.py `_Parser` | `indented lines require a suite marker '::' or ':::'` |
-| P028 | parser.py `_Parser` | `stack separator needs a following segment` |
-| P029 | parser.py `_Parser` | `stack continuation requires the next line at the same indentation` |
-| P030 | parser.py `_Parser` | `sequence suite entries require four-space indentation` |
-| P031 | parser.py `_Parser` | `sequence suites require at least one '-' or '+' value entry` |
-| P032 | parser.py `_Parser` | `sequence entries must start at suite indentation` |
-| P033 | parser.py `_Parser` | `sequence suites require '-' or '+' value entries` |
-| P034 | parser.py `_Parser` | `explicit sequence entries require one '{...}', '[...]', or '<...>' group` |
-| P035 | parser.py `_Parser` | `explicit sequence entries require opaque raw text` |
-| P036 | parser.py `_Parser` | `explicit sequence entries require one balanced group` |
-| P037 | parser.py `_Parser` | `explicit sequence entries require exactly one group` |
-| P038 | parser.py `_Parser` | `command block suites require an indented body` |
+| P018 | parser.py `HeaderScanner` | `'!BEGIN_RAW_MODE' must stand alone on its own line`（END も同文） |
+| P019 | parser.py `HeaderScanner` | `a special's '(...)' list must follow its groups` |
+| P020 | parser.py `HeaderScanner` | `a special accepts at most one '(...)' list` |
+| P021 | parser.py `HeaderScanner` | `unexpected token after structural name or group` |
+| P022 | parser.py `_Parser` | `tab characters are not allowed; keep one after '!\| ' or inside a raw-mode region` |
+| P023 | parser.py `_Parser` | `'!|' must be followed by one space or end the line` |
+| P024 | parser.py `_Parser` | `invalid structural indentation; a structural line sits at its suite base, and a literal '@' or '!' line is written '@@' or '!!'` |
+| P025 | parser.py `_Parser` | `environment directives require a suite marker '::' or ':::'; a literal '@' line is written '@@'` |
+| P026 | parser.py `_Parser` | `indented lines require a suite marker '::' or ':::'` |
+| P027 | parser.py `_Parser` | `stack separator needs a following segment` |
+| P028 | parser.py `_Parser` | `stack continuation requires the next line at the same indentation` |
+| P029 | parser.py `_Parser` | `sequence suite entries require four-space indentation` |
+| P030 | parser.py `_Parser` | `sequence suites require at least one '-' or '+' value entry` |
+| P031 | parser.py `_Parser` | `sequence entries must start at suite indentation` |
+| P032 | parser.py `_Parser` | `sequence suites require '-' or '+' value entries` |
+| P033 | parser.py `_Parser` | `explicit sequence entries require one '{...}', '[...]', or '<...>' group` |
+| P034 | parser.py `_Parser` | `explicit sequence entries require opaque raw text` |
+| P035 | parser.py `_Parser` | `explicit sequence entries require one balanced group` |
+| P036 | parser.py `_Parser` | `explicit sequence entries require exactly one group` |
+| P037 | parser.py `_Parser` | `command block suites require an indented body` |
 
 ### 2.3 V — `ValidationError`（43 件）
 
@@ -500,7 +494,7 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 `_error(..., frame)` で frame があるものは全て message に `; while expanding '…' called at {loc}` が付き、
 **related: "called here" → `frame.call_span`** が付く。
 
-### 2.6 M — `ModuleError`（30 件 + 包み直し 2 箇所）
+### 2.6 M — `ModuleError`（29 件 + 包み直し 2 箇所）
 
 | コード | 生成箇所 | メッセージ |
 | --- | --- | --- |
@@ -525,15 +519,14 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | M019 | modules.py `_macro_import` | `macro module '…' is already imported at {loc}` **related: "first imported here" → `seen[path]`** |
 | M020 | modules.py `resolve_macro_imports` | `!macroimport is only valid at the top level` |
 | M021 | modules.py `merge_imports` | `macro '!…' is already available here, defined at {loc}` **related: "defined here" → `environment[name].span`** |
-| M022 | modules.py `load_standard_macros` | `the bundled standard macro module imports no other module`（**到達不能**: `load_standard_macros` が `InternalError` に変換する） |
-| M023 | modules.py `_ImportResolver` | `!import produces content: it does not accept a suite and cannot wrap a '>>' payload` |
-| M024 | modules.py `_ImportResolver` | `!import requires exactly one '{path}' group`（2 個目の path 群） |
-| M025 | modules.py `_ImportResolver` | `!import does not accept '[...]' or '<...>' groups` |
-| M026 | modules.py `_ImportResolver` | `!import requires exactly one '{path}' group`（path 群なし） |
-| M027 | modules.py `_ImportResolver` | `content import cycle: {chain}` |
-| M028 | modules.py `CompilationSession` | `cannot read module '…': {reason}` |
-| M029 | modules.py `CompilationSession` | `'!…' is not defined in {file} and is not available through its own !macroimport` |
-| M030 | normalize.py `_module_guard` | `'!…' requires module compilation; use texflux.compile_with_map or the texflux CLI` |
+| M022 | modules.py `_ImportResolver` | `!import produces content: it does not accept a suite and cannot wrap a '>>' payload` |
+| M023 | modules.py `_ImportResolver` | `!import requires exactly one '{path}' group`（2 個目の path 群） |
+| M024 | modules.py `_ImportResolver` | `!import does not accept '[...]' or '<...>' groups` |
+| M025 | modules.py `_ImportResolver` | `!import requires exactly one '{path}' group`（path 群なし） |
+| M026 | modules.py `_ImportResolver` | `content import cycle: {chain}` |
+| M027 | modules.py `CompilationSession` | `cannot read module '…': {reason}` |
+| M028 | modules.py `CompilationSession` | `'!…' is not defined in {file} and is not available through its own !macroimport` |
+| M029 | normalize.py `_module_guard` | `'!…' requires module compilation; use texflux.compile_with_map or the texflux CLI` |
 
 包み直し（新コードなし）:
 
@@ -545,22 +538,6 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
   （`error.span.file != site.file`）で積み、`error.chained(message, *related)` を送出する
   （related が空なら元の例外をそのまま再送出する）。
 
-### 2.7 W — `RenderWarning`（0 件。W001 / W002 は退役）
-
-この種別を生成する箇所は現在1つも無い。`_close_hugged` の 2 件は、値の最終行に
-エスケープされていない `%` があれば閉じ中括弧を次の行に置く、という決定論的な
-レイアウト規則に吸収された（規範仕様 §14）。警告そのものは診断 API から消して
-いない。`severity: "warning"` は公開済みの `texflux-diagnostics` v1 の一部であり、
-`Diagnostic.from_warning` はその写像を保つ。
-
-退役したコードは再利用も改番もしない。表に残すのは、過去のログや外部ツールが
-これらのコードを持っていても意味を引けるようにするためである。
-
-| 退役コード | 当時の生成箇所 | 当時のメッセージ |
-| --- | --- | --- |
-| `W001` | render.py `_close_hugged` | `value ends with a comment line, so what follows it stays on its own line` |
-| `W002` | render.py `_close_hugged` | `value ends with a line containing '%', so the closing brace and whatever follows are commented out` |
-
 ---
 
 ## 3. 実装の構成
@@ -568,29 +545,28 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 | ファイル | 役割 |
 | --- | --- |
 | `src/texflux/errors.py` | `RelatedLocation`、`diagnostic_line()`、`TeXFluxError(message, span, *, code, related=())`。`code` は必須キーワード引数で、省略した生成箇所は実行時 `TypeError` になる。`chained(message, *related)` は同じ型・コード・span で message と related を伸ばす。`InternalError` / `FlagError` は span も code も持たない |
-| `src/texflux/render.py` | `RenderWarning(message, span, code)`。`kind = "render"`。生成箇所は現在無い（§2.7） |
 | `src/texflux/modules.py` | `SourceReader` フック（下記の契約）。`CompilationSession._register` はパースより前に `LoadedSource` を記録する。`_importing` が関連位置付きで import 連鎖を包む |
 | `src/texflux/diagnostics.py` | `Severity`、`Diagnostic`、`DiagnosticReport`、`overlay_reader`、`diagnose`、`serialize_diagnostics` |
 | `src/texflux/interchange.py` | 外部 AST と共有する JSON のヘッダー・span・出力規約 |
 | `src/texflux/cli.py` | `texflux check`。`_run` が例外を終了コードに写す（`check` は環境の失敗を 2 にする） |
 | `schemas/texflux-diagnostics-v1.schema.json` | Draft 2020-12。未知 member は許容。`$defs/source`・`position`・`span` は外部 AST スキーマと同じ定義 |
 | `tests/test_diagnostics.py` | エラーモデル、`diagnose`、`serialize_diagnostics` |
-| `tests/test_diagnostic_codes.py` | 全生成箇所の `code=`、一意性、§2 の表との一致、件数と上限値 |
-| `tests/test_diagnostics_schema.py` | JSON Schema 検証（`jsonschema` 未導入なら skip） |
+| `tests/test_diagnostic_codes.py` | 全生成箇所の `code=`、一意性、§2 の表との一致（重複行なし）、件数と上限値、他文書が引用するコードの実在 |
+| `tests/test_diagnostics_schema.py` | JSON Schema 検証（dev extra の `jsonschema` が無ければ skip） |
 | `tests/test_cli.py` `CliCheckTests` | CLI の終了コード・出力・stdin |
 
 `SourceReader` の契約:
 
 - 引数は `load()` が受け取った **display 綴りそのもの**（import を書いたファイルからの相対で解決済み、
   root が相対なら相対のまま）。既定の `read_source` はそれを `os.path.abspath` して開く。
-- 戻り値は生バイト列。復号（UTF-8）は `load()` が行い、失敗は M028 になる。
+- 戻り値は生バイト列。復号（UTF-8）は `load()` が行い、失敗は M027 になる。
 - 「無い」は **`OSError`（`FileNotFoundError` など）で知らせる**。`OSError` / `UnicodeError` / `ValueError`
   以外の例外は span 無しで伝播する（reader は呼び出し側のコードなので握らない）。`overlay_reader` は
   overlay に無ければ `read_source` に委ねるので、この契約を自動的に満たす。
 - キャッシュ（`_sources`）は `normalized_path(display)` で引く。reader は初回ロード時にだけ呼ばれる。
 - `compile_root` は `load()` を通らないので、reader は root について呼ばれない（overlay の root 無視はこの帰結）。
 
-`diagnose` は `source_comments` を取らず、常に `False` でレンダリングする（警告の有無は変わらない）。
+`diagnose` はレンダリングを行わない。レンダラが投げるのは AST 不変条件違反の `TypeError` だけで、診断になるものは無い。
 span の `file` が `sources` に無い場合、`serialize_diagnostics` は外部 AST と同じく `ValueError` を投げ、
 CLI は exit 2 になる。到達し得るのは、マクロテンプレート内部で起きる展開エラーの定義ファイルが
 同梱 prelude（`texflux:prelude`）である場合だけで、現在の prelude（テンプレートは `!param{宣言済み}` のみ、
@@ -603,7 +579,7 @@ arity は呼び出しノードで検査）では発生しない。`AGENTS.md` �
 
 ```bash
 python3 -W error::ResourceWarning -m unittest discover
-python3 -m pip install jsonschema && python3 -m unittest tests.test_diagnostics_schema
+python3 -m pip install -e '.[dev]' && python3 -m unittest tests.test_diagnostics_schema tests.test_ast_schema
 ```
 
 ---

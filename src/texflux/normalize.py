@@ -373,7 +373,7 @@ def _module_guard(name: str) -> SpecialHandler:
             f"'!{name}' requires module compilation; use "
             "texflux.compile_with_map or the texflux CLI",
             node.span,
-            code="M030",
+            code="M029",
         )
 
     return handler

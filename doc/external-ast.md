@@ -64,12 +64,13 @@ commandの`body`、引数のlayoutとvalueの不一致などを拒否する。
 source IDの読み込み順・一意性・参照先の存在、spanの開始と終了の順序、
 実ファイルとハッシュの一致はJSON Schemaでは検証しないため、consumer側で確認する。
 
-スキーマのテストは開発用の`jsonschema`をインストールした環境で実行できる。
-TeXFluxの実行時依存には追加していない。未インストール時はこのテストのみskipする。
+スキーマのテストは開発用の`jsonschema`をインストールした環境で実行できる。`pyproject.toml`の
+dev extra（`.[dev]`）がこれを宣言し、TeXFluxの実行時依存には追加していない。未インストール時は
+このテストのみskipする。
 
 ```bash
-python -m pip install jsonschema
-PYTHONPATH=src python -m unittest tests.test_ast_schema
+python -m pip install -e '.[dev]'
+python -m unittest tests.test_ast_schema
 ```
 
 トップレベルは`format`、`version`、`producer`、`root`、`sources`、`document`。

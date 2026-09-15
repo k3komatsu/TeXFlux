@@ -86,11 +86,14 @@
       "type": "object",
       "required": ["severity", "kind", "code", "message", "span", "related"],
       "properties": {
-        "severity": {"enum": ["error", "warning"]},
+        "severity": {
+          "enum": ["error", "warning"],
+          "description": "Closed set. v1 producers emit only \"error\"; \"warning\" is reserved."
+        },
         "kind": {
           "type": "string",
           "pattern": "^[a-z]+$",
-          "description": "Open category set (parse, validation, directive, macro, module, render); consumers must accept unknown values."
+          "description": "Open category set (parse, validation, directive, macro, module); consumers must accept unknown values."
         },
         "code": {
           "type": "string",

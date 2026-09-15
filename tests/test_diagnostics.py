@@ -9,6 +9,7 @@ from texflux import (
     Diagnostic,
     DiagnosticReport,
     FlagError,
+    LoadedSource,
     RelatedLocation,
     Severity,
     compile_text,
@@ -24,7 +25,6 @@ from texflux.errors import (
     TeXFluxError,
     ValidationError,
 )
-from texflux.render import RenderWarning
 
 from .support import TempDirTestCase
 
@@ -58,10 +58,17 @@ class ErrorModelTests(unittest.TestCase):
         self.assertEqual(error.diagnostic(), line)
         self.assertEqual(str(error), line)
 
-    def test_a_warning_prints_the_same_shape_as_an_error(self):
-        warning = RenderWarning("w", span(), "W001")
-        self.assertEqual(warning.kind, "render")
-        self.assertEqual(warning.diagnostic(), "f.tfx:1:2: warning: w [W001]")
+    def test_the_reserved_warning_severity_prints_and_does_not_block(self):
+        # No site produces one. The value stays in the published report
+        # format, so how it prints and that it leaves a report ok are pinned.
+        diagnostic = Diagnostic(Severity.WARNING, "texflux", "X001", "w", span())
+        report = DiagnosticReport(
+            (LoadedSource("f.tfx", "/w/f.tfx", b""),),
+            (diagnostic,),
+        )
+
+        self.assertEqual(diagnostic.line(), "f.tfx:1:2: warning: w [X001]")
+        self.assertTrue(report.ok)
 
     def test_a_code_is_required(self):
         # A construction that forgets one must fail loudly rather than
@@ -143,7 +150,7 @@ class DiagnoseTests(TempDirTestCase):
         self.write("main.tfx", "!import{missing.tfx}\n")
         diagnostic = self.only()
 
-        self.assertEqual(diagnostic.code, "M028")
+        self.assertEqual(diagnostic.code, "M027")
         self.assertTrue(diagnostic.span.file.endswith("main.tfx"))
         self.assertEqual(self.relative(self.report()), ["main.tfx"])
 
@@ -152,7 +159,7 @@ class DiagnoseTests(TempDirTestCase):
         self.write("main.tfx", "!import{bad.tfx}\n")
         diagnostic = self.only()
 
-        self.assertEqual(diagnostic.code, "M028")
+        self.assertEqual(diagnostic.code, "M027")
         self.assertEqual(self.relative(self.report()), ["main.tfx"])
 
     def test_a_dropped_conditional_imports_nothing_and_lists_nothing(self):
@@ -463,19 +470,6 @@ class SerializeTests(TempDirTestCase):
             },
         )
         self.assertEqual(diagnostic["related"], [])
-
-    def test_a_render_warning_still_maps_to_a_warning_diagnostic(self):
-        # No site raises one today. The mapping stays because 'warning' is
-        # part of the published report format that consumers read.
-        span = SourceSpan("main.tfx", SourcePosition(1, 1), SourcePosition(1, 2))
-        diagnostic = Diagnostic.from_warning(
-            RenderWarning("careful", span, code="W002")
-        )
-
-        self.assertIs(diagnostic.severity, Severity.WARNING)
-        self.assertEqual(diagnostic.kind, "render")
-        self.assertEqual(diagnostic.code, "W002")
-        self.assertEqual(diagnostic.span, span)
 
     def test_related_locations_index_the_source_table(self):
         self.write("broken.tfx", "!defmacro{m}{x}{x}::\n    A\n")

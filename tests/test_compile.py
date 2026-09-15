@@ -209,7 +209,6 @@ class CompileTests(unittest.TestCase):
                 result = compile_with_map(source, filename="c.tfx")
                 body = source.split("- ", 1)[1].rstrip("\n")
                 self.assertEqual(result.text, f"\\foo{{%\\n{body}\\n}}\\n".replace("\\n", "\n"))
-                self.assertEqual(result.rendered.warnings, ())
 
     def test_a_comment_keeps_the_next_argument_off_an_explicit_group(self):
         # An explicit group's delimiters are the author's, so only where the
@@ -234,13 +233,11 @@ class CompileTests(unittest.TestCase):
         )
 
         self.assertEqual(result.text, "\\cmd{a\n% foo}\n{%\ntail\n}\n")
-        self.assertEqual(result.rendered.warnings, ())
 
     def test_an_escaped_percent_is_not_a_comment(self):
         result = compile_with_map("\\foo:::\n    - 50\\% off\n", filename="c.tfx")
 
         self.assertEqual(result.text, "\\foo{%\n50\\% off\n}\n")
-        self.assertEqual(result.rendered.warnings, ())
 
     def test_environment_sequence_uses_last_value_as_body(self):
         self.assertEqual(
@@ -701,7 +698,7 @@ class CompileTests(unittest.TestCase):
         )
 
     def test_a_bare_marker_writes_an_empty_argument(self):
-        # A marker with nothing under it at all is the error P038 and P031
+        # A marker with nothing under it at all is the error P037 and P030
         # rule out; a bare '-' is an entry the author wrote on purpose.
         self.assertEqual(compile_text("\\foo:::\n    -\n"), "\\foo{%\n}\n")
         with self.assertRaisesRegex(ParseError, "sequence suites require at least one"):

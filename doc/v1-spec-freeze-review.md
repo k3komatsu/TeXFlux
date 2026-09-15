@@ -17,8 +17,8 @@
 
 **実装状況（2026-09-15）:** 8 章と 9 章の決定は `feature/colon-suffix-and-brace-layout`
 ブランチで実装済みである。9 章の中括弧配置は実装後に 9.0 節のとおり一律化した。パーサから先読み機構を削除し、レンダラの中括弧配置を変え、
-examples・golden・テスト・仕様・文書を移行した。診断は P038 を追加し、W001 / W002 は
-退役させた（`doc/diagnostics.md` §2.7）。残る作業は 7 章の 3・5 番（文書への帰結の追記と
+examples・golden・テスト・仕様・文書を移行した。診断は P037（実装時は P の 38 番。v1 前の
+欠番圧縮で改番した。`doc/diagnostics.md` §2.1）を追加し、W001 / W002 は退役させた。残る作業は 7 章の 3・5 番（文書への帰結の追記と
 README のエンジン明記）と 4 番（診断の hint）である。
 
 要点は次のとおりである。
@@ -259,7 +259,7 @@ This continuation line is indented.
 と提案した。これは同じ字下げが文脈によって「子」と「装飾」を意味し分ける規則であり、TeXFlux が
 排除している暗黙の判断そのものである。
 
-初版が「書きたい形」とした入力（P025 になる）:
+初版が「書きたい形」とした入力（P024 になる）:
 
 ~~~text
 @itemize:
@@ -307,7 +307,7 @@ TeX 側の入れ子手段はそのまま使える。outlines の `\1` / `\2` を
 
 1. `doc/dsl.md` 8 章に「`\item` はコンテナではない。入れ子の環境は兄弟として同じ字下げに置く」
    という理由を一文添える。契約どおりの挙動でも、理由が書かれていれば予測が立つ。
-2. この位置で出る P025 に、構造行は suite の基準位置に置くこと、生 TeX 行は子を持たないことを
+2. この位置で出る P024 に、構造行は suite の基準位置に置くこと、生 TeX 行は子を持たないことを
    hint として載せる。出力は変わらず情報だけが増える。`\item X:` + ブロックで出ていた P011 は、
    8 章の変更後は `\item X:` が常に生 TeX になるため対象外になる。
 
@@ -335,15 +335,15 @@ revealed later
 
 | listing 内に書いた行 | 出た診断 | 言語が用意している書き方 |
 | --- | --- | --- |
-| `@property`（base 位置） | `P026` environment directives require a suite marker | `@@property`、`!\| @property`、raw mode |
-| `@property`（深い位置） | `P025` invalid structural indentation | 同上 |
+| `@property`（base 位置） | `P025` environment directives require a suite marker | `@@property`、`!\| @property`、raw mode |
+| `@property`（深い位置） | `P024` invalid structural indentation | 同上 |
 | `!important` | `D001` unknown special directive | `!!important`、`!\| !important`、raw mode |
-| Makefile のタブ | `P023` tab characters are not allowed | `!\| ` か `!BEGIN_RAW_MODE` |
+| Makefile のタブ | `P022` tab characters are not allowed | `!\| ` か `!BEGIN_RAW_MODE` |
 
 いずれもエラーで止まっており、契約は守られている。足りないのは、その位置で使える escape を診断が
 示さないことである。意図を推定する必要はなく、言語が定義している書き方を列挙するだけでよい。
 
-**推奨:** この 4 コードと F4 の P011 / P025 に、該当位置で使える escape（`@@` / `!!` / `!| ` /
+**推奨:** この 4 コードと F4 の P011 / P024 に、該当位置で使える escape（`@@` / `!!` / `!| ` /
 `!BEGIN_RAW_MODE`）を hint として付ける。RelatedLocation の仕組みがすでにあるので、hint 文字列を
 diagnostics に足す変更は小さい。
 
@@ -401,14 +401,15 @@ luatexja に置き換える」と明記する。あわせて `$$ … $$` は `\[
 3. ✅ `doc/dsl.md` 15.1 節と README の FAQ に、生成レイアウトが TeX に渡す空白トークンと
    空行 = `\par` の帰結、および著者側の書き方（最終行の `%`、`@{RAW%}`、`+ {...}`、生 TeX）を
    明記した。`content.tfx` の `\scalebox` 8 か所の最終行に `%` を付けた（F1、F5）。
-4. ✅ P011 / P023 / P025 / P026 / D001 に、その位置で使える escape の hint を付けた（F4、F6）。
+4. ✅ P011 / P022 / P024 / P025 / D001 に、その位置で使える escape の hint を付けた（F4、F6）。
 5. ✅ README にエンジン（`-latex=uplatex` と `.latexmkrc`、lualatex の代替）を明記し、
    `$$ … $$` を `\[ … \]` に直した。README のクイックスタートは記載どおりビルドでき、
    `synctex view` が `.tfx` に解決することを確認した（F8）。
 
-残る検討事項は、警告チャネル（`RenderWarning` / `Severity.WARNING`）を診断 API に残すか
-削除するかである。現在この種別を生成する箇所は無く、`severity: "warning"` は公開済みの
-`texflux-diagnostics` v1 スキーマの一部であるため残してある（`doc/diagnostics.md` §2.7）。
+警告チャネルの扱いは決着した。`RenderWarning`・`RenderedDocument.warnings`・`MappedEmitter.warn`・
+`Diagnostic.from_warning` は生成箇所が無いまま残す理由が無く、v1 前に削除した。`Severity.WARNING` と
+スキーマの `severity` 列挙値 `"warning"` は予約値として残し、将来 warning を足しても version bump を
+要しないようにした。退役していた W001 / W002 は W の文字ごと廃止した（`doc/diagnostics.md` §1.3・§2.1）。
 
 `examples/content.tfx` に残る他のサンプル品質の指摘（`\def\SlideTitle` を `\newcommand` へ、
 `align*` 最終行の `\\`、`\centering::`）は、著者の文書の意図に関わるため変更していない。
@@ -491,7 +492,7 @@ luatexja に置き換える」と明記する。あわせて `$$ … $$` は `\[
 
 ### 8.5 実装時に守る条件
 
-1. `\cmd::` に本文が無いものはエラーにする（sequence の P031 と同じ扱い）。空引数は生 TeX の
+1. `\cmd::` に本文が無いものはエラーにする（sequence の P030 と同じ扱い）。空引数は生 TeX の
    `\foo{}` で書く。これで `\texttt{std}::` 単独が黙って `\texttt{std}{}` になる新しい silent case
    は生まれない。
 2. `::` / `:::` で終わる `\` 行は、ヘッダー走査に失敗しても生 TeX に落とさずエラーにする。現行の
@@ -499,7 +500,7 @@ luatexja に置き換える」と明記する。あわせて `$$ … $$` は `\[
 3. 削除する機構: `_suite_follows`、`_scan_structural_header` の `single_colon` 分岐、`\foo(x):` の
    特例 `_has_immediate_command_binding`、`- ` payload の先読み。`_has_top_level_trailing_colon` は
    `::` / `:::` 用に一般化して残す。
-4. 診断の文言を更新する（P026 の「':' or '::'」など）。診断コードは据え置く。
+4. 診断の文言を更新する（P025 の「':' or '::'」など）。診断コードは据え置く。
 5. golden: `trailing-colon` を「単独コロンは常に生 TeX」の検証に書き換え、expl3 の回帰テスト
    （`\group_begin:` + 字下げが生 TeX のまま通ること）を足す。
 6. 文書: 規範仕様 §0 の suite model、§3、§5.2、§16（単独コロン suffix は構文ではない）、§17 文法、
@@ -523,7 +524,7 @@ luatexja に置き換える」と明記する。あわせて `$$ … $$` は `\[
 
 - F2 は本変更で解消する。5 章の (A) (B) は不要になる。
 - F4 の残る推奨のうち、`\item X:` + ブロックに対する P011 の hint は不要になる（常に生 TeX）。
-  P025 の hint は残る。
+  P024 の hint は残る。
 - F1、F3、F5、F6、F8 は影響を受けない。
 
 ## 9. 決定事項（追加）: 生成する中括弧の配置
@@ -614,7 +615,8 @@ pdflatex での実測（`a{ … \small\color{gray} … x … }b` の hbox 幅）
   渡す空白トークン」を 1 段落で明記する。
 - `doc/dsl.md` 15 章と README の FAQ: 同内容と、著者側の書き方（最終行の `%`、`@{RAW%}`、
   `+ {...}`、生 TeX）。
-- `doc/diagnostics.md`: W001 / W002 を退役として記録する。
+- `doc/diagnostics.md`: W001 / W002 を退役として記録する（→ その後 v1 前に W 種別ごと廃止したため、
+  現在の表には載せていない。上記の警告チャネルの段落を参照）。
 - golden と `examples/*.tex` は全件再生成になる。差分が `{` → `{%` と W002 の 1 件だけであることを
   diff で確認する。
 

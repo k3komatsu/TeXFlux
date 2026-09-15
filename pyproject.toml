@@ -9,6 +9,10 @@ description = "A TeX-first indentation-based preprocessor for structural LaTeX b
 requires-python = ">=3.11"
 dependencies = []
 
+# Development only: the two JSON Schema test suites skip without it.
+[project.optional-dependencies]
+dev = ["jsonschema"]
+
 [project.scripts]
 texflux = "texflux.cli:main"
 

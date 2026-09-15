@@ -28,7 +28,7 @@ def diagnostic_line(
     message: str,
     code: str,
 ) -> str:
-    """The one line every diagnostic prints, errors and warnings alike."""
+    """The one line every diagnostic prints."""
 
     return f"{span.location}: {label}: {message} [{code}]"
 

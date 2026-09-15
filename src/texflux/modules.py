@@ -588,10 +588,13 @@ def load_standard_macros(
             registry,
         )
         if imports:
-            raise ModuleError(
-                "the bundled standard macro module imports no other module",
-                imports[0].span,
-                code="M022",
+            # Not a diagnostic: the prelude ships with TeXFlux, so a stray
+            # import there is a broken install, which no document can fix.
+            # It is a RuntimeError, so the except below does not re-wrap it.
+            raise InternalError(
+                "internal error: bundled prelude is invalid: "
+                f"{imports[0].span.location}: the bundled standard macro "
+                "module imports no other module"
             )
     except (TeXFluxError, OSError, UnicodeError) as error:
         raise InternalError(
@@ -641,7 +644,7 @@ class _ImportResolver:
                 "!import produces content: it does not accept a suite and "
                 "cannot wrap a '>>' payload",
                 node.span,
-                code="M023",
+                code="M022",
             )
 
         path_group: Argument | None = None
@@ -654,20 +657,20 @@ class _ImportResolver:
                     raise ModuleError(
                         "!import requires exactly one '{path}' group",
                         node.span,
-                        code="M024",
+                        code="M023",
                     )
                 path_group = group
             else:
                 raise ModuleError(
                     "!import does not accept '[...]' or '<...>' groups",
                     group.span,
-                    code="M025",
+                    code="M024",
                 )
         if path_group is None:
             raise ModuleError(
                 "!import requires exactly one '{path}' group",
                 node.span,
-                code="M026",
+                code="M025",
             )
 
         display = resolve_module_path(
@@ -689,7 +692,7 @@ class _ImportResolver:
                 raise ModuleError(
                     "content import cycle: " + self._cycle(target),
                     node.span,
-                    code="M027",
+                    code="M026",
                 )
             imported = self._session.compile_content(
                 target,
@@ -804,7 +807,7 @@ class CompilationSession:
             raise ModuleError(
                 f"cannot read module '{display}': {error}",
                 span,
-                code="M028",
+                code="M027",
             ) from error
         return self._register(display, data, text)
 
@@ -917,7 +920,7 @@ class CompilationSession:
                     f"'!{child.name}' is not defined in {definition.span.file} "
                     "and is not available through its own !macroimport",
                     child.span,
-                    code="M029",
+                    code="M028",
                 )
 
     # -- content modules ---------------------------------------------------

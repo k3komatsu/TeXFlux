@@ -33,7 +33,7 @@ for f in basic structured stacked-items macros modules content; do
 done
 ```
 
-JSON Schema の検証テストは開発用の `jsonschema` を入れた環境でのみ走り、未導入なら skip する。
+JSON Schema の検証テストは開発用の `jsonschema`（dev extra `.[dev]`）を入れた環境でのみ走り、未導入なら skip する。
 LaTeX 連携のテストは `pdflatex` / `synctex` を検出して skip する。
 
 ## 意図的に見送った項目

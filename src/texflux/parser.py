@@ -492,13 +492,11 @@ class HeaderScanner:
                 position += 1
 
         name = self.text[name_start:position]
-        if not name:
-            raise self._error("invalid structural name", name_start, code="P018")
         if prefix == "!" and name in RAW_MODE_NAMES:
             raise self._error(
                 f"'!{name}' must stand alone on its own line",
                 segment_start,
-                code="P019",
+                code="P018",
             )
 
         groups: list[Argument] = []
@@ -522,18 +520,18 @@ class HeaderScanner:
                 raise self._error(
                     "a special's '(...)' list must follow its groups",
                     position,
-                    code="P020",
+                    code="P019",
                 )
             if binding is not None and self.text[position] == BINDING_OPENER:
                 raise self._error(
                     "a special accepts at most one '(...)' list",
                     position,
-                    code="P021",
+                    code="P020",
                 )
             raise self._error(
                 "unexpected token after structural name or group",
                 position,
-                code="P022",
+                code="P021",
             )
 
         segment_span = self._span(segment_start, position)
@@ -628,7 +626,7 @@ class _Parser:
                     SourcePosition(line.number, tab + 1),
                     SourcePosition(line.number, tab + 2),
                 ),
-                code="P023",
+                code="P022",
             )
 
     def parse(self) -> Document:
@@ -803,7 +801,7 @@ class _Parser:
                 f"'{RAW_LINE_MARKER}' must be followed by one space"
                 " or end the line",
                 self._line_span(line, marker_column, RAW_LINE_MARKER),
-                code="P024",
+                code="P023",
             )
         return tail[1:]
 
@@ -837,7 +835,7 @@ class _Parser:
             "invalid structural indentation; a structural line sits at its "
             "suite base, and a literal '@' or '!' line is written '@@' or '!!'",
             self._line_span(line, line.indent + 1),
-            code="P025",
+            code="P024",
         )
 
     def _scan_command_header(
@@ -897,7 +895,7 @@ class _Parser:
                 "environment directives require a suite marker '::' or "
                 "':::'; a literal '@' line is written '@@'",
                 segment.span,
-                code="P026",
+                code="P025",
             )
         next_index = self._next_nonblank(self.index)
         if next_index is not None and self.lines[next_index].indent >= base + 4:
@@ -905,7 +903,7 @@ class _Parser:
             raise ParseError(
                 "indented lines require a suite marker '::' or ':::'",
                 self._line_span(line, line.indent + 1),
-                code="P027",
+                code="P026",
             )
 
     def _structural_node(
@@ -923,14 +921,14 @@ class _Parser:
                     raise ParseError(
                         "stack separator needs a following segment",
                         result.continuation_span,
-                        code="P028",
+                        code="P027",
                     )
                 line = self.lines[self.index]
                 if line.blank or line.indent != base:
                     raise ParseError(
                         "stack continuation requires the next line at the same indentation",
                         self._line_span(line, line.indent + 1),
-                        code="P029",
+                        code="P028",
                     )
                 line_span = self._header_span(line, base)
                 result = HeaderScanner(line.text[base:], span=line_span).scan()
@@ -980,14 +978,14 @@ class _Parser:
                         self.lines[next_index],
                         self.lines[next_index].indent + 1,
                     ),
-                    code="P030",
+                    code="P029",
                 )
             suite = self._sequence_suite(suite_base, header_span)
             if not suite.nodes and _requires_value(result):
                 raise ParseError(
                     "sequence suites require at least one '-' or '+' value entry",
                     header_span,
-                    code="P031",
+                    code="P030",
                 )
             return suite
         if (
@@ -1002,7 +1000,7 @@ class _Parser:
             raise ParseError(
                 "command block suites require an indented body",
                 header_span,
-                code="P038",
+                code="P037",
             )
         return Block((), header_span)
 
@@ -1023,14 +1021,14 @@ class _Parser:
                 raise ParseError(
                     "sequence entries must start at suite indentation",
                     self._line_span(line, line.indent + 1),
-                    code="P032",
+                    code="P031",
                 )
             marker = line.text[base]
             if marker not in "-+":
                 raise ParseError(
                     "sequence suites require '-' or '+' value entries",
                     self._line_span(line, base + 1),
-                    code="P033",
+                    code="P032",
                 )
             entries.append(self._sequence_entry(line, base, marker))
         return Block(tuple(entries), _block_span(boundary, entries))
@@ -1116,7 +1114,7 @@ class _Parser:
                 "explicit sequence entries require one '{...}', '[...]', "
                 "or '<...>' group",
                 payload_span,
-                code="P034",
+                code="P033",
             )
 
         nodes: list[Node] = [RawTex(payload, payload_span)]
@@ -1131,7 +1129,7 @@ class _Parser:
                 raise ParseError(
                     "explicit sequence entries require opaque raw text",
                     node.span,
-                    code="P035",
+                    code="P034",
                 )
             raw_nodes.append(node)
         text = "\n".join(node.text for node in raw_nodes)
@@ -1143,13 +1141,13 @@ class _Parser:
             raise ParseError(
                 "explicit sequence entries require one balanced group",
                 error.span,
-                code="P036",
+                code="P035",
             ) from None
         if any(char != " " for char in text[end:]):
             raise ParseError(
                 "explicit sequence entries require exactly one group",
                 payload_span,
-                code="P037",
+                code="P036",
             )
 
         kept = self._truncate_raw_nodes(raw_nodes, end)

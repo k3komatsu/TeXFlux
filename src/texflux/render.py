@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
 from .ast import (
     Argument,
@@ -19,7 +19,6 @@ from .ast import (
     SourceSpan,
     SourceText,
 )
-from .errors import diagnostic_line
 from .syntax import blank, is_escaped
 
 
@@ -44,25 +43,9 @@ class RenderedFragment:
 
 
 @dataclass(frozen=True, slots=True)
-class RenderWarning:
-    """A rendering hazard the author should look at, not a failure."""
-
-    #: The category this diagnostic reports, beside the error kinds.
-    kind: ClassVar[str] = "render"
-
-    message: str
-    span: SourceSpan
-    code: str
-
-    def diagnostic(self) -> str:
-        return diagnostic_line(self.span, "warning", self.message, self.code)
-
-
-@dataclass(frozen=True, slots=True)
 class RenderedDocument:
     text: str
     fragments: tuple[RenderedFragment, ...]
-    warnings: tuple[RenderWarning, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +73,6 @@ class MappedEmitter:
     def __init__(self) -> None:
         self._parts: list[str] = []
         self._fragments: list[RenderedFragment] = []
-        self._warnings: list[RenderWarning] = []
         self._position = SourcePosition(1, 1)
 
     @property
@@ -173,11 +155,7 @@ class MappedEmitter:
         return RenderedDocument(
             "".join(self._parts),
             tuple(self._fragments),
-            tuple(self._warnings),
         )
-
-    def warn(self, message: str, span: SourceSpan, *, code: str) -> None:
-        self._warnings.append(RenderWarning(message, span, code=code))
 
 
 def _emit_text(
@@ -373,7 +351,6 @@ __all__ = [
     "LoadedSource",
     "MappedEmitter",
     "RenderRole",
-    "RenderWarning",
     "RenderedDocument",
     "RenderedFragment",
     "render",
