@@ -7,6 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/D-LDC%201.43+-b03931.svg" alt="D (LDC 1.43+)">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen.svg" alt="Zero Dependencies">
   <img src="https://img.shields.io/badge/SyncTeX-supported-orange.svg" alt="SyncTeX Supported">
 </p>
@@ -167,7 +168,10 @@ TeXFlux では **1 ファイル = 1 モジュール**です。
 - SyncTeX / `.tfxmap` は複数ソースに対応しており、生成された行は**それを実際に書いたファイル**に対応づきます。
 
 ### 5. 🪶 外部依存ゼロ（Zero Dependencies）
-Python 3.11 以上の標準ライブラリのみで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
+Python 3.11 以上の標準ライブラリだけで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
+
+同じ言語の D 実装も同梱しています。こちらも標準ライブラリ（Phobos）だけで動き、単一の実行ファイルにビルドできます。
+出力は Python 実装と **1 バイトも違わない**ことを機械的に検証しています（[D 実装](#-d-実装)）。
 
 ---
 
@@ -181,6 +185,8 @@ git clone https://github.com/k3komatsu/TeXFlux.git
 cd TeXFlux
 pip install .
 ```
+
+Python を用意したくない場合は、D 実装を単一の実行ファイルにビルドできます（[D 実装](#-d-実装)）。
 
 ### 2. `.tfx` ファイルの作成
 
@@ -564,9 +570,34 @@ TeXFlux は生成した中括弧を `{%` で開くので、開き側の改行が
 
 ---
 
+## 🔨 D 実装
+
+同じ言語仕様の D 実装が `source/texflux/` にあります。[LDC](https://github.com/ldc-developers/ldc) 1.43 以上と dub でビルドします。
+
+```bash
+dub build --build=release
+./bin/texflux compile slides.tfx -o slides.tex
+```
+
+サブコマンドとオプションは Python 実装と同じです。生成される `.tex`、`.tfxmap`、AST の JSON、診断の JSON、
+リマップ後の `.synctex`、そして診断行と終了コードまで、すべて Python 実装とバイト単位で一致します。
+規範はあくまで `texflux_tex_first_dsl_v1_spec.md` で、Python 実装はその実行可能な参照として残しています。
+
+---
+
 ## 🛠️ 開発・テスト
 
 ```bash
-# テストスイートの実行
+# Python 実装のテストスイート（D ソースの診断コード検査を含む）
 python3 -m unittest discover
+
+# D 実装のテストスイート（ゴールデンファイルの照合を含む）
+dub test
+
+# 2 つの実装を同じ入力で走らせて出力を突き合わせる
+dub build && dub build -c dump-syntax && dub build -c render-tex
+python3 tests/conformance/run.py
 ```
+
+`tests/conformance/run.py` は、リポジトリ内の全ドキュメントと Python テストスイート中の全ソース断片を
+コーパスとして、両実装の終了コード・標準出力・標準エラー・生成ファイルを比較します。

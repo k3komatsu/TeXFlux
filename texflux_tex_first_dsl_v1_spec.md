@@ -5,9 +5,14 @@
 This document is normative for the TeXFlux v1 language. The implementation,
 tests, examples, README, and doc/dsl.md must agree with it.
 
-TeXFlux is a Python 3.11+ TeX-first preprocessor. It preserves raw TeX and
-provides only structural syntax for containers, values, and source
-provenance. It does not parse TeX or infer command/environment signatures.
+TeXFlux is a TeX-first preprocessor. It preserves raw TeX and provides only
+structural syntax for containers, values, and source provenance. It does not
+parse TeX or infer command/environment signatures.
+
+Two implementations are governed by this document: the Python 3.11+ reference
+implementation, and a D implementation that must produce the same bytes for
+the same input. Where this document is silent, the reference implementation
+decides, and tests/conformance/run.py is what holds the other to it.
 
 The fixed mental model is:
 

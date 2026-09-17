@@ -6,3 +6,7 @@ __pycache__/
 AGENTS.md
 build/
 *.egg-info/
+examples/html_slide/
+bin/
+.dub/
+*.lst

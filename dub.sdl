@@ -1,0 +1,50 @@
+name "texflux"
+description "A TeX-first indentation-based preprocessor for structural LaTeX boilerplate"
+targetType "executable"
+targetName "texflux"
+targetPath "bin"
+mainSourceFile "source/texflux/app.d"
+
+// The bundled standard flow macros are source, not documentation: the D
+// compiler embeds the very file the Python implementation reads as a package
+// resource, so both implementations share one prelude.
+stringImportPaths "src/texflux"
+
+configuration "application" {
+	targetType "executable"
+}
+
+configuration "library" {
+	targetType "library"
+	excludedSourceFiles "source/texflux/app.d"
+}
+
+configuration "unittest" {
+	targetType "executable"
+	targetName "texflux-test"
+	sourcePaths "source" "tests/d"
+	importPaths "source" "tests/d"
+}
+
+// Not part of the product: it prints the shape of a parsed tree so that the
+// two implementations can be compared right after parsing, where a difference
+// is cheapest to understand. tests/conformance/run.py drives it.
+configuration "dump-syntax" {
+	targetType "executable"
+	targetName "dump-syntax"
+	mainSourceFile "tools/dump_syntax.d"
+	sourcePaths "source" "tools"
+	importPaths "source" "tools"
+	excludedSourceFiles "source/texflux/app.d" "tools/render_tex.d"
+}
+
+// Also a comparison instrument: it renders through the pipeline that needs no
+// compilation session, so the two implementations can be diffed on output.
+configuration "render-tex" {
+	targetType "executable"
+	targetName "render-tex"
+	mainSourceFile "tools/render_tex.d"
+	sourcePaths "source" "tools"
+	importPaths "source" "tools"
+	excludedSourceFiles "source/texflux/app.d" "tools/dump_syntax.d"
+}

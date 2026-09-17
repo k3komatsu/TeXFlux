@@ -16,6 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "texflux"
+PORTED_SOURCE = ROOT / "source" / "texflux"
 DESIGN = ROOT / "doc" / "diagnostics.md"
 
 #: Every tracked document that may cite a code: all of doc/, recursively,
@@ -38,6 +39,32 @@ BUILDERS = frozenset({
 })
 
 CODE = re.compile(r"^[PVDEM][0-9]{3}$")
+
+#: What builds a diagnostic in the D implementation. The five classes are
+#: constructed with ``new``; ``fail`` and ``expansionError`` are the two names
+#: given to a helper that builds one on its caller's behalf, as ``_error`` is
+#: here. All of them spell the code as the first argument, which is what makes
+#: them findable from here.
+PORTED_BUILDERS = frozenset({
+    "ParseError",
+    "ValidationError",
+    "DirectiveError",
+    "MacroExpansionError",
+    "ModuleError",
+    "fail",
+    "expansionError",
+})
+
+#: A call to one of those, up to and including its opening parenthesis. A
+#: class is always constructed with ``new``, and the helper is always thrown
+#: where it is called, so requiring one of those words is what separates a
+#: construction site from the declaration of the helper itself.
+_PORTED_CALL = re.compile(
+    r"(?:new|throw)\s+(" + "|".join(sorted(PORTED_BUILDERS)) + r")\s*\("
+)
+
+#: A unittest block, which demonstrates a diagnostic rather than raising one.
+_PORTED_UNITTEST = re.compile(r"(?<![A-Za-z0-9_])unittest\s*\{")
 
 #: The highest number each kind has ever used. A new diagnostic takes the
 #: next one and bumps this; a deleted one leaves its number behind as a gap,
@@ -122,6 +149,127 @@ def owned_codes():
             found.setdefault(value.value, []).append(
                 (file, line, first_message(node))
             )
+    return found
+
+
+def ported_arguments(text, opening):
+    """Split one D call's arguments, keeping strings and nesting intact."""
+
+    arguments = []
+    current = ""
+    depth = 0
+    index = opening
+    while index < len(text):
+        character = text[index]
+        if character in "\"`":
+            literal, index = ported_literal(text, index)
+            current += literal
+            continue
+        if character in "([{":
+            depth += 1
+        elif character in ")]}":
+            depth -= 1
+            if depth == 0:
+                arguments.append(current)
+                return arguments, index + 1
+        elif character == "," and depth == 1:
+            arguments.append(current)
+            current = ""
+            index += 1
+            continue
+        if depth >= 1 and not (depth == 1 and character == "("):
+            current += character
+        index += 1
+    return arguments, index
+
+
+def ported_literal(text, index):
+    """One D string literal, returned whole so a comma inside it is safe."""
+
+    quote = text[index]
+    end = index + 1
+    while end < len(text):
+        if text[end] == "\\" and quote == '"':
+            end += 2
+            continue
+        if text[end] == quote:
+            return text[index:end + 1], end + 1
+        end += 1
+    return text[index:], len(text)
+
+
+def ported_strings(argument):
+    """The literal parts of one argument, concatenated."""
+
+    parts = []
+    index = 0
+    while index < len(argument):
+        character = argument[index]
+        if character not in "\"`":
+            index += 1
+            continue
+        literal, index = ported_literal(argument, index)
+        body = literal[1:-1] if len(literal) >= 2 else ""
+        if literal.startswith('"'):
+            body = body.replace('\\"', '"').replace("\\\\", "\\")
+        parts.append(body)
+    return "".join(parts)
+
+
+def without_unittests(text):
+    """The source with its unittest blocks blanked out, newlines kept.
+
+    A D module keeps its tests beside the code they test, and one of them
+    builds a diagnostic to show what a chained one looks like. That is an
+    example rather than a construction site, so it must not be read as one.
+    Blanking rather than deleting keeps every remaining line number right.
+    """
+
+    for match in reversed(list(_PORTED_UNITTEST.finditer(text))):
+        opening = text.index("{", match.start())
+        depth = 0
+        index = opening
+        while index < len(text):
+            character = text[index]
+            if character in "\"`":
+                _, index = ported_literal(text, index)
+                continue
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    index += 1
+                    break
+            index += 1
+        body = text[match.start():index]
+        text = text[:match.start()] + re.sub(r"[^\n]", " ", body) + text[index:]
+    return text
+
+
+def ported_calls():
+    """Every D call that builds a diagnostic, with where it is written."""
+
+    for path in sorted(PORTED_SOURCE.rglob("*.d")):
+        text = without_unittests(path.read_text(encoding="utf-8"))
+        for match in _PORTED_CALL.finditer(text):
+            arguments, _ = ported_arguments(text, match.end() - 1)
+            line = text.count("\n", 0, match.start()) + 1
+            yield path.name, line, match.group(1), arguments
+
+
+def ported_codes():
+    """Each literal code the D implementation owns, with its message."""
+
+    found = {}
+    for file, line, _, arguments in ported_calls():
+        if not arguments:
+            continue
+        first = arguments[0].strip()
+        if not (first.startswith('"') and first.endswith('"')):
+            continue
+        message = ported_strings(arguments[1]) if len(arguments) > 1 else None
+        found.setdefault(first[1:-1], []).append((file, line, message))
     return found
 
 
@@ -256,6 +404,76 @@ class DiagnosticCodeTests(unittest.TestCase):
             if code not in published
         )
         self.assertEqual(stale, [])
+
+
+@unittest.skipUnless(
+    PORTED_SOURCE.is_dir(), "the D implementation is not present in this checkout"
+)
+class PortedDiagnosticCodeTests(unittest.TestCase):
+    """The same rules, applied to the D implementation.
+
+    A document that fails has to fail the same way whichever implementation
+    compiled it, so the two own exactly the same codes and say the same thing
+    at each of them. Where the code is raised is not compared: the published
+    table names a Python file, and the D module that raises it has a different
+    name and sometimes a different shape.
+    """
+
+    def test_every_diagnostic_is_built_with_a_code(self):
+        for file, line, name, arguments in ported_calls():
+            with self.subTest(where=f"{file}:{line}", builder=name):
+                self.assertTrue(arguments, f"{file}:{line}: {name}() has no arguments")
+                first = arguments[0].strip()
+                self.assertTrue(
+                    (first.startswith('"') and first.endswith('"'))
+                    or first in ("code", "error.code"),
+                    f"{file}:{line}: the first argument must be a literal code, "
+                    f"'code', or 'error.code'; got {first!r}",
+                )
+
+    def test_every_literal_code_is_well_formed(self):
+        for code, places in ported_codes().items():
+            with self.subTest(code=code):
+                self.assertRegex(code, CODE, f"{code} at {places[0]}")
+
+    def test_no_code_is_used_twice(self):
+        duplicated = {
+            code: [f"{file}:{line}" for file, line, _ in places]
+            for code, places in ported_codes().items()
+            if len(places) > 1
+        }
+        self.assertEqual(duplicated, {})
+
+    def test_both_implementations_own_the_same_codes(self):
+        # Neither may invent a code the other does not raise, and neither may
+        # quietly drop one: a document that fails in one has to fail the same
+        # way in the other.
+        self.assertEqual(sorted(ported_codes()), sorted(owned_codes()))
+
+    def test_every_kind_still_has_the_codes_it_had(self):
+        counted = Counter(code[0] for code in ported_codes())
+        self.assertEqual(
+            dict(sorted(counted.items())),
+            {"D": 1, "E": 19, "M": 29, "P": 37, "V": 43},
+        )
+
+    def test_each_code_says_what_its_published_row_says(self):
+        rows = published_rows()
+        for code, places in sorted(ported_codes().items()):
+            file, line, message = places[0]
+            if message is None:
+                continue
+            words = [word for word in skeleton(message).split(" ") if word]
+            opening = " ".join(words[:5])
+            if not opening:
+                continue
+            with self.subTest(code=code, where=f"{file}:{line}"):
+                self.assertIn(
+                    opening,
+                    skeleton(rows[code][1]),
+                    f"{code} at {file}:{line} says {opening!r}, which its "
+                    f"published row does not",
+                )
 
 
 if __name__ == "__main__":
