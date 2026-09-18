@@ -22,7 +22,7 @@ import std.ascii : isAlpha, isAlphaNum;
 import std.conv : to;
 import std.range : zip;
 import std.sumtype : get, has, match;
-import std.typecons : Nullable, nullable, Tuple, tuple;
+import std.typecons : Nullable, nullable;
 import std.utf : byCodeUnit;
 
 import texflux.ast;
@@ -247,7 +247,11 @@ void validateMacroForms(Document document)
 }
 
 /// A document with its definitions removed, and the macros it can now see.
-alias CollectedMacros = Tuple!(Document, "document", MacroEnvironment, "macros");
+struct CollectedMacros
+{
+    Document document;
+    MacroEnvironment macros;
+}
 
 /**
  * Strip the top-level definitions and validate their signatures.
@@ -341,7 +345,11 @@ MacroExpansionError expansionError(string code, string message, SourceSpan span,
 }
 
 /// A text field and its provenance, once interpolation has had its turn.
-private alias Interpolated = Tuple!(string, "text", Nullable!SourceText, "parts");
+private struct Interpolated
+{
+    string text;
+    Nullable!SourceText parts;
+}
 
 /**
  * Interpolate one field, unless its fragments are already final.
@@ -645,7 +653,7 @@ private struct Expander
         auto values = readValues(node, frame);
         const callSpan = retarget(node.span, frame);
         auto bound = bind(node, macro_, values, frame);
-        auto inner = new Frame(macro_, callSpan, bound[0], bound[1], chain);
+        auto inner = new Frame(macro_, callSpan, bound.values, bound.sequences, chain);
         return block(macro_.template_, inner).nodes;
     }
 
@@ -683,7 +691,13 @@ private struct Expander
         return values;
     }
 
-    private Tuple!(Value[string], Value[][string]) bind(SpecialInvocation node,
+    private struct BoundValues
+    {
+        Value[string] values;
+        Value[][string] sequences;
+    }
+
+    private BoundValues bind(SpecialInvocation node,
             MacroDefinition macro_, Value[] values, Frame* frame)
     {
         auto rest = macro_.rest;
@@ -697,6 +711,6 @@ private struct Expander
         Value[][string] sequences;
         if (!rest.isNull)
             sequences[rest.get.name] = values[required .. $];
-        return tuple(bound, sequences);
+        return BoundValues(bound, sequences);
     }
 }

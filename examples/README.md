@@ -11,7 +11,7 @@
 | 入力ファイル (`.tfx`) | 変換結果 (`.tex`) | 主な見どころ・解説 |
 | :--- | :--- | :--- |
 | [basic.tfx](basic.tfx) | [basic.tex](basic.tex) | **最小限の基本構成**: 生の TeX、`@frame` 環境、`@itemize` による箇条書き、Beamer オーバーレイ指定（`<2->[A]`） |
-| [structured.tfx](structured.tfx) | [structured.tex](structured.tex) | **構造化引数と中括弧**: 複数引数（シーケンスモード `::` の `-` / `+`）、ブロックモード（`:`）、リテラル中括弧コンテナ（`@{...}`） |
+| [structured.tfx](structured.tfx) | [structured.tex](structured.tex) | **構造化引数と中括弧**: 複数引数（シーケンスモード `:::` の `-` / `+`）、ブロックモード（`::`）、リテラル中括弧コンテナ（`@{...}`） |
 | [stacked-items.tfx](stacked-items.tfx) | [stacked-items.tex](stacked-items.tex) | **パイプライン合成とネスト**: `>>` による1行の環境連結と、多重にネストした箇条書きリスト |
 | [macros.tfx](macros.tfx) | [macros.tex](macros.tex) | **構造マクロ (`!defmacro`)**: ラッパーマクロ、2引数マクロ、可変長引数（`!each`）マクロの実例 |
 | [content.tfx](content.tfx) | [content.tex](content.tex) | **学術発表の実践コード**: 実際の Beamer スライド（1000行超）を TeXFlux に移植した実践サンプル |

@@ -25,7 +25,7 @@ import std.conv : to;
 import std.path : buildNormalizedPath, dirName, isAbsolute;
 import std.string : indexOf;
 import std.sumtype : get, has, match;
-import std.typecons : Nullable, Tuple;
+import std.typecons : Nullable;
 
 import texflux.ast;
 import texflux.canonical : builtinDirectives, canonicalize, DirectiveRegistry;
@@ -384,7 +384,11 @@ private MacroImport readMacroImport(SpecialInvocation node, ref SourceSpan[strin
 }
 
 /// A document with its macro imports removed, and the imports themselves.
-alias ResolvedMacroImports = Tuple!(Document, "document", MacroImport[], "imports");
+struct ResolvedMacroImports
+{
+    Document document;
+    MacroImport[] imports;
+}
 
 /// Strip the top-level macro imports and resolve their paths.
 ResolvedMacroImports resolveMacroImports(Document document, string importer)
@@ -436,7 +440,11 @@ MacroEnvironment mergeImports(MacroEnvironment base, MacroImport[] imports,
 }
 
 /// One validated macro module: the macros it defines, and what it imports.
-alias CollectedMacroModule = Tuple!(MacroEnvironment, "macros", MacroImport[], "imports");
+struct CollectedMacroModule
+{
+    MacroEnvironment macros;
+    MacroImport[] imports;
+}
 
 /**
  * Validate one parsed macro module and read its own macros and imports.
@@ -762,15 +770,13 @@ final class CompilationSession
             if (macroImport.path !in importedFrom)
                 importedFrom[macroImport.path] = macroImport.span;
 
-            MacroEnvironment own;
             MacroImport[] imports;
             importing(macroImport.path, {
                 auto source = load(macroImport.display, macroImport.span);
                 auto collected = collectMacroModule(source.document, source.display,
                         source.path, registry, standard.keys);
-                own = collected.macros;
                 imports = collected.imports;
-                publicMacros[source.path] = own;
+                publicMacros[source.path] = collected.macros;
                 moduleImports[source.path] = imports;
             });
             pending ~= imports;

@@ -7,6 +7,7 @@
  */
 module texflux.app;
 
+import std.array : appender;
 import std.stdio : stdin, stdout, stderr;
 
 import texflux.cli : CommandStreams, run;
@@ -17,10 +18,10 @@ int main(string[] args)
     streams.write = (const(ubyte)[] bytes) { stdout.rawWrite(bytes); };
     streams.writeError = (const(ubyte)[] bytes) { stderr.rawWrite(bytes); };
     streams.readInput = () {
-        immutable(ubyte)[] data;
+        auto data = appender!(immutable(ubyte)[])();
         foreach (ubyte[] chunk; stdin.byChunk(64 * 1024))
-            data ~= chunk.idup;
-        return data;
+            data.put(chunk);
+        return data.data;
     };
     scope (exit)
     {

@@ -19,7 +19,7 @@ import std.algorithm : all, any, canFind, sort;
 import std.array : join;
 import std.ascii : isAlpha, isAlphaNum;
 import std.utf : byCodeUnit;
-import std.typecons : Nullable, nullable, Tuple, tuple;
+import std.typecons : Nullable, nullable;
 
 import texflux.ast;
 import texflux.errors : FlagError, RelatedLocation, ValidationError;
@@ -103,6 +103,13 @@ unittest
             == "declared flags are: apple, zebra", "named in one order, always");
 }
 
+/// A conditional modifier and the remaining flag groups.
+private struct ConditionalParts
+{
+    Nullable!Combinator modifier;
+    Argument[] groups;
+}
+
 /**
  * Split a modifier off the front of a conditional's header.
  *
@@ -110,19 +117,19 @@ unittest
  * left in the flag list, where reading it as a name reports it at its own span
  * rather than blaming the header as a whole.
  */
-private Tuple!(Nullable!Combinator, Argument[]) combinator(SpecialInvocation node)
+private ConditionalParts combinator(SpecialInvocation node)
 {
     if (node.groups.length == 0)
-        return tuple(Nullable!Combinator.init, Argument[].init);
+        return ConditionalParts(Nullable!Combinator.init, Argument[].init);
     const text = optionalText(node.groups[0]);
     if (text.isNull)
-        return tuple(Nullable!Combinator.init, node.groups);
+        return ConditionalParts(Nullable!Combinator.init, node.groups);
 
     const modifier = text.get.stripWhitespace;
     if (modifier == cast(string) Combinator.all)
-        return tuple(Combinator.all.nullable, node.groups[1 .. $]);
+        return ConditionalParts(Combinator.all.nullable, node.groups[1 .. $]);
     if (modifier == cast(string) Combinator.any)
-        return tuple(Combinator.any.nullable, node.groups[1 .. $]);
+        return ConditionalParts(Combinator.any.nullable, node.groups[1 .. $]);
     throw new ValidationError("V001", "!" ~ node.name ~ " modifier must be '[and]'"
             ~ " or '[or]', got '[" ~ modifier ~ "]'", node.groups[0].span);
 }
@@ -156,8 +163,8 @@ bool evaluateConditional(SpecialInvocation node, Flags flags)
     import std.conv : to;
 
     auto split = combinator(node);
-    auto modifier = split[0];
-    auto groups = split[1];
+    auto modifier = split.modifier;
+    auto groups = split.groups;
     if (groups.length == 0)
         throw new ValidationError("V004",
                 "!" ~ node.name ~ " requires at least one '{flag}' group", node.span);
@@ -192,8 +199,15 @@ void validateFlagForms(Document document)
         }
 }
 
+/// A flag name and the default it gives.
+private struct Declaration
+{
+    string name;
+    bool value;
+}
+
 /// Read one declaration and the default it gives.
-private Tuple!(string, bool) declaration(SpecialInvocation node, SourceSpan[string] declared)
+private Declaration declaration(SpecialInvocation node, SourceSpan[string] declared)
 {
     if (node.suite !is null)
         throw new ValidationError("V007", "!flag does not accept a suite", node.span);
@@ -215,11 +229,15 @@ private Tuple!(string, bool) declaration(SpecialInvocation node, SourceSpan[stri
     if (value.isNull)
         throw new ValidationError("V011", "!flag default must be 'on' or 'off', got '"
                 ~ spelling ~ "'", node.groups[1].span);
-    return tuple(name, value.get);
+    return Declaration(name, value.get);
 }
 
 /// A document with its declarations removed, and the values this build uses.
-alias CollectedFlags = Tuple!(Document, "document", Flags, "flags");
+struct CollectedFlags
+{
+    Document document;
+    Flags flags;
+}
 
 /**
  * Strip the top-level declarations and resolve this build's values.
@@ -242,8 +260,8 @@ CollectedFlags collectFlags(Document document, Flags overrides = Flags.init)
             continue;
         }
         auto read = declaration(found.get, declared);
-        declared[read[0]] = found.get.span;
-        flags[read[0]] = read[1];
+        declared[read.name] = found.get.span;
+        flags[read.name] = read.value;
     }
 
     auto body_ = new Block(nodes, document.body_.span);
