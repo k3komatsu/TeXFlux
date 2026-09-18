@@ -6,8 +6,8 @@
 `texflux_tex_first_dsl_v1_spec.md` に記載されており、実装、README、各種サンプル、テスト、
 そして本書の記述もすべてその定義に準拠しなければならない。
 
-実装は 2 つある。Python 実装が参照実装であり、D 実装は同じ入力に対して同じバイト列を出す。
-本書の記述はどちらにも等しく当てはまる。
+D実装が本書の規範を実装する唯一のコンパイラである。README、サンプル、固定回帰fixture、
+テストはすべて本書の記述に従う。
 
 TeXFlux は、「TeX-first」を掲げるインデントベースのプリプロセッサである。TeX 本文そのものを
 解析・エスケープ・正規化することはせず、主に文書構造に関する以下の要素のみを簡潔に記述できるようにする。
@@ -1520,5 +1520,5 @@ binding           ::= flag-name SP* "=" SP* ("on" | "off" | "$" flag-name)
 ## 21. 実行可能な変換例
 
 変換例と期待する TeX 出力は [tests/golden](../tests/golden) と
-[examples](../examples) に置く。[tests/test_golden.py](../tests/test_golden.py)
+[examples](../examples) に置く。[tests/d/texflux_tests/golden.d](../tests/d/texflux_tests/golden.d)
 が出力をバイト単位で検証する。引数の中括弧の配置は15章で定義する。

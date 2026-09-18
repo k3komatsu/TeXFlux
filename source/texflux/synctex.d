@@ -204,7 +204,7 @@ private Tuple!(immutable(ubyte)[], immutable(ubyte)[])[] splitLines(immutable(ub
     return lines;
 }
 
-/// One decimal integer, or the reference's complaint quoting the bytes that are not one.
+/// One decimal integer, or the v1 complaint quoting the bytes that are not one.
 private T integer(T = int)(const(ubyte)[] value, string description)
 {
     import std.conv : ConvException;
@@ -215,7 +215,7 @@ private T integer(T = int)(const(ubyte)[] value, string description)
         throw new SyncTeXError("invalid " ~ description ~ ": " ~ bytesRepr(value));
 }
 
-/// The bytes as Python's `bytes.__repr__` spells them, which the messages quote.
+/// The byte-literal spelling fixed by v1, which the messages quote.
 private string bytesRepr(const(ubyte)[] value)
 {
     import std.format : format;
@@ -553,10 +553,10 @@ private Tuple!(immutable(ubyte)[], Container) decodePayload(immutable(ubyte)[] d
 }
 
 /**
- * Compress a payload the way the reference implementation compresses one.
+ * Compress a payload with the v1 SyncTeX gzip envelope.
  *
  * The header is written here rather than left to zlib, because zlib names the
- * operating system it ran on and the reference writer does not. The compressed
+ * operating system it ran on and the v1 writer does not. The compressed
  * bytes themselves may still differ between zlib builds, which is why what is
  * compared is what comes back out.
  */

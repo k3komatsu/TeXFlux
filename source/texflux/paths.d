@@ -137,7 +137,7 @@ private string foldCase(string path)
 /**
  * How the operating system's refusal to open a path reads in a diagnostic.
  *
- * Both implementations quote the same thing: the error number, what that
+ * The v1 contract quotes the same thing: the error number, what that
  * number means, and the path that was being opened. The path is quoted rather
  * than bare, because one holding a space or a quote has to stay readable.
  */

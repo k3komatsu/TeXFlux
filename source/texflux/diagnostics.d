@@ -85,6 +85,21 @@ struct DiagnosticReport
     {
         return diagnostics.all!(diagnostic => diagnostic.severity != Severity.error);
     }
+
+    /**
+     * Group diagnostics by display filename, retaining clean loaded files as
+     * empty entries so an editor can clear an old publication in one pass.
+     */
+    Diagnostic[][string] byFile() const
+    {
+        Diagnostic[][string] result;
+        foreach (source; sources)
+            result[source.file] = [];
+        foreach (diagnostic; diagnostics)
+            result[diagnostic.span.file] ~= Diagnostic(diagnostic.severity, diagnostic.kind,
+                    diagnostic.code, diagnostic.message, diagnostic.span, diagnostic.related.dup);
+        return result;
+    }
 }
 
 /**

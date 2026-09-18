@@ -350,9 +350,8 @@ private string pathOf(string message)
 }
 
 /**
- * The spelling `pathlib.Path` gives a path, which is how the reference names
- * a file: no `.` segment, no repeated or trailing separator, and `..` left as
- * written.
+ * The canonical display spelling for a v1 path: no `.` segment, no repeated or
+ * trailing separator, and `..` left as written.
  */
 private string pathSpelling(string path)
 {

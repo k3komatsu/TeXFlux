@@ -4,11 +4,9 @@
  * TeXFlux reports one-based columns that count code points, strips ASCII
  * spaces where the parser measures structure but Unicode whitespace where a
  * name is read, quotes the decoder's own wording when a source file is not
- * UTF-8, and escapes a path's non-printable characters the way the reference
- * does. Phobos has near-equivalents for all of these, but "near" is the wrong
- * relation for a compiler whose diagnostics are compared byte for byte against
- * another implementation, so the rules that differ live here and are stated
- * once.
+ * UTF-8, and escapes a path's non-printable characters. Phobos has
+ * near-equivalents for all of these, so the v1 rules that differ are stated
+ * here once and tested as part of the D distribution.
  */
 module texflux.text;
 
@@ -33,9 +31,7 @@ class UnicodeDecodeError : Exception
  * Whether a code point is whitespace.
  *
  * This is `std.uni.isWhite` plus the four information separators, U+001C to
- * U+001F, which the reference implementation's test counts and Phobos's does
- * not. That is the whole difference between the two, and the suite checks it
- * over every code point.
+ * U+001F. The v1 test suite checks the rule over every code point.
  */
 bool isWhitespace(dchar c) @safe pure nothrow @nogc
 {
@@ -169,9 +165,9 @@ size_t countCodePoints(const(char)[] text) @safe pure
 /**
  * The text a byte sequence spells, or an error naming the first bad byte.
  *
- * The wording follows the reference decoder, because it reaches the user
- * through a module diagnostic and through the command line's own failure line,
- * where it is compared literally. That is also why this does not delegate to
+ * The wording is part of the v1 diagnostic contract, because it reaches the
+ * user through a module diagnostic and through the command line's own failure
+ * line, where it is compared literally. That is also why this does not delegate to
  * `std.utf.validate`, whose classification of a bad sequence and whose message
  * are its own.
  */
@@ -280,11 +276,11 @@ private DecodeFailure firstDecodeFailure(const(ubyte)[] data) @safe pure nothrow
 }
 
 /**
- * Whether a code point is printable, in the sense the reference's quoting uses.
+ * Whether a code point is printable, in the sense the v1 path quoting uses.
  *
- * Phobos's Unicode categories are another revision than the reference's and
- * disagree with it on thousands of unassigned code points, so the answer comes
- * from a table generated from the reference instead.
+ * Phobos's Unicode categories are another revision than the frozen v1 table
+ * and disagree on thousands of unassigned code points, so the answer comes
+ * from that table instead.
  */
 bool isPrintable(dchar c) @safe pure nothrow @nogc
 {
@@ -307,7 +303,7 @@ bool isPrintable(dchar c) @safe pure nothrow @nogc
  *
  * The quote character is the apostrophe unless the text holds one and holds no
  * double quote, and a character that is not printable is escaped by its size,
- * which is the rule the reference implementation's own quoting follows.
+ * which is the rule v1 path quoting follows.
  */
 string quoted(string text) @safe pure
 {

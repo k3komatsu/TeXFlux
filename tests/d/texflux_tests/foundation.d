@@ -1,12 +1,11 @@
 /**
- * Agreement with the Python implementation on the rules under everything else.
+ * Frozen v1 expectations for the rules under everything else.
  *
  * The modules themselves carry the unit tests that say what they mean. What is
- * checked here is narrower and cannot be checked there: that the whitespace
- * set, the decoder's complaints, the quoting of a path and the spelling of a
- * published document are the same in both implementations, down to the byte.
- * Every expectation comes from texflux_tests.fixtures, which is generated from
- * the other implementation rather than written by hand.
+ * checked here is narrower and cannot be checked there: the whitespace set,
+ * decoder complaints, path quoting and published-document spelling are frozen
+ * down to the byte. Every expectation comes from texflux_tests.fixtures, which
+ * is checked in as part of the v1 contract rather than written inline.
  */
 module texflux_tests.foundation;
 
@@ -28,7 +27,7 @@ private bool listedAsWhitespace(uint code)
     return false;
 }
 
-/// Both implementations call the same code points whitespace, all 1.1 million.
+/// The v1 whitespace table covers all 1.1 million Unicode code points.
 unittest
 {
     foreach (immutable uint code; iota(0u, 0x11_0000u))
@@ -41,7 +40,7 @@ unittest
     }
 }
 
-/// Both implementations call the same code points printable, all 1.1 million.
+/// The v1 printable table covers all 1.1 million Unicode code points.
 unittest
 {
     auto expected = new bool[0x11_0000];
@@ -52,7 +51,7 @@ unittest
                 format("U+%04X should%s be printable", code, expected[code] ? "" : " not"));
 }
 
-/// A bad byte is reported with the wording the other decoder uses.
+/// A bad byte is reported with the wording fixed by the v1 contract.
 unittest
 {
     foreach (immutable testCase; decodeFailures)
@@ -74,11 +73,11 @@ unittest
 }
 
 /**
- * The document each JSON fixture was generated from.
+ * The document represented by each JSON fixture.
  *
- * The fixture records only what the other implementation printed, so the value
- * itself has to be built here. Keep the two in step: a name added to the
- * generator needs a case added below.
+ * The fixture records only what the v1 contract prints, so the value
+ * itself has to be built here. Keep the fixture cases in step with the
+ * serializer contract.
  */
 private JsonValue fixtureDocument(string name)
 {
@@ -116,7 +115,7 @@ private JsonValue fixtureDocument(string name)
     }
 }
 
-/// A published document is written exactly as the other implementation writes it.
+/// A published document is written exactly as the v1 format specifies.
 unittest
 {
     foreach (immutable testCase; jsonCases)

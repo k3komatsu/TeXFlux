@@ -32,29 +32,27 @@ TeXや`.tfxmap`は生成しない。
 フラグ束縛 / モジュールごとのマクロスコープを通常のcompileと同じ意味論で解決する。
 単純な`normalize(parse(...))`で代用してはならない。
 
-## Python API
+## D API
 
-```python
-from pathlib import Path
-from texflux import compile_ast, serialize_ast
+```d
+import std.file : read, write;
+import texflux : Flags, compileAst;
+import texflux.external_ast : serializeAst;
 
-path = Path("slides.tfx")
-data = path.read_bytes()
-result = compile_ast(
-    data.decode("utf-8"),
-    filename=str(path),
-    source_bytes=data,
-    flags={"handout": True},  # ソースで宣言したフラグのみ
-)
-Path("slides.tfxast.json").write_bytes(serialize_ast(result).encode("utf-8"))
+enum path = "slides.tfx";
+auto bytes = cast(immutable(ubyte)[]) read(path);
+Flags flags;
+flags["handout"] = true;
+auto result = compileAst(cast(string) bytes, path, flags, bytes);
+write("slides.tfxast.json", serializeAst(result));
 ```
 
 `AstCompilationResult.document`は内部のcanonical `Document`、`sources`は
-読み込んだ`LoadedSource`のtuple。`source_bytes`を省略すると、渡した文字列を
+読み込んだ`LoadedSource`の配列。`sourceBytes`を省略すると、渡した文字列を
 UTF-8で符号化したバイト列をハッシュに使用する。CRLFなどを含む元ファイルの
 ハッシュが必要なら、上の例のように元バイト列を渡す。
-`serialize_ast(result, pretty=False)`の`pretty`はCLIの`--pretty`と同じ。
-`compile_with_map`も同じ`compile_ast`の結果をTeX rendererへ渡す。
+`serializeAst(result, pretty)`の`pretty`はCLIの`--pretty`と同じ。
+`compileWithMap`も同じ`compileAst`の結果をTeX rendererへ渡す。
 
 ## Consumerが読む形式
 
@@ -64,13 +62,10 @@ commandの`body`、引数のlayoutとvalueの不一致などを拒否する。
 source IDの読み込み順・一意性・参照先の存在、spanの開始と終了の順序、
 実ファイルとハッシュの一致はJSON Schemaでは検証しないため、consumer側で確認する。
 
-スキーマのテストは開発用の`jsonschema`をインストールした環境で実行できる。`pyproject.toml`の
-dev extra（`.[dev]`）がこれを宣言し、TeXFluxの実行時依存には追加していない。未インストール時は
-このテストのみskipする。
+スキーマは外部依存なしのDテストで検証する。
 
 ```bash
-python -m pip install -e '.[dev]'
-python -m unittest tests.test_ast_schema
+dub test
 ```
 
 トップレベルは`format`、`version`、`producer`、`root`、`sources`、`document`。

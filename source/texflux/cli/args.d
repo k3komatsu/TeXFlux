@@ -1,8 +1,8 @@
 /**
- * Reading a command line the way the other implementation's parser reads one.
+ * Reading the v1 command line grammar.
  *
- * The two commands have to accept the same invocations, because a build script
- * written against one must work against the other. That means more than the
+ * Commands accept stable invocations so a build script remains portable. That
+ * means more than the
  * option names: a long option may be given as `--flag=value` or as two words,
  * a short one may have its value attached, a long name may be abbreviated as
  * far as it stays unambiguous, and `--` ends the options.

@@ -68,8 +68,8 @@ private string construct(ModuleKind kind) @safe pure nothrow
  *
  * That identity is what their lexical scope and their spans are keyed by, so
  * the path the package happens to be installed at never becomes part of the
- * language. The file itself is embedded at compile time from the same source
- * the other implementation reads as a package resource.
+ * language. The file itself is embedded at compile time from the bundled
+ * package resource.
  */
 enum preludeModule = "texflux:prelude";
 

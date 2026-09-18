@@ -9,10 +9,10 @@ TeXFlux is a TeX-first preprocessor. It preserves raw TeX and provides only
 structural syntax for containers, values, and source provenance. It does not
 parse TeX or infer command/environment signatures.
 
-Two implementations are governed by this document: the Python 3.11+ reference
-implementation, and a D implementation that must produce the same bytes for
-the same input. Where this document is silent, the reference implementation
-decides, and tests/conformance/run.py is what holds the other to it.
+The D implementation, its tests, examples, and published formats are governed
+by this document. Where this document is silent, the existing v1 fixture and
+published format behavior remains authoritative; a new behavior must not be
+invented merely to fill the silence.
 
 The fixed mental model is:
 
@@ -1135,8 +1135,8 @@ or validate is an installation defect rather than a document error, and is
 reported as one.
 
 Seeding is a property of the compilation session. Module-aware compilation --
-`compile_text`, `compile_with_map`, `compile_ast`, `texflux.diagnose` and the
-CLI -- is the normative public behaviour; the low-level `normalize()` sees no
+`compileText`, `compileWithMap`, `compileAst`, `texflux.diagnostics.diagnose` and
+the CLI -- is the normative public behaviour; the low-level `normalize()` sees no
 standard macros, and a source calling one there fails as an unknown special.
 A new entry point that compiles a document must go through the session so
 that the standard names behave the same everywhere.
@@ -1331,7 +1331,7 @@ v1 does not include:
 - source-to-source textual macros (m4/cpp), rescanning inserted text, token
   pasting, generated text sent back to the parser, and !splice
 - optional, default, or keyword macro parameters, and macro recursion
-- YAML/Python embedded authoring
+- YAML/embedded scripting authoring
 - implicit extension loading
 - a package registry, version resolution, lockfiles, or remote module fetching
 - a standard library. The bundled module of section 12.9 holds the five
@@ -1416,5 +1416,5 @@ TeX; a command segment carrying a block-suffix requires a suite body
 ## 18. Executable examples
 
 Exact-output examples live in [tests/golden](tests/golden) and
-[examples](examples). [tests/test_golden.py](tests/test_golden.py) checks their
+[examples](examples). [tests/d/texflux_tests/golden.d](tests/d/texflux_tests/golden.d) checks their
 output byte for byte. Argument-brace layout is defined in section 14.

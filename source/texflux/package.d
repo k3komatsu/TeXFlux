@@ -9,11 +9,11 @@
  *
  * This module is the public interface. Every entry point here goes through a
  * compilation session, so the bundled standard macros and module resolution
- * behave the same whichever one is called.
+ * behave the same whichever public entry point is called.
  *
  * The language is defined by texflux_tex_first_dsl_v1_spec.md, which is
- * normative for this implementation and for the Python one it shares its tests
- * and its golden files with.
+ * normative for this implementation; its tests and golden files are part of
+ * the same repository and are consumed by the D test executable.
  */
 module texflux;
 
@@ -31,7 +31,7 @@ public import texflux.sourcemap : serializeSourceMap;
 import texflux.render : renderWithProvenance;
 
 /// The released version, which every published document names as its producer.
-enum texfluxVersion = "0.1.0";
+enum texfluxVersion = "0.2.0";
 
 /// A compiled document, and every file the compilation read.
 struct AstCompilationResult

@@ -6,7 +6,6 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/D-LDC%201.43+-b03931.svg" alt="D (LDC 1.43+)">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen.svg" alt="Zero Dependencies">
   <img src="https://img.shields.io/badge/SyncTeX-supported-orange.svg" alt="SyncTeX Supported">
@@ -24,7 +23,7 @@ LaTeX（特に Beamer スライド）を作成するとき、誰もが以下の�
 
 **TeXFlux は、このジレンマを「TeX を置き換えるのではなく、構造のボイラープレートだけを消し去る（TeX-first）」ことで解決します。**
 
-TeX の文章、数式、コマンド、パッケージ資産は 100% そのまま。Python のように美しくインデントするだけで、読みやすく保守しやすいスライドが驚くほど快適に書けます。
+TeX の文章、数式、コマンド、パッケージ資産は 100% そのまま。読みやすくインデントするだけで、保守しやすいスライドが快適に書けます。
 
 ---
 
@@ -168,10 +167,7 @@ TeXFlux では **1 ファイル = 1 モジュール**です。
 - SyncTeX / `.tfxmap` は複数ソースに対応しており、生成された行は**それを実際に書いたファイル**に対応づきます。
 
 ### 5. 🪶 外部依存ゼロ（Zero Dependencies）
-Python 3.11 以上の標準ライブラリだけで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
-
-同じ言語の D 実装も同梱しています。こちらも標準ライブラリ（Phobos）だけで動き、単一の実行ファイルにビルドできます。
-出力は Python 実装と **1 バイトも違わない**ことを機械的に検証しています（[D 実装](#-d-実装)）。
+D 1.43 以上の標準ライブラリ（Phobos）だけで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
 
 ---
 
@@ -180,13 +176,13 @@ Python 3.11 以上の標準ライブラリだけで実装されています。�
 ### 1. インストール
 
 ```bash
-# リポジトリから直接インストール
+# リポジトリから取得してビルド
 git clone https://github.com/k3komatsu/TeXFlux.git
 cd TeXFlux
-pip install .
+dub build --build=release
 ```
 
-Python を用意したくない場合は、D 実装を単一の実行ファイルにビルドできます（[D 実装](#-d-実装)）。
+生成された `./bin/texflux` がCLIです。
 
 ### 2. `.tfx` ファイルの作成
 
@@ -421,29 +417,37 @@ clean:
 
 ---
 
-## 🐍 Python API からの呼び出し
+## D API からの呼び出し
 
-Python スクリプトやビルドツール内から、TeXFlux の変換エンジンを直接呼び出すこともできます。
+ライブラリ構成をDUBから参照すると、CLIと同じコンパイル・AST・診断APIをプログラムから利用できます。
 
-```python
-from texflux import compile_text
+利用側のDUB設定では、checkoutをpath dependencyとしてlibrary configurationに向けます。
 
-source = r"""!flag{draft}{off}
-
-@frame{Python からのコンパイル}::
-    @itemize::
-        \item 簡単・高速
-        \item 外部依存なし
-    !when{draft} >> \marginpar{草稿用のメモ}
-"""
-
-# テキストから直接 LaTeX コードを生成
-latex_code = compile_text(source, filename="example.tfx")
-print(latex_code)
-
-# ビルドフラグを上書きしてコンパイル（宣言済みのフラグ名しか渡せません）
-latex_draft = compile_text(source, filename="example.tfx", flags={"draft": True})
+```sdl
+dependency "texflux" path="../texflux" subConfiguration "library"
 ```
+
+```d
+import std.stdio : writeln;
+import texflux;
+import texflux.diagnostics : diagnose, serializeDiagnostics;
+import texflux.external_ast : serializeAst;
+
+enum source = "!flag{draft}{off}\n"
+    ~ "@frame{Dからのコンパイル}::\n"
+    ~ "    !when{draft} >> \\marginpar{草稿用のメモ}\n";
+
+auto tex = compileText(source, "example.tfx");
+Flags flags;
+flags["draft"] = true;
+auto draft = compileText(source, "example.tfx", false, flags);
+
+writeln(serializeAst(compileAst(source, "example.tfx")));
+auto report = diagnose(source, "example.tfx");
+writeln(serializeDiagnostics(report));
+```
+
+安定した公開面は `texflux`、`texflux.external_ast`、`texflux.diagnostics` の各モジュールです。
 
 ---
 
@@ -456,7 +460,7 @@ texflux ast slides.tfx -o slides.tfxast.json
 texflux ast slides.tfx -o - --pretty
 ```
 
-Python APIは`compile_ast`と`serialize_ast`です。形式と使い方は
+ライブラリAPIでは`compileAst`と`texflux.external_ast.serializeAst`を使います。形式と使い方は
 [外部AST出力](doc/external-ast.md)を参照してください。
 
 ---
@@ -484,17 +488,18 @@ cat slides.tfx | texflux check - --stdin-filename slides.tfx --format json
 | `1` | エラーあり |
 | `2` | ツール自体の失敗 |
 
-Python から直接呼ぶ場合は、例外を投げない `texflux.diagnose` が全ソースと全診断をまとめて返します。
+ライブラリから直接呼ぶ場合は、例外を投げない `texflux.diagnostics.diagnose` が全ソースと全診断をまとめて返します。
 
-```python
-from pathlib import Path
-from texflux import diagnose
+```d
+import std.file : readText;
+import std.stdio : writeln;
+import texflux.diagnostics : diagnose;
 
-path = Path("slides.tfx")
-report = diagnose(path.read_text(encoding="utf-8"), filename=str(path))
-for diagnostic in report.diagnostics:
-    print(diagnostic.line())
-print("エラーなし" if report.ok else "エラーあり")
+enum path = "slides.tfx";
+auto report = diagnose(readText(path), path);
+foreach (diagnostic; report.diagnostics)
+    writeln(diagnostic.line);
+writeln(report.ok ? "エラーなし" : "エラーあり");
 ```
 
 診断コードの体系、JSON 形式 `texflux-diagnostics`、LSP へのマッピングなど詳細は
@@ -572,32 +577,24 @@ TeXFlux は生成した中括弧を `{%` で開くので、開き側の改行が
 
 ## 🔨 D 実装
 
-同じ言語仕様の D 実装が `source/texflux/` にあります。[LDC](https://github.com/ldc-developers/ldc) 1.43 以上と dub でビルドします。
+D 単独の実装が `source/texflux/` にあります。[LDC](https://github.com/ldc-developers/ldc) 1.43 以上と dub でビルドします。
 
 ```bash
 dub build --build=release
 ./bin/texflux compile slides.tfx -o slides.tex
 ```
 
-サブコマンドとオプションは Python 実装と同じです。生成される `.tex`、`.tfxmap`、AST の JSON、診断の JSON、
-リマップ後の `.synctex`、そして診断行と終了コードまで、すべて Python 実装とバイト単位で一致します。
-規範はあくまで `texflux_tex_first_dsl_v1_spec.md` で、Python 実装はその実行可能な参照として残しています。
+サブコマンドとオプションは規範仕様で定義されています。生成される `.tex`、`.tfxmap`、ASTのJSON、診断のJSON、
+リマップ後の`.synctex`、診断行、終了コードは、D実装の固定回帰fixtureでバイト単位に検証しています。
 
 ---
 
 ## 🛠️ 開発・テスト
 
 ```bash
-# Python 実装のテストスイート（D ソースの診断コード検査を含む）
-python3 -m unittest discover
-
-# D 実装のテストスイート（ゴールデンファイルの照合を含む）
+# D実装のテストスイート（ゴールデン、schema、diagnostics、9101件の回帰を含む）
 dub test
 
-# 2 つの実装を同じ入力で走らせて出力を突き合わせる
-dub build && dub build -c dump-syntax && dub build -c render-tex
-python3 tests/conformance/run.py
+# 明示的に同意したときだけ回帰fixtureを更新
+dub run -c update-regression -- --accept-current
 ```
-
-`tests/conformance/run.py` は、リポジトリ内の全ドキュメントと Python テストスイート中の全ソース断片を
-コーパスとして、両実装の終了コード・標準出力・標準エラー・生成ファイルを比較します。

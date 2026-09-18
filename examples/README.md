@@ -25,7 +25,7 @@
 
 ### 基本サンプルのコンパイル
 ```bash
-PYTHONPATH=src python3 -m texflux compile examples/basic.tfx -o /tmp/basic.tex
+./bin/texflux compile examples/basic.tfx -o /tmp/basic.tex
 diff -u examples/basic.tex /tmp/basic.tex
 ```
 
@@ -34,7 +34,7 @@ diff -u examples/basic.tex /tmp/basic.tex
 **それを書いたファイルからの相対**で解決されるため、`modules/` ごと別の場所へ持ち運べます。
 
 ```bash
-PYTHONPATH=src python3 -m texflux compile examples/modules.tfx -o /tmp/modules.tex
+./bin/texflux compile examples/modules.tfx -o /tmp/modules.tex
 diff -u examples/modules.tex /tmp/modules.tex
 ```
 
@@ -42,7 +42,7 @@ diff -u examples/modules.tex /tmp/modules.tex
 `content.tfx` は、生の TeX コマンドを透過しつつ、環境の構造化、中括弧グループをフル活用したリアルワールドの実例です。
 
 ```bash
-PYTHONPATH=src python3 -m texflux compile examples/content.tfx -o /tmp/content.generated.tex
+./bin/texflux compile examples/content.tfx -o /tmp/content.generated.tex
 diff -u examples/content.tex /tmp/content.generated.tex
 ```
 （差分が出力されなければ、ゴールデンファイルと完全に一致しています）

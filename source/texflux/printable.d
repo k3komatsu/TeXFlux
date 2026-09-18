@@ -1,12 +1,11 @@
 /**
- * The code points the reference implementation does not call printable.
+ * The code points v1 path quoting does not call printable.
  *
  * A path quoted inside an error message has these escaped, and which code
- * points they are is decided by the reference's own Unicode tables rather
- * than by Phobos's, which are another revision and disagree on thousands of
- * unassigned code points. Regenerate this with
- * tests/conformance/generate_fixtures.py rather than editing it; this copy
- * came from CPython 3.14.7 (Unicode 16.0.0).
+ * which code points they are is decided by the frozen Unicode table rather
+ * than by Phobos's, which is another revision and disagrees on thousands of
+ * unassigned code points. This copy came from CPython 3.14.7 (Unicode 16.0.0);
+ * it is checked in as data and is not regenerated at build time.
  */
 module texflux.printable;
 

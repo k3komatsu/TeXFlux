@@ -1,14 +1,11 @@
 /**
  * The exact output every case in the repository is expected to produce.
  *
- * These are the same files the Python implementation is checked against, read
- * from the same place: a golden file is a statement about the language rather
- * than about either implementation, and the two would be worth much less if
- * each kept its own copy.
+ * A golden file is a statement about the language, not about a temporary build
+ * artifact, so the D test reads the published expectation directly.
  *
- * The conformance harness compares the two implementations run for run, which
- * catches a difference. This catches a change: if both were to drift together,
- * only a stored expectation would notice.
+ * The frozen expectation catches a change even if every test helper would
+ * otherwise drift in the same direction.
  */
 module texflux_tests.golden;
 

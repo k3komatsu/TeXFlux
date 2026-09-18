@@ -9,8 +9,8 @@
   構造化トークンではない）の規範定義は spec §3、利用者向け説明は `doc/dsl.md` 4 章、
   golden は `tests/golden/trailing-colon`。置き換えの判断は
   `doc/v1-spec-freeze-review.md` 8 章にある。
-- 実装は `src/texflux/syntax.py`（マーカー定数）、`src/texflux/parser.py`（物理行層）、
-  `src/texflux/ast.py`（`RawTex.verbatim`）、`src/texflux/macros.py`（補間の抑止と予約名）に閉じている。
+- 実装は `source/texflux/syntax.d`（マーカー定数）、`source/texflux/parser.d`（物理行層）、
+  `source/texflux/ast.d`（`RawTex.verbatim`）、`source/texflux/macros.d`（補間の抑止と予約名）に閉じている。
 
 ## 背景
 
@@ -37,7 +37,7 @@ escape なしでそのまま生の TeX である（§6 の記録を参照）。
   この 2 つの名前で `!defmacro` を定義することは予約名との衝突として意図的にエラーになる。
 - **行区切りのマーカーであってスイートではない。** `!raw:` のような形は「パーサが special 名を決め打ちして
   suite を raw にする仕組み」であり、名前駆動の生ブロックを言語に戻すことになる。BEGIN/END 形式は suite
-  marker もインデント規定の本体も持たないので、`_parse_suite` にも正準 AST にも `normalize.py` にも
+  marker もインデント規定の本体も持たないので、suite parserにも正準 ASTにも`pipeline.d`にも
   一切触れない。出力は素の `RawTex` のみである。
 - **インデントできる。** `!raw{...}` のようなインライン形は `!` 行の位置制約でブロック基準位置にしか
   書けず、字下げされた listing 本文という最も必要な場面で使えない。マーカーはブロック基準位置に置き、
@@ -46,7 +46,7 @@ escape なしでそのまま生の TeX である（§6 の記録を参照）。
 ### 1.2 受け入れたコスト
 
 - **パーサが名前を 2 つ決め打ちする。** 「プレフィックスだけで分類する」原則の意図的な例外である。
-  ただしコストは `syntax.py` の定数 2 つと `_block` の 1 分岐に閉じ、正準 AST のノード種別も
+  ただしコストは `syntax.d` の定数2つとblock parserの1分岐に閉じ、正準ASTのノード種別も
   `normalize` のハンドラもレンダラの知識も増えない。`AGENTS.md` の v1 境界に例外として記録している。
 - **リテラルの `!END_RAW_MODE` 行を領域内の基準位置には書けない。** 領域内には escape が存在しないため。
   終端判定を「BEGIN と同じインデント」に限定することで、別のインデントに書けばリテラルとして出力できる
@@ -59,12 +59,12 @@ escape なしでそのまま生の TeX である（§6 の記録を参照）。
 | --- | --- | --- |
 | 領域内のタブ文字 | 許可する。全ファイル事前走査による一律禁止を、領域内だけ免除する | verbatim の定義 |
 | 領域内の `!text{...}` 補間 | 補間しない（完全 verbatim） | 同上 |
-| 本文のインデント除去 | 基準位置まで**最大 `base` 個の先頭スペースを除去**する | ブロックスイート内の生 TeX 行（`_emit_raw`）と同じ規則。ここだけ全桁 verbatim にすると不整合 |
+| 本文のインデント除去 | 基準位置まで**最大 `base` 個の先頭スペースを除去**する | ブロックスイート内の生 TeX 行（`Parser.emitRaw`）と同じ規則。ここだけ全桁 verbatim にすると不整合 |
 | `- !BEGIN_RAW_MODE` | エラー | マーカーは 1 行に単独でしか存在できない |
 | `!BEGIN_RAW_MODE >> @center` | エラー | 同上 |
 | 入れ子 | しない。領域内の `!BEGIN_RAW_MODE` はただの本文 | 終端が一意に定まる |
 | 未終端 | `ParseError`（BEGIN 行を指す） | 黙って EOF まで飲み込むと、ブロック終了規則を壊した結果が見えなくなる |
-| 領域内の空行 | 本文として保存。`_blank_run` の巻き戻し規則は適用しない | verbatim の定義 |
+| 領域内の空行 | 本文として保存。`Parser.blankRun` の巻き戻し規則は適用しない | verbatim の定義 |
 
 ---
 
@@ -86,7 +86,7 @@ escape なしでそのまま生の TeX である（§6 の記録を参照）。
 - ヘッダースキャン（`{}` の均衡、末尾 `:`、`>>` 継続、`%` コメント禁止のいずれも見ない）
 - `@@` / `!!` / `!| ` の escape 展開
 - ブロック終了判定（インデントが基準位置より浅くても領域は閉じない）
-- 空行の巻き戻し（`_blank_run`）
+- 空行の巻き戻し（`Parser.blankRun`）
 - 文字列 interpolation（`!text{...}` はリテラル）
 
 ### 2.3 出力
@@ -166,13 +166,13 @@ def f(x):
 
 ## 3. 実装の構成
 
-### 3.1 `syntax.py` — マーカー定数
+### 3.1 `syntax.d` — マーカー定数
 
-`RAW_BEGIN_MARKER` / `RAW_END_MARKER`（行として比較する綴り）と `RAW_MODE_NAMES`（special 名として
-比較する綴り）、および `RAW_LINE_MARKER`（`!|`）。`parser.py` と `macros.py` の両方から要るが両者に
-依存関係が無いので、すでに双方が import している `syntax.py` に置く。
+`rawBeginMarker` / `rawEndMarker`（行として比較する綴り）と `rawModeNames`（special 名として
+比較する綴り）、および `rawLineMarker`（`!|`）。`parser.d` と `macros.d` の両方から要るが両者に
+依存関係が無いので、すでに双方が import している `syntax.d` に置く。
 
-### 3.2 `ast.py` — `RawTex.verbatim`
+### 3.2 `ast.d` — `RawTex.verbatim`
 
 raw 領域の行と `!| ` の行は `RawTex(..., verbatim=True)` になる。macro expansion はこのフラグを見て
 補間を飛ばす。
@@ -180,51 +180,51 @@ raw 領域の行と `!| ` の行は `RawTex(..., verbatim=True)` になる。mac
 **なぜ `parts` で代用しないか。** `parts` を埋めれば「既存 fragment は確定済み」経路で補間は確かに止まる。
 しかし `TextFragment.span` は retarget されないため、テンプレート内の raw 行だけが呼び出し位置ではなく
 定義位置へマップされ、`doc/dsl.md` §12.6 の規則に反する。専用フラグなら `node.span` の retarget が
-そのまま効き、`parts=None` のまま render は通常のテンプレート生行と完全に同じ扱いになる。
+そのまま効き、`parts.isNull` のまま render は通常のテンプレート生行と完全に同じ扱いになる。
 
-### 3.3 `parser.py` — 領域の事前対応付け
+### 3.3 `parser.d` — 領域の事前対応付け
 
-`_scan_raw_regions` が、パースより前に全物理行を走査してマーカーを対応付け、`begin index -> end index`
+`Parser.scanRawRegions` が、パースより前に全物理行を走査してマーカーを対応付け、`begin index -> end index`
 の表を作る。対応付けは行レベルの性質であり、パースより前に確定していなければならない。タブ禁止の
 検査がどの行が verbatim かを知る必要があり、対応の取れないマーカーはファイルの残りの行構造を
 無意味にするからである。
 
 状態機械の性質がそのまま §2.4 の規則になる: 領域内では `BEGIN` は無視される（入れ子なし）、
-インデントの違う `END` も無視される（リテラル）。`_block` が BEGIN を受理するのは `line.indent == base`
+インデントの違う `END` も無視される（リテラル）。`Parser.block` が BEGIN を受理するのは `line.indent == base`
 のときだけなので、記録したインデントは必ずその領域の `base` に一致し、事前走査とパーサで領域境界が
 ずれることはない。
 
 **診断の順序**: 対応付けの失敗（P001 / P002）はタブ検査（P022）より先に出る。未終端の領域はファイル全体の
 行構造を無意味にするので、個別の行の違反より上位の階層として扱う。
 
-### 3.4 `parser.py` — 領域の消費と単独行の強制
+### 3.4 `parser.d` — 領域の消費と単独行の強制
 
-- `_block` は、escape の処理とインデント検査の**後ろ**で `!BEGIN_RAW_MODE` の単独行を捕まえ、
-  `_raw_region` が領域を消費する。この順序により `!!BEGIN_RAW_MODE` はリテラル、位置ずれの
-  `!BEGIN_RAW_MODE` は `invalid structural indentation` になる。`_raw_region` は
+- `Parser.block` は、escape の処理とインデント検査の**後ろ**で `!BEGIN_RAW_MODE` の単独行を捕まえ、
+  `Parser.rawRegion` が領域を消費する。この順序により `!!BEGIN_RAW_MODE` はリテラル、位置ずれの
+  `!BEGIN_RAW_MODE` は `invalid structural indentation` になる。`Parser.rawRegion` は
   `cut = min(base, line.indent)` で §2.3 の除去を行い、`+` の継続ブロックで対応付け表に無い
   マーカーに出会ったときは `KeyError` ではなくインデントエラーにする。
-- `HeaderScanner._segment` は、special 名が `RAW_MODE_NAMES` なら P018 を送出する。ヘッダースキャナは
+- `HeaderScanner.readSegment` は、special 名が `rawModeNames` なら P018 を送出する。ヘッダースキャナは
   唯一の絞り込み点なので、この 1 箇所で `- !BEGIN_RAW_MODE`、`!BEGIN_RAW_MODE >> @center`、
   `!END_RAW_MODE:`、`!BEGIN_RAW_MODE{x}`、`>>` 継続行に置かれたマーカーのすべてを拒否できる。
-  単独行のマーカーは `_block` が先に捕まえるのでここには来ない。
-- タブ禁止は `_Parser.__init__` の全ファイル事前走査で、領域内の行と `!|` で始まる行を免除する（§5.4）。
+  単独行のマーカーは `Parser.block` が先に捕まえるのでここには来ない。
+- タブ禁止は `Parser.this` の全ファイル事前走査で、領域内の行と `!|` で始まる行を免除する（§5.4）。
 
-### 3.5 `macros.py` — 補間の抑止と予約名
+### 3.5 `macros.d` — 補間の抑止と予約名
 
-`_Expander.node()` の `RawTex` 分岐は `verbatim` なら span の retarget だけを行い、補間しない。
-`_RESERVED_NAMES` に `RAW_MODE_NAMES` を含めることで `!defmacro{BEGIN_RAW_MODE}:` が V019 で落ちる。
+`Expander.expand()` の `RawTex` 分岐は `verbatim` なら span の retarget だけを行い、補間しない。
+`reservedNames` に `rawModeNames` を含めることで `!defmacro{BEGIN_RAW_MODE}:` が V019 で落ちる。
 
 ### 3.6 変更していないもの
 
-- `normalize.py`: `RawTex` は素通りする。`verbatim` は正準 AST に残るが誰も読まない。シーケンス値の
+- `pipeline.d`: `RawTex` は素通りする。`verbatim` は正準 AST に残るが誰も読まない。シーケンス値の
   明示配置は `+` マーカーが構文 AST に記録したグループ種類だけで決まり、raw 領域の本文が `{` で始まるか
   どうかによる推測は行わない。raw 領域を `-` の継続ブロックに置いた場合は、通常の `-` と同じく
   生成必須引数として扱われる。
-- `render.py` / `source_map.py`: `verbatim` 行は `parts is None` なので従来経路。出力も `.tfxmap` も
+- `render.d` / `sourcemap.d`: `verbatim` 行は `parts.isNull` なので従来経路。出力も `.tfxmap` も
   生の TeX 行と 1 バイトも変わらない。
-- `external_ast.py` / `schemas/`: `RawTex` は `{"type":"raw",...}` に平坦化される。スキーマ変更なし。
-- `flags.py`: `!when` で捨てられる payload の中の領域も、パースは通り、展開も正規化もされない。
+- `external_ast.d` / `schemas/`: `RawTex` は `{"type":"raw",...}` に平坦化される。スキーマ変更なし。
+- `flags.d`: `!when` で捨てられる payload の中の領域も、パースは通り、展開も正規化もされない。
 
 ### 3.7 却下した代案: パース前にプレースホルダへ差し替えて後から代入する
 
@@ -233,7 +233,7 @@ raw 領域の行と `!| ` の行は `RawTex(..., verbatim=True)` になる。mac
 
 1. **AST 書き換えパスが新規に要る。** プレースホルダの `RawTex` は `Block.nodes` の他に各ノードの
    suite や `SequenceEntry.value` の下にも現れ、AST は frozen なのでノード種別ごとの再構築パスが必要になる。
-   `_raw_region`（行インデックスを飛ばすだけ）より大きく、ノード型が増えたときに同期が漏れる種類のコードである。
+   `Parser.rawRegion`（行インデックスを飛ばすだけ）より大きく、ノード型が増えたときに同期が漏れる種類のコードである。
 2. **パイプラインに段が増える。** `parse` が実ソースを見る唯一の入口であり、物理行層は `@@` / `!!`
    escape・タブ禁止・空行 run・CRLF 正規化と同種の「構造以前の行分類」をすでに担当している。
    raw 領域はその層に属する。
@@ -297,20 +297,20 @@ raw 領域の行と `!| ` の行は `RawTex(..., verbatim=True)` になる。mac
 
 ### 5.3 実装
 
-`_block` と `_sequence_entry` は `_escaped_raw` を通して `@@` / `!!` / `!| ` を同じ位置で処理し、
-`!| ` の本文は `_raw_line_tail` が区切りのスペース 1 個を検査して読む。
+`Parser.block` と `Parser.sequenceEntry` は `Parser.escapedRaw` を通して `@@` / `!!` / `!| ` を同じ位置で処理し、
+`!| ` の本文は `Parser.rawLineTail` が区切りのスペース 1 個を検査して読む。
 
 ### 5.4 タブ免除の設計
 
-タブ禁止は `_Parser.__init__` のファイル全体事前走査なので、免除対象を**行レベルの述語**で決める必要がある。
-`_block` は `line.indent >= base` を保証した上で先頭スペースを飛ばすため、「lstrip した行が `!|` で
-始まるか」は base を知らずに決まる（`_raw_escape_line`。`_line_marker` と同じ層）。
+タブ禁止は `Parser.this` のファイル全体事前走査なので、免除対象を**行レベルの述語**で決める必要がある。
+`Parser.block` は `line.indent >= base` を保証した上で先頭スペースを飛ばすため、「lstrip した行が `!|` で
+始まるか」は base を知らずに決まる（`Parser.escapedRaw`。`Parser.lineMarker` と同じ層）。
 
 述語を `"!|"` までとし `"!| "` までにしないのは、`!|<TAB>foo` をタブ診断ではなく **P023 で落とす**ためである。
 
-`!|` 行が本文になり得るのに `_block` を通らない経路は `_raw_sequence_continuation`（`+` の明示グループ
+`!|` 行が本文になり得るのに `Parser.block` を通らない経路は `Parser.rawSequenceContinuation`（`+` の明示グループ
 継続ブロック）1 つだけである。そこは全行 opaque なので `!| ` が escape として働かないまま免除だけ効いて
-しまう。この経路でのみ `_reject_tab` を呼び直して塞いでいる。
+しまう。この経路でのみ `Parser.rejectTab` を呼び直して塞いでいる。
 
 `- !| ` の payload のタブは**免除しない**。述語を「`-` / `+` とスペースを剥がした残りが `!|` で始まる」まで
 広げると、`-` がシーケンスマーカーかどうかは囲む suite が `::` か `:` かで変わる（`@center:` の中の
@@ -371,8 +371,8 @@ suite の suffix として読む。続くブロックが無ければ、ヘッダ
 
 ### 6.3 設計判断
 
-- **先読みは既存の判定と同じ。** `_parse_suite` が「ブロック suite に本文があるか」を決める先読み
-  （次の非空行が `base + 4` 以上か）を、`_suite_follows` として一段早く問うだけである。行の分類は
+- **先読みは既存の判定と同じ。** `Parser.parseSuite` が「ブロック suite に本文があるか」を決める先読み
+  （次の非空行が `base + 4` 以上か）を、同じ判定として一段早く問うだけである。行の分類は
   ソースの純関数のままで、TeX の内容は一切解釈しない。
 - **`::` と `>>` は無条件のまま。** 「`:` で終わる行」に一律に適用すると `\vspace{1em}(x)::` まで
   生 TeX に落ちる。`::` と `>>` は散文に現れないので、壊れたヘッダーを黙って生 TeX に戻さないという
@@ -408,7 +408,7 @@ suite の suffix として読む。続くブロックが無ければ、ヘッダ
 
 ### 6.6 実装と検証
 
-`parser.py` の `_scan_structural_header` に `suite_follows` を渡し、`_Parser._suite_follows` が先読みを
-行う。呼び出し元は `_scan_command_header`（ブロック行と余分に字下げされた `\` 行）と `_sequence_entry`
+`parser.d` のheader scannerにsuite情報を渡し、parserが先読みを
+行う。呼び出し元は `Parser.scanCommandHeader`（ブロック行と余分に字下げされた `\` 行）と `Parser.sequenceEntry`
 （payload）の 2 箇所である。診断コードの追加・削除は無い。golden は `tests/golden/trailing-colon`。
 `examples/` 6 件の出力はバイト単位で変わらない。

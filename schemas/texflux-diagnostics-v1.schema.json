@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TeXFlux Diagnostics v1",
-  "description": "Diagnostics emitted by `texflux check --format json` and texflux.serialize_diagnostics. Unknown object members are allowed. `kind` and the code's letter are open sets; `severity` is closed.",
+  "description": "Diagnostics emitted by `texflux check --format json` and texflux.diagnostics.serializeDiagnostics. Unknown object members are allowed. `kind` and the code's letter are open sets; `severity` is closed.",
   "$comment": "Source IDs must match load-order indices, source files must be unique, every span.source must resolve, and span.start must not follow span.end. These cross-value invariants require consumer checks beyond JSON Schema. Zero-width spans (start equal to end) and spans whose end line differs from the start line are legal and are intentionally left unconstrained here.",
   "type": "object",
   "required": ["format", "version", "producer", "root", "sources", "diagnostics"],

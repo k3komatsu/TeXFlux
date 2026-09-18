@@ -1,13 +1,12 @@
 /**
- * Expected values taken from the reference implementation.
+ * Expected values frozen for the v1 contract.
  *
- * These are generated rather than written, because their whole purpose is
- * to be what the other implementation actually produces. Regenerate them
- * from that implementation rather than editing one by hand.
+ * These values are generated once and checked in so that tests remain
+ * independent of build order and host-specific library behavior.
  */
 module texflux_tests.fixtures;
 
-/// Every code point the reference implementation calls whitespace.
+/// Every code point v1 calls whitespace.
 immutable uint[2][] whitespaceRanges = [
     [0x0009, 0x000D],
     [0x001C, 0x0020],
@@ -21,7 +20,7 @@ immutable uint[2][] whitespaceRanges = [
     [0x3000, 0x3000],
 ];
 
-/// Every code point the reference implementation calls printable.
+/// Every code point v1 calls printable.
 immutable uint[2][] printableRanges = [
     [0x0020, 0x007E],
     [0x00A1, 0x00AC],
@@ -785,7 +784,7 @@ immutable DecodeCase[] decodeFailures = [
     DecodeCase([0xc2, 0x41], "'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"),
 ];
 
-/// A path, and the way the reference implementation quotes it in an error.
+/// A path, and the way v1 quotes it in an error.
 struct QuotedCase { string text; string quoted; }
 
 immutable QuotedCase[] quotedCases = [
@@ -810,7 +809,7 @@ immutable QuotedCase[] quotedCases = [
     QuotedCase("emoji😀.tfx", "'emoji😀.tfx'"),
 ];
 
-/// A document, and the two spellings the reference implementation writes it in.
+/// A document, and the two spellings v1 writes it in.
 struct JsonCase { string name; string compact; string pretty; }
 
 immutable JsonCase[] jsonCases = [

@@ -1,12 +1,11 @@
 slide/*
 .DS_Store
-__pycache__/
-*.py[cod]
 .claude/
 AGENTS.md
 build/
-*.egg-info/
 examples/html_slide/
 bin/
 .dub/
 *.lst
+tmp/
+plan/

@@ -3,9 +3,9 @@
 ## 0. ステータスと本書の位置づけ
 
 本書は TeXFlux のマルチソースファイル（モジュールシステム）の**設計書**である。
-実装は `src/texflux/modules.py` にあり、規範定義は `texflux_tex_first_dsl_v1_spec.md` §12、
+実装は `source/texflux/modules.d` にあり、規範定義は `texflux_tex_first_dsl_v1_spec.md` §12、
 利用者向け説明は `doc/dsl.md` 14 章、動く実例は `examples/modules.tfx` と `examples/modules/`、
-テストは `tests/test_modules.py` と `tests/golden/module-*` にある。本書が扱うのは、
+テストは `tests/d/texflux_tests` と `tests/golden/module-*` にある。本書が扱うのは、
 それらから読み取れない**設計判断とその根拠**、および実装が守っている不変条件である。
 
 中心的な設計思想は次のとおりである。
@@ -44,7 +44,7 @@
 | マクロモジュール | `.tfxm` ファイル 1 つ。マクロ定義のみを提供し、TeX 出力を生まない |
 | `ModuleSource` | 1 ファイルのロード結果（バイト列・display パス・パース済み構文 AST）。**正準パス identity でキャッシュされる** |
 | モジュールインスタンス | 1 回の `!import` に対応する 1 つのコンパイル実体（束縛フラグ・マクロ環境・正準 AST）。**キャッシュしない** |
-| 正準パス identity | `paths.normalized_path()` の戻り値。symlink・相対要素を解決した比較可能な 1 つの綴り |
+| 正準パス identity | `paths.normalizedPath()` の戻り値。symlink・相対要素を解決した比較可能な 1 つの綴り |
 | display パス | 診断メッセージと `SourceSpan.file` とソースマップに現れる、人間が読む綴り（§9.2） |
 | 公開インタフェース | あるマクロモジュールが**自分自身で `!defmacro` したマクロ**の集合。取り込んだマクロは含まない |
 | マクロ環境 | あるモジュール内で `!名前` として見えるマクロ名 → `MacroDefinition` の写像 |
@@ -100,7 +100,7 @@
 
 `(` を汎用のインライン群開始文字にはしない。`(...)` は **`!` プレフィックスのセグメントに
 限り、すべてのインライン群の後ろに最大 1 個だけ**置ける末尾リストとして走査する
-（`parser.py` の `HeaderScanner._segment`）。
+（`source/texflux/scanner.d` の `HeaderScanner.readSegment`）。
 
 ```text
 プレフィックス判定 → 名前走査 → インライン群ループ ({ [ <)
@@ -108,8 +108,8 @@
                    → 続く文字は " :>" か行末でなければならない
 ```
 
-- `GroupKind.BINDING` は区切り表に載るが、ヘッダのインライン群ループを駆動する
-  `GROUP_OPENERS` には含めない。束縛群は `SpecialInvocation.groups` の**末尾要素**として
+- `GroupKind.binding` は区切り表に載るが、ヘッダのインライン群ループを駆動する
+  `inlineOpeners` には含めない。束縛群は `SpecialInvocation.groups` の**末尾要素**として
   格納され、新しい AST ノード型は追加しない。
 - `(...)` の走査は `[...]` と同じ規則で、括弧はネストし、釣り合ったブレース群の内側は無視し、
   バックスラッシュ・エスケープを尊重する。
@@ -124,15 +124,15 @@
 
 | 構文 | 拒否経路 |
 | --- | --- |
-| `!when` / `!unless` | 先頭以外の群は `_flag_names` → `demand_text` → `ValidationError` |
-| `!flag` | 群数 2 の検査か `demand_text` → `ValidationError` |
-| `!defmacro` / `!param` / `!each` | `demand_text` / `_single_name` → `ValidationError` |
-| マクロ呼び出し（標準フロー制御を含む） | `_values` の `required_text(group) is None` → `MacroExpansionError` |
+| `!when` / `!unless` | 先頭以外の群は `flagNames` → `demandText` → `ValidationError` |
+| `!flag` | 群数 2 の検査か `demandText` → `ValidationError` |
+| `!defmacro` / `!param` / `!each` | `demandText` / 名前検査 → `ValidationError` |
+| マクロ呼び出し（標準フロー制御を含む） | `values` の `requiredText(group) is null` → `MacroExpansionError` |
 | `!macroimport` | §7.2 の群検査 → `ModuleError` |
 
-結果として `GroupKind.BINDING` の `Argument` は**正準 AST に到達しない**。
+結果として `GroupKind.binding` の `Argument` は**正準 AST に到達しない**。
 `!import` はこれを消費して自身ごと消え、他はすべてエラーになるからである。
-`render._emit_group` は念のため `BINDING` を `TypeError` で拒否する。
+`render.inlineGroup` は念のため `binding` を内部エラーで拒否する。
 
 ---
 
@@ -152,14 +152,14 @@ flag-name     ::= [A-Za-z][A-Za-z0-9_-]*
 - ヘッダは 1 物理行なので、束縛リストに改行は現れない。
 - **空リスト `()` および空白のみのリストはエラー**（M007）。束縛が不要なら `(...)` 自体を書かない。
 - 末尾カンマや空の要素、`on` / `off` / `$名前` 以外の値はすべて M008。式言語は導入しない。
-- `flag-name` の正規表現は `flags.FLAG_NAME_PATTERN` を共有し、重複定義しない。
+- `flag-name` の判定は `flags.isFlagName` を共有し、重複定義しない。
 
-値の文法にカンマも括弧も現れないので、カンマでの単純分割が一意に正しい（`parse_bindings`）。
-各束縛は `FlagBinding(name, literal, caller, span, name_span, value_span)` になり、
-`literal` と `caller` はちょうど一方が `None` である。部分 span は群の `(` の次の列からの
-オフセットで求める（`_sub_span`）。
+値の文法にカンマも括弧も現れないので、カンマでの単純分割が一意に正しい（`parseBindings`）。
+各束縛は `FlagBinding(name, literal, caller, span, nameSpan, valueSpan)` になり、
+`literal` と `caller` はちょうど一方が空である。`literal` は `Nullable!bool` で表す。部分 span は群の `(` の次の列からの
+オフセットで求める（`subSpan`）。
 
-### 5.2 意味論（`bind_import_flags`）
+### 5.2 意味論（`bindImportFlags`）
 
 1. 呼び出し先の宣言済み既定値から始める。**束縛のない callee フラグは callee 自身の既定値**。
 2. 束縛をソース順に処理する。callee が宣言していない名前は M009、同じ名前の二重束縛は M010、
@@ -197,19 +197,19 @@ flag-name     ::= [A-Za-z][A-Za-z0-9_-]*
 
 ### 6.1 順序
 
-1 つのコンテンツモジュールは `CompilationSession._compile` が次の順序でコンパイルする。
+1 つのコンテンツモジュールは `CompilationSession.compileRoot` / `compileContent` が次の順序でコンパイルする。
 
 ```text
- 1. validate_macro_forms / validate_flag_forms / validate_macroimport_forms
+ 1. validateMacroForms / validateFlagForms / validateMacroImportForms
  2. desugar                                    純粋な >> 脱糖
- 3. collect_flags                              宣言の収集
+ 3. collectFlags                                宣言の収集
         ルートモジュール: --flag 上書きを渡す（FlagError）
-        被 import モジュール: 直後に bind_import_flags を適用（ModuleError）
- 4. resolve_macro_imports                      トップレベル !macroimport の剥ぎ取り
- 5. _build_environments                        マクロモジュール閉包のロードと環境構築（§7）
- 6. collect_macros(imported=取り込み分)        ローカル定義と衝突検査 → このモジュールの環境
- 7. expand_macros(environments=環境表)         条件の解決と語彙的スコープでの展開
- 8. resolve_content_imports                    !import を被 import モジュールの正準 AST へ置換
+        被 import モジュール: 直後に bindImportFlags を適用（ModuleError）
+ 4. resolveMacroImports                        トップレベル !macroimport の剥ぎ取り
+ 5. buildEnvironments                           マクロモジュール閉包のロードと環境構築（§7）
+ 6. collectMacros(imported=取り込み分)          ローカル定義と衝突検査 → このモジュールの環境
+ 7. expandMacros(environments=環境表)           条件の解決と語彙的スコープでの展開
+ 8. resolveContentImports                       !import を被 import モジュールの正準 AST へ置換
  9. canonicalize                               値の消費と正準 AST の検証
 ```
 
@@ -218,21 +218,21 @@ flag-name     ::= [A-Za-z][A-Za-z0-9_-]*
 ### 6.2 `normalize()` との関係
 
 `normalize()` は**モジュール機能を持たない低水準経路**としてそのまま残る。手順 1 のうち
-`validate_macro_forms` / `validate_flag_forms`、および手順 2・3・6・7・9 を行い、手順 4・5・8 と
-`validate_macroimport_forms` は行わない（後者は `modules.py` にある）。`normalize.py` は `modules.py` を
-import してはならない（循環 import になる）ので、末尾の `canonicalize()` を公開し、`modules.py` がそれを呼ぶ。
+`validateMacroForms` / `validateFlagForms`、および手順 2・3・6・7・9 を行い、手順 4・5・8 と
+`validateMacroImportForms` は行わない（後者は `modules.d` にある）。`pipeline.d` は `modules.d` を
+import してはならない（循環 import になる）ので、末尾の `canonicalize()` を公開し、`modules.d` がそれを呼ぶ。
 
 `normalize()` の直呼びで `!import` / `!macroimport` に出会ったときのために、
-`BUILTIN_DIRECTIVES` にはこの 2 名のガードハンドラだけが登録されている。ガードは M029 を
+`builtinDirectives` にはこの 2 名のガードハンドラだけが登録されている。ガードは M029 を
 送出し、副次効果として 2 名を `!defmacro` から予約する。モジュール経路では手順 4 と 8 で
 取り除かれるので、ガードに到達することはない。標準フロー制御（`!before` 等）はセッションが
 環境に seed する普通のマクロなので、`normalize()` の直呼びでは未知の special になる。
-モジュール対応のコンパイル（`compile_text` / `compile_with_map` / `compile_ast` / CLI）が
+モジュール対応のコンパイル（`compileText` / `compileWithMap` / `compileAst` / CLI）が
 規範的な公開挙動であり、低水準関数は呼び出し側が環境を用意することを要求してよい。
 
 手順 8 は**構文 AST 上を歩き、`!import` ノードを被 import モジュールの正準ノード列で置換する**。
-手順 9 の `_normalize_node` は `GenericInvocation` / `BraceGroup` を受理して冪等に再正規化する
-ので、差し込みは安全である。走査器（`_ImportResolver`）は自分が差し込んだ正準ノードを
+手順 9 の canonical pass は `GenericInvocation` / `BraceGroup` を受理して冪等に再正規化する
+ので、差し込みは安全である。走査器（`ImportResolver`）は自分が差し込んだ正準ノードを
 再訪しない。置換結果は親のノード列へ `extend` されるだけで、再帰対象にならないからである。
 この不変条件を崩す実装（差し込み後にもう一度ブロック全体を歩く等）にしてはならない。
 
@@ -275,16 +275,16 @@ import してはならない（循環 import になる）ので、末尾の `can
 
 ### 7.1 マクロモジュールのロード手順
 
-`.tfxm` 1 ファイルの処理は `collect_macro_module` に集約されており、同梱の標準マクロモジュール
+`.tfxm` 1 ファイルの処理は `collectMacroModule` に集約されており、同梱の標準マクロモジュール
 （§7.7）も同じ関数を通る。
 
 ```text
  1. parse
- 2. validate_macro_forms / validate_macroimport_forms
- 3. validate_macro_module_purity（§7.1.1）
+ 2. validateMacroForms / validateMacroImportForms
+ 3. validateMacroModulePurity（§7.1.1）
  4. desugar
- 5. resolve_macro_imports          → 直接 import 先の一覧
- 6. collect_macros(module=path)    → own（公開インタフェース）
+ 5. resolveMacroImports             → 直接 import 先の一覧
+ 6. collectMacros(module_=path)     → own（公開インタフェース）
 ```
 
 `own` と直接 import 先の一覧が §7.4 の 2 フェーズ構築のフェーズ 1 の成果物である。
@@ -296,13 +296,13 @@ import してはならない（循環 import になる）ので、末尾の `can
 
 - **ファイル全体**: `syntax.walk` で `flag` / `when` / `unless` / `import` の `SpecialInvocation`
   を探し、見つかれば M013（D2）。
-- **トップレベル**: `document.body.nodes` の各ノードは、空行かコメントの `RawTex`、
+- **トップレベル**: `document.body_.nodes` の各ノードは、空行かコメントの `RawTex`、
   `!defmacro`、`!macroimport` のいずれかでなければならない。それ以外は M014。
 
 剥ぎ取り後の残存ノード検査は置かない。手順 5・6 で `!macroimport` と `!defmacro` を剥ぎ取った後に
 残るのは空行とコメント行だけであり、これはトップレベル検査から自動的に従う。
 
-### 7.2 `resolve_macro_imports`
+### 7.2 `resolveMacroImports`
 
 トップレベルの `!macroimport` を剥ぎ取り、`MacroImport(path, display, span)` の列を返す。
 `span` はパス群の位置で、作者が直すべき場所である。
@@ -311,7 +311,7 @@ import してはならない（循環 import になる）ので、末尾の `can
 - パスは §9.1 で解決する（種別は `.tfxm`）。同一正準パスの 2 度目は M019。
 - 剥ぎ取り後の本体に `!macroimport` が残っていれば、それは非トップレベルなので M020。
 
-`validate_macroimport_forms` は `flags.validate_flag_forms` と同形で、脱糖前の構文 AST の
+`validateMacroImportForms` は `flags.validateFlagForms` と同形で、脱糖前の構文 AST の
 `syntax.stacks()` を走査し、`!macroimport` が `>>` のセグメントとして現れたら M012 にする。
 
 ### 7.3 公開インタフェースと自己完結性
@@ -320,7 +320,7 @@ import してはならない（循環 import になる）ので、末尾の `can
 `!macroimport` で得たマクロは私的な実装依存であり、再輸出されない。
 `public` / `private` / `export` 構文は導入しない。
 
-**自己完結性検査**（`_check_self_contained`）: 各マクロモジュールの環境が確定した後、
+**自己完結性検査**（`checkSelfContained`）: 各マクロモジュールの環境が確定した後、
 そのモジュールの `own` に属する各テンプレートを `syntax.walk` で走査し、すべての
 `SpecialInvocation` の名前が次のいずれかに属することを検査する。
 
@@ -342,38 +342,38 @@ import してはならない（循環 import になる）ので、末尾の `can
 `.tfxm` の循環 import は許容される。アルゴリズムは**再帰を一切使わない**ので、循環はロード済み
 集合だけで自然に安全になる。
 
-**フェーズ 1 — 閉包のロード**（`_load_macro_modules`）: `MacroImport` を単位に幅優先で走査する。
-`_public` にすでに登録済みのパスは即座に読み飛ばすので、`A.tfxm ↔ B.tfxm` のような循環でも
+**フェーズ 1 — 閉包のロード**（`loadMacroModules`）: `MacroImport` を単位に幅優先で走査する。
+`publicMacros` にすでに登録済みのパスは即座に読み飛ばすので、`A.tfxm ↔ B.tfxm` のような循環でも
 ループは必ず停止する。各モジュールについて `own` と直接 import 先を別々の辞書に置く。
 作業キューは**先入れ先出し**でなければならない。§8.5.1 の診断規則がこれに依存する。
 
-**フェーズ 2 — 環境の構築**（`_build_environments`）: 各モジュールの環境は
+**フェーズ 2 — 環境の構築**（`buildEnvironments`）: 各モジュールの環境は
 `標準マクロ ∪ own ∪ ⋃ own(直接 import 先)` であり、**直接 import 先の `own` にしか依存しない**。
 `own` はフェーズ 1 で確定済みなので、フェーズ 2 は再帰しない。循環があっても両方向で同じ結果になる。
-結合は `.tfx` とも共有する自由関数 `merge_imports(base, imports, public)` に置く。
-反復順は `own`（`dict`、ソース順）と `imports`（タプル、ソース順）に依存するので決定的である。
+結合は `.tfx` とも共有する自由関数 `mergeImports(base, imports, public)` に置く。
+反復順は `own`（`OrderedMap`、ソース順）と `imports`（`MacroImport[]`、ソース順）に依存するので決定的である。
 
-- `.tfxm`: `merge_imports({**standard, **own}, imports, public)` がそのまま環境。
-- `.tfx`: `merge_imports(dict(standard), imports, public)` を `collect_macros(imported=...)` に渡し、
-  ローカル定義を足した戻り値が環境。取り込み同士の衝突は `merge_imports` が M021 で、
-  取り込みとローカルの衝突は `collect_macros` が V022 で、標準名との衝突は `collect_macros` の
+- `.tfxm`: `mergeImports(standard + own, imports, publicMacros)` がそのまま環境。
+- `.tfx`: `mergeImports(standard, imports, publicMacros)` を `collectMacros(imported=...)` に渡し、
+  ローカル定義を足した戻り値が環境。取り込み同士の衝突は `mergeImports` が M021 で、
+  取り込みとローカルの衝突は `collectMacros` が V022 で、標準名との衝突は `collectMacros` の
   `standard=` 引数が V021 で、それぞれ報告する。
 
 M021 の span は**取り込み側の `!macroimport` 行**にする。作者が直すべき行だからである。
 メッセージと関連位置は元の定義位置を示す。
 
-セッションは `environments: dict[str, MacroEnvironment]` を 1 つだけ持ち、ロード済みのすべての
+セッションは `MacroEnvironment[string] environments` を 1 つだけ持ち、ロード済みのすべての
 マクロモジュールとコンパイル中のすべてのコンテンツモジュールを正準パスで登録する。
-同梱マクロモジュールも合成識別子 `texflux:prelude` で登録されるので、`frame.macro.module` が
+同梱マクロモジュールも合成識別子 `texflux:prelude` で登録されるので、`frame.macro_.module_` が
 表に無いことは起こり得ない。
 
 ### 7.5 語彙的スコープ
 
-`MacroDefinition.module` は定義元モジュールの正準パスである。display パスが必要な診断では
+`MacroDefinition.module_` は定義元モジュールの正準パスである。display パスが必要な診断では
 `definition.span.file` を使う。
 
-`expand_macros(..., environments=, module=)` の `_Expander._env(frame)` は、フレームが無ければ
-コンパイル中のモジュールの環境を、テンプレート内であれば `frame.macro.module` の環境を返す。
+`expandMacros(..., environments=, module_=)` の `Expander.environment(frame)` は、フレームが無ければ
+コンパイル中のモジュールの環境を、テンプレート内であれば `frame.macro_.module_` の環境を返す。
 マクロ呼び出しの判定はこの環境に対して行う。これだけで次が自動的に正しくなる。
 
 - テンプレート内に書かれた**引数**は呼び出し側（現フレーム）の環境で展開される。
@@ -386,7 +386,7 @@ M021 の span は**取り込み側の `!macroimport` 行**にする。作者が�
 
 再帰検出（D4）は `(module, name)` の組で行う。展開チェーンは 1 モジュールに閉じている間は
 名前だけで `foo -> bar -> foo` と綴り、モジュールをまたいだ時点で各要素を `name@file` にする
-（`chain_text`）。またいだ先では名前だけではマクロを特定できないからである。
+（`chainText`）。またいだ先では名前だけではマクロを特定できないからである。
 
 ### 7.6 マクロライブラリのバージョン併存
 
@@ -408,9 +408,9 @@ main.tfx:
 ### 7.7 同梱の標準マクロモジュール
 
 標準フロー制御（`!before` / `!after` / `!around` / `!off` / `!drop`）は
-`src/texflux/prelude.tfxm` に置かれた普通の純粋な `.tfxm` である。`load_standard_macros` が
-パッケージリソースとして読み、`collect_macro_module` で検証・収集する。セッションは 1 回だけ
-読み、すべてのモジュール環境の `base` として seed する。合成識別子 `PRELUDE_MODULE`
+`source/texflux/prelude.tfxm` に置かれた普通の純粋な `.tfxm` である。`loadStandardMacros` が
+パッケージリソースとして読み、`collectMacroModule` で検証・収集する。セッションは 1 回だけ
+読み、すべてのモジュール環境の `base` として seed する。合成識別子 `preludeModule`
 （`texflux:prelude`）は語彙的スコープと span のキーであり、インストール先のパスが
 言語意味論・span・ソースマップ・外部 AST の `sources` に現れることはない。
 読み込みや検証の失敗は文書ではなく配布物の不具合なので、`TeXFluxError` ではなく
@@ -477,14 +477,14 @@ main.tfx:
 
 同じモジュールを繰り返し import すること自体は合法であり、その都度別インスタンスになる。
 
-### 8.4 `resolve_content_imports`
+### 8.4 `resolveContentImports`
 
-`_ImportResolver` は脱糖済みの構文 AST を `syntax.map_children` で歩き、`!import` ノードだけを
-被 import モジュールの正準ノード列で置換する。`_expand` の手順:
+`ImportResolver` は脱糖済みの構文 AST を `syntax.mapChildren` で歩き、`!import` ノードだけを
+被 import モジュールの正準ノード列で置換する。`expand` の手順:
 
 1. §8.1 の形式検査と群の仕分け（必須インライン群 → パス、`BINDING` 群 → 束縛）。
 2. パスを §9.1 で解決し、束縛群があれば §5 で解析する。
-3. `session.load(...)`、循環検査、`session.compile_content(...)` を**1 つの `try` の中**で行う（§8.5）。
+3. `session.load(...)`、循環検査、`session.compileContent(...)` を**1 つの `try` の中**で行う（§8.5）。
    ロードは対象をパースするので、callee のパースエラーも validation エラーと同じように
    連鎖に載らなければならない。
 4. 戻り値 `Document` の `body.nodes` を返す。
@@ -515,9 +515,9 @@ imported from b.tfx:3:1; imported from main.tfx:7:1 [V014]
 「どの `!macroimport` がそのモジュールを引き込んだか」は作者が最初に見るべき情報である。
 
 セッションは、各マクロモジュールを**最初に名指しした `!macroimport` のパス群 span** を
-`_imported_from` に記録する。各モジュールの記録は 1 つだけなので、この記録の集合は**木**であり、
+`importedFrom` に記録する。各モジュールの記録は 1 つだけなので、この記録の集合は**木**であり、
 根は `.tfx` に書かれた `!macroimport` である（`.tfx` は登録されない）。マクロモジュール由来の
-エラー（パース・純粋性・自己完結性・名前衝突・パス解決・ロード失敗）は、`_importing`
+エラー（パース・純粋性・自己完結性・名前衝突・パス解決・ロード失敗）は、`importing`
 コンテキストマネージャがこの木を根まで辿って各段の site を追記する。
 
 - **1 段ごとに** `error.span.file == site.file` を判定し、等しい段だけ読み飛ばす。そこで
@@ -554,36 +554,32 @@ TeXFlux の名前空間システムの外にある。TeX レベルのグルー�
 
 ## 9. パス解決とモジュール識別
 
-### 9.1 解決規則（`resolve_module_path`）
+### 9.1 解決規則（`resolveModulePath`）
 
 コンテンツ import もマクロ import も、**import を書いたファイルのディレクトリを基準に**解決する。
 親がどこから取り込んだかには依存しない。検査順:
 
 1. 空 → M001。
-2. NUL を含む → M002。NUL を含むパスは OS が stat すら拒否して `OSError` ではなく `ValueError`
-   を投げるので、ファイルシステムに触る前に弾き、どちらの構文から来ても span 付きの
+2. NUL を含む → M002。NUL を含むパスは OS が stat すら拒否するため、ファイルシステムに触る前に弾き、どちらの構文から来ても span 付きの
    `ModuleError` にする。
 3. `\` を含む → M003。
 4. 絶対パス → M004（D6）。
 5. 種別の拡張子で終わらない → M005。
-6. display の算出（§9.2）。読み込みに失敗すれば M027（`OSError`・`UnicodeError`・`ValueError` を
-   `load()` が捕まえる）。
-7. identity = `paths.normalized_path(display)`。
+6. display の算出（§9.2）。読み込みに失敗すれば M027（`UnicodeDecodeError` またはその他の
+   `Exception` を `load()` が捕まえる）。
+7. identity = `paths.normalizedPath(display)`。
 
-`..` は許可する。`compile_with_map(filename=...)` に渡された**ルートのファイル名**は文書中のパスでは
+`..` は許可する。`compileWithMap` に渡された**ルートのファイル名**は文書中のパスでは
 なく呼び出し側の引数なので、ここでは扱わない。壊れたファイル名は `ValueError` のまま呼び出し元へ
 返る（CLI はこれを捕捉する）。ビルド構成の誤りに span がない点で `FlagError` と同じ扱いである。
 
 ### 9.2 display パス
 
-```python
-display = os.path.normpath(
-    os.path.join(os.path.dirname(importer), *written.split("/"))
-)
+```d
+display = buildNormalizedPath(dirName(importer), written);
 ```
 
-- ルートモジュールの display は `compile_with_map(filename=...)` に渡された綴り（CLI では
-  `str(input_path)`）。
+- ルートモジュールの display は `compileWithMap` に渡された綴り（CLIでは入力pathの綴り）。
 - `display` は `SourceSpan.file` に入り、診断・`% texflux:` コメント・`.tfxmap` の
   `sources[].path` に現れる。
 - 同じ identity に異なる display が到達した場合、**最初にロードした display が採用される**
@@ -591,7 +587,7 @@ display = os.path.normpath(
   決定的なので採用される display も決定的である。ただし「最初」が読み順で最初とは限らない。
   コンテンツ import はソース順の深さ優先だが、マクロ import は幅優先であり、最も浅い段が先に
   ロードされる（§8.5.1）。
-- 大文字小文字を区別しないボリュームでは、`normalized_path` の `normcase` が恒等な macOS では
+- 大文字小文字を区別しないボリュームでは、`normalizedPath` の `foldCase` が恒等な macOS では
   `b.tfx` と `B.tfx` は 2 つのソースになり、Windows では 1 つになる。
 
 ### 9.3 モジュール識別の用途
@@ -608,33 +604,33 @@ display = os.path.normpath(
 
 | メンバー | 役割 |
 | --- | --- |
-| `CompilationSession(registry=, reader=)` | `reader` は表示綴りからバイト列を返すフック。エディタが未保存バッファを差し込むために使う（`doc/diagnostics.md`） |
+| `CompilationSession(registry, reader)` | `reader` は表示綴りからバイト列を返すフック。エディタが未保存バッファを差し込むために使う（`doc/diagnostics.md`） |
 | `load(display, span)` | 1 ファイルを読んでパースし、正準パス identity でキャッシュする。失敗は `span` を責める M027 |
 | `loaded()` | 読んだ全ファイル（`LoadedSource`）。ルートが先頭、以降はロード順。パースより前に記録するので、パースに失敗したファイルも載る |
 | `display(path)` | ロード済みモジュールの display 綴り |
-| `compile_root(text, filename=, data=, flags=)` | 呼び出し側が文字列で渡した文書のコンパイル |
-| `compile_content(source, bindings=, caller_flags=, stack=)` | 被 import モジュールを 1 インスタンスとしてコンパイル |
+| `compileRoot(text, filename, data, flags)` | 呼び出し側が文字列で渡した文書のコンパイル |
+| `compileContent(source, bindings, callerFlags, stack)` | 被 import モジュールを1インスタンスとしてコンパイル |
 
-`compile_with_map` / `compile_ast` / `diagnose` はすべてこのセッションを通る。`source_bytes` は
+`compileWithMap` / `compileAst` / `diagnose` はすべてこのセッションを通る。`sourceBytes` は
 ルートモジュールのハッシュを実ファイルのバイト列と一致させるための引数で、CLI は必ず渡す。
 被 import モジュールはセッションが自分でバイト列を読むので常に正確である。import の基準
-ディレクトリは `os.path.dirname(filename)` であり、`filename="<string>"` ならカレントディレクトリ
+ディレクトリは `dirName(filename)` であり、`filename="<string>"` ならカレントディレクトリ
 基準になる。
 
 `render.CompilationResult.sources` はソースマップに渡す `LoadedSource` の列である。
-`LoadedSource` はレンダリング結果に付随するメタデータなので `render.py` に置き、`modules.py` が
-import する（逆向きの依存を作らない）。
+`LoadedSource` はレンダリング結果に付随するメタデータなので `source.d` に置き、`modules.d` が
+importする（逆向きの依存を作らない）。
 
 ---
 
 ## 11. ソースマップの複数ソース化
 
-`serialize_source_map(result, generated_path=, map_path=, generated_bytes=)` はソース一覧を
+`serializeSourceMap(result, generatedPath, mapPath, generatedBytes)` はソース一覧を
 `result.sources` から取る。
 
 - **id 0 は必ずルート**。以降はフラグメント内の初出順。どちらも決定的である。
 - `sources` 配列にはフラグメントを持つファイルだけを書く。ロードはされたがフラグメントを 1 つも
-  持たないファイル（`.tfxm`、内容が全部落ちた `.tfx`）は載せない。`load_source_map` は載っている
+  持たないファイル（`.tfxm`、内容が全部落ちた `.tfx`）は載せない。source-map reader は載っている
   ソースを全部ハッシュ検証するので、無関係なファイルを載せると SyncTeX に不要な `Input` レコードが
   増える。
 - import を使わない単一ファイル文書では `sources` は 1 要素・全 mapping の `id` は 0 になり、
@@ -642,7 +638,7 @@ import する（逆向きの依存を作らない）。
 - 被 import モジュールの正準 AST ノードは**自分の span を保持する**。呼び出し側の `!import` 行へ
   付け替えてはならない。`--source-comments` の `% texflux: <file>:<line>` もこれにより自動的に
   正しいファイル名を出す。
-- `remap.py` は複数ソースに対応しており、`--map` 1 個で複数ソースを扱える。
+- `source/texflux/remap.d` は複数ソースに対応しており、`--map` 1 個で複数ソースを扱える。
 
 ---
 
@@ -656,7 +652,7 @@ texflux compile main.tfx -o main.tex --flag draft --flag handout=off
 - `--flag` は**ルートモジュールにのみ**適用される。被 import モジュールへの伝播は
   `!import{...}($flag)` による明示的な転送だけである。
 - `ModuleError` は `TeXFluxError` 派生なので、他の診断と同じ 1 行で終了コード 1 になる。
-- 深すぎる import ネストは `RecursionError` として拾う。import 段数に人工的な上限は設けない
+- 深すぎる import ネストは `NestingError` として拾う。import 段数に人工的な上限は設けない
   （循環は §8.3 で検出される）。
 
 ---
@@ -732,7 +728,7 @@ LaTeX の意味検証
 - **依存関係の出力コマンド**（`--deps` 相当）。`session.loaded()` が全ソースを持っているので
   実装は軽いが、条件分岐で依存グラフが変わる点をどう扱うかは要設計。
 - **モジュールインスタンスの正準 AST キャッシュ**（D7）。同じモジュールを同じフラグで 2 回
-  import すると 2 回コンパイルする。`(path, frozenset(flags.items()))` をキーにすれば安全に効かせられる。
+  import すると 2 回コンパイルする。`(path, Flags)` の値をキーにすれば安全に効かせられる。
 - **`.tfxm` の変更検出**。`.tfxm` はフラグメントを持たないため `.tfxmap` の `sources` に載らず、
   ソースマップだけでは陳腐化を検出できない。これはビルドシステムの責務とする。
 
