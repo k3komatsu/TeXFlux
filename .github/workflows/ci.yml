@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux-minimum:
+    name: Linux minimum
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install LDC 1.43.0
+        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        with:
+          compiler: ldc-1.43.0
+
+      - name: Install TeX integration dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends texlive-latex-recommended
+
+      - name: Verify TeX integration tools
+        shell: bash
+        run: |
+          command -v pdflatex
+          command -v synctex
+          test -n "$(kpsewhich beamer.cls)"
+
+      - name: Run tests and build configurations
+        shell: bash
+        run: |
+          dub test
+          dub build
+          dub build -c library
+          dub build --build=release
+          dub build -c update-regression
+
+      - name: Check version command
+        shell: bash
+        run: |
+          version="$(bin/texflux --version)"
+          [[ "$version" =~ ^texflux\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+      - name: Check for tracked-file changes
+        shell: bash
+        run: git diff --exit-code
+
+  test-platform:
+    name: Platform smoke (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-15
+            deployment_target: "13.0"
+            binary: bin/texflux
+          - name: Windows x86_64
+            runner: windows-2022
+            deployment_target: ""
+            binary: bin/texflux.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set macOS deployment target
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}" >> "$GITHUB_ENV"
+
+      - name: Install LDC 1.43.0
+        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        with:
+          compiler: ldc-1.43.0
+
+      - name: Run native tests and release build
+        shell: bash
+        run: |
+          dub test
+          dub build --build=release
+
+      - name: Check version command
+        shell: bash
+        run: |
+          version="$("${{ matrix.binary }}" --version)"
+          [[ "$version" =~ ^texflux\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+      - name: Check for tracked-file changes
+        shell: bash
+        run: git diff --exit-code
+
+  test-linux-latest:
+    name: Linux latest LDC
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install latest LDC
+        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        with:
+          compiler: ldc-latest
+
+      - name: Run compatibility tests and release build
+        shell: bash
+        run: |
+          dub test
+          dub build --build=release
+
+      - name: Check version command
+        shell: bash
+        run: |
+          version="$(bin/texflux --version)"
+          [[ "$version" =~ ^texflux\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+      - name: Check for tracked-file changes
+        shell: bash
+        run: git diff --exit-code

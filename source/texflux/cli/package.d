@@ -50,7 +50,7 @@ struct CommandStreams
     }
 }
 
-private enum usage = "usage: texflux [-h] {compile,ast,check,bundle,synctex} ...";
+private enum usage = "usage: texflux [-h] [--version] {compile,ast,check,bundle,synctex} ...";
 
 /// Run one command and return the status the process should exit with.
 int run(string[] args, CommandStreams streams)
@@ -59,6 +59,13 @@ int run(string[] args, CommandStreams streams)
     {
         if (args.length == 0)
             throw new UsageError("the following arguments are required: command");
+        if (args[0] == "--version")
+        {
+            if (args.length != 1)
+                throw new UsageError("unrecognized arguments: " ~ args[1 .. $].join(" "));
+            streams.writeLine("texflux " ~ texfluxVersion);
+            return 0;
+        }
         if (args[0] == "-h" || args[0] == "--help")
         {
             streams.writeLine(usage);

@@ -1,5 +1,6 @@
 name "texflux"
 description "A TeX-first indentation-based preprocessor for structural LaTeX boilerplate"
+license "0BSD"
 targetType "executable"
 targetName "texflux"
 targetPath "bin"

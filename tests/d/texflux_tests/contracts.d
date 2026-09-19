@@ -56,7 +56,13 @@ private string tempRoot(string name)
 
 unittest
 {
-    assert(texfluxVersion == "0.3.0");
+    auto versionResult = invoke(["--version"]);
+    assert(versionResult.status == 0
+            && versionResult.stdout == "texflux " ~ texfluxVersion ~ "\n"
+            && versionResult.stderr == "");
+    auto versionWithArgument = invoke(["--version", "extra"]);
+    assert(versionWithArgument.status == 2 && versionWithArgument.stdout == ""
+            && versionWithArgument.stderr.canFind("usage:"));
     auto ast = parseJSON(serializeAst(compileAst("", "version.tfx")));
     assert(ast["producer"]["version"].str == texfluxVersion);
     auto diagnostics = parseJSON(serializeDiagnostics(diagnose("", "version.tfx")));
