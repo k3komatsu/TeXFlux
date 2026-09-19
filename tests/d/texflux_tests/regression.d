@@ -299,6 +299,8 @@ private string normalizeSynctex(string text)
             ++after;
         auto body = text[start .. bodyEnd];
         auto ending = text[bodyEnd .. after];
+        if (body.startsWith("Input:"))
+            body = body.replace("\\", "/");
         bool anchor = body.length > 1 && body[0] == '!';
         for (size_t index = 1; anchor && index < body.length; ++index)
             anchor = body[index] >= '0' && body[index] <= '9';

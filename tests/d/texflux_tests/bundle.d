@@ -258,7 +258,7 @@ unittest
         loadedNames ~= source.file;
         hasLogical |= source.file.endsWith("!/child.tfx");
         hasPhysical |= source.file.endsWith("!/child.tfx")
-            && source.path.endsWith("/payload/source/000000.tfx")
+            && source.path.replace("\\", "/").endsWith("/payload/source/000000.tfx")
             && source.data == cast(immutable(ubyte)[]) read(child);
     }
     assert(hasLogical, "Bundle source spans use a logical tfxb identity: "
