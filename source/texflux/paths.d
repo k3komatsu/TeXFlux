@@ -13,9 +13,21 @@
  */
 module texflux.paths;
 
-import std.file : exists, isSymlink, readLink;
+import std.file : exists;
 import std.path : absolutePath, buildNormalizedPath, buildPath, dirName, pathSplitter;
+import std.string : startsWith;
 import std.typecons : Nullable, nullable, Tuple, tuple;
+
+version (Posix)
+    import std.file : isSymlink, readLink;
+
+version (Windows)
+{
+    import core.sys.windows.winbase : CloseHandle, CreateFileW, FILE_FLAG_BACKUP_SEMANTICS,
+        GetFinalPathNameByHandleW, INVALID_HANDLE_VALUE, OPEN_EXISTING;
+    import core.sys.windows.winnt : FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE;
+    import std.utf : toUTF16z, toUTF8;
+}
 
 /**
  * One path made absolute, with its relative segments folded away.
@@ -104,21 +116,72 @@ version (Posix) unittest
  */
 private string resolveLinks(string path)
 {
-    enum maximumHops = 40;
-
-    string resolved;
-    foreach (component; pathSplitter(path))
+    version (Posix)
     {
-        auto next = buildPath(resolved, component);
-        size_t hops = 0;
-        while (hops < maximumHops && exists(next) && isSymlink(next))
+        enum maximumHops = 40;
+
+        string resolved;
+        foreach (component; pathSplitter(path))
         {
-            next = buildNormalizedPath(absolutePath(readLink(next), dirName(next)));
-            ++hops;
+            auto next = buildPath(resolved, component);
+            size_t hops = 0;
+            while (hops < maximumHops && exists(next) && isSymlink(next))
+            {
+                next = buildNormalizedPath(absolutePath(readLink(next), dirName(next)));
+                ++hops;
+            }
+            resolved = next;
         }
-        resolved = next;
+        return resolved;
     }
-    return resolved;
+    else version (Windows)
+    {
+        // Phobos exposes readLink only on POSIX. Windows resolves both
+        // symbolic links and junctions through the final path of a handle.
+        string resolved;
+        foreach (component; pathSplitter(path))
+        {
+            auto next = buildPath(resolved, component);
+            if (exists(next))
+                next = windowsFinalPath(next);
+            resolved = next;
+        }
+        return resolved;
+    }
+    else
+        return path;
+}
+
+version (Windows)
+private string windowsFinalPath(string path)
+{
+    auto handle = CreateFileW(path.toUTF16z, 0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, null, OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS, null);
+    if (handle == INVALID_HANDLE_VALUE)
+        return path;
+    scope (exit) CloseHandle(handle);
+
+    wchar[] buffer = new wchar[](256);
+    while (true)
+    {
+        const length = GetFinalPathNameByHandleW(handle, buffer.ptr, cast(uint) buffer.length, 0);
+        if (length == 0)
+            return path;
+        if (length < buffer.length)
+            return stripWindowsPathPrefix(buffer[0 .. length].toUTF8());
+        buffer.length = cast(size_t) length + 1;
+    }
+}
+
+version (Windows)
+private string stripWindowsPathPrefix(string path)
+{
+    if (path.startsWith(`\\?\UNC\`))
+        return `\\` ~ path[8 .. $];
+    if (path.startsWith(`\\?\`))
+        return path[4 .. $];
+    return path;
 }
 
 /// Fold a path's case only where the platform itself folds it.
