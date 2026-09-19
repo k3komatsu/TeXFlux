@@ -163,13 +163,13 @@ string resolveModulePath(string importer, string written, ModuleKind kind, Sourc
         throw new ModuleError("M002", "module path must not contain a NUL character", span);
     if (written.canFind('\\'))
         throw new ModuleError("M003", "module paths use '/' separators", span);
-    if (written.isAbsolute)
+    if (written.isAbsolute || written.startsWith("/"))
         throw new ModuleError("M004",
                 "module paths must be relative to the importing file", span);
     if (!written.endsWith(cast(string) kind))
         throw new ModuleError("M005", "!" ~ kind.construct ~ " requires a '"
                 ~ cast(string) kind ~ "' module; got '" ~ written ~ "'", span);
-    return displayPath(buildNormalizedPath(importer.dirName, written));
+    return buildNormalizedPath(importer.dirName, written);
 }
 
 // ---------------------------------------------------------------------------
@@ -809,7 +809,7 @@ final class CompilationSession
     /// Resolve a Bundle edge in this session.
     string resolveBundlePath(string importer, string written, SourceSpan span)
     {
-        return moduleResolver is null ? displayPath(buildNormalizedPath(importer.dirName, written))
+        return moduleResolver is null ? buildNormalizedPath(importer.dirName, written)
             : moduleResolver(importer, written, "bundle", span);
     }
 
@@ -860,7 +860,7 @@ final class CompilationSession
 
         if (reason !is null)
             throw new ModuleError("M027",
-                    "cannot read module '" ~ display ~ "': " ~ reason, span);
+                    "cannot read module '" ~ displayPath(display) ~ "': " ~ reason, span);
         return register(display, data, text);
     }
 
