@@ -88,10 +88,30 @@ jobs:
           compiler: ldc-1.43.0
 
       - name: Run native tests and release build
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           dub test
           dub build --build=release
+
+      - name: Run native tests and release build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dub test
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) {
+            $unsigned = [uint32]$testExit
+            Write-Error ("dub test failed: exit code {0} (0x{1:X8})" -f $testExit, $unsigned)
+            exit $testExit
+          }
+          dub build --build=release
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            $unsigned = [uint32]$buildExit
+            Write-Error ("release build failed: exit code {0} (0x{1:X8})" -f $buildExit, $unsigned)
+            exit $buildExit
+          }
 
       - name: Check version command
         shell: bash
