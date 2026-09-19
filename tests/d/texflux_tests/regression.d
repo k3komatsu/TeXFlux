@@ -343,6 +343,13 @@ private string normalizeWorkspace(string text, string workspace, bool jsonLike =
     aliases.sort!((a, b) => a.length > b.length);
     foreach (spelling; aliases)
         text = text.replace(spelling, "${WORKSPACE}");
+    version (Windows)
+    {
+        foreach (spelling; aliases)
+            text = text.replace(spelling.replace("\\", "\\\\"), "${WORKSPACE}");
+        text = text.replace("${WORKSPACE}\\\\", "${WORKSPACE}/")
+            .replace("${WORKSPACE}\\", "${WORKSPACE}/");
+    }
     if (synctex)
         text = normalizeSynctex(text);
     return jsonLike ? normalizeProducerVersion(text) : text;
