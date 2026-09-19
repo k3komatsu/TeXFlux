@@ -1,7 +1,6 @@
 slide/*
 .DS_Store
 .claude/
-AGENTS.md
 build/
 examples/html_slide/
 bin/
