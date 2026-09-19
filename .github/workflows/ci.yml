@@ -25,6 +25,7 @@ jobs:
         uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
         with:
           compiler: ldc-1.43.0
+          dub: ''
 
       - name: Install TeX integration dependencies
         shell: bash
@@ -86,6 +87,7 @@ jobs:
         uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
         with:
           compiler: ldc-1.43.0
+          dub: ''
 
       - name: Run native tests and release build
         if: runner.os != 'Windows'
@@ -134,6 +136,7 @@ jobs:
         uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
         with:
           compiler: ldc-latest
+          dub: ''
 
       - name: Run compatibility tests and release build
         shell: bash

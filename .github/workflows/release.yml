@@ -230,6 +230,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+      artifact-metadata: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -270,7 +271,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          tag="$GITHUB_REF_NAME"
           source_date_epoch="$(git log -1 --format=%ct)"
           rm -rf dist packages
           mkdir -p dist packages
@@ -278,7 +279,7 @@ jobs:
           make_unix_package() {
             local platform="$1"
             local source="$2"
-            local root="texflux-${version}-${platform}"
+            local root="texflux-${tag}-${platform}"
             mkdir -p "packages/$root"
             install -m 0755 "$source" "packages/$root/texflux"
             install -m 0644 LICENSE "packages/$root/LICENSE"
@@ -291,7 +292,7 @@ jobs:
           make_windows_package() {
             local platform="$1"
             local source="$2"
-            local root="texflux-${version}-${platform}"
+            local root="texflux-${tag}-${platform}"
             mkdir -p "packages/$root"
             install -m 0755 "$source" "packages/$root/texflux.exe"
             install -m 0644 LICENSE "packages/$root/LICENSE"
@@ -331,6 +332,8 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -344,14 +347,14 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           find downloaded-release -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name 'SHA256SUMS' \) -exec cp {} release-assets/ \;
-          version="${GITHUB_REF_NAME#v}"
+          tag="$GITHUB_REF_NAME"
           cat > expected-assets <<EOF
           SHA256SUMS
-          texflux-${version}-linux-arm64.tar.gz
-          texflux-${version}-linux-x86_64.tar.gz
-          texflux-${version}-macos-arm64.tar.gz
-          texflux-${version}-macos-x86_64.tar.gz
-          texflux-${version}-windows-x86_64.zip
+          texflux-${tag}-linux-arm64.tar.gz
+          texflux-${tag}-linux-x86_64.tar.gz
+          texflux-${tag}-macos-arm64.tar.gz
+          texflux-${tag}-macos-x86_64.tar.gz
+          texflux-${tag}-windows-x86_64.zip
           EOF
           (cd release-assets && sha256sum -c SHA256SUMS)
           find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > actual-assets
@@ -364,7 +367,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          set -euo pipefail
+          if draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [[ "$draft" != "true" ]]; then
+              echo "release already exists and is published; refusing to overwrite" >&2
+              exit 1
+            fi
+          else
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes \
               --title "$GITHUB_REF_NAME"
           fi
