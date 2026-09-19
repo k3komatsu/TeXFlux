@@ -93,7 +93,7 @@
         "kind": {
           "type": "string",
           "pattern": "^[a-z]+$",
-          "description": "Open category set (parse, validation, directive, macro, module); consumers must accept unknown values."
+          "description": "Open category set (parse, validation, directive, macro, module, bundle); consumers must accept unknown values."
         },
         "code": {
           "type": "string",

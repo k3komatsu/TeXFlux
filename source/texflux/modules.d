@@ -22,15 +22,20 @@ module texflux.modules;
 import std.algorithm : canFind, endsWith, filter, map, splitter, startsWith;
 import std.array : array, join;
 import std.conv : to;
+import std.file : read;
 import std.path : buildNormalizedPath, dirName, isAbsolute;
 import std.string : indexOf;
 import std.sumtype : get, has, match;
 import std.typecons : Nullable;
 
 import texflux.ast;
+import texflux.archive : BundleLimits;
+import texflux.assets : AssetReference, AssetResolver, resolveFilesystemAsset;
+import texflux.bundle : readBundleBytes, resolveBundleFrame;
 import texflux.canonical : builtinDirectives, canonicalize, DirectiveRegistry;
 import texflux.desugar : desugar;
-import texflux.errors : Descent, InternalError, ModuleError, RelatedLocation, TeXFluxError;
+import texflux.errors : BundleError, Descent, InternalError, ModuleError, RelatedLocation,
+    TeXFluxError;
 import texflux.flags : collectFlags, Conditional, declaredFlagsHint, Flags, flagValue,
     isFlagName, validateFlagForms;
 import texflux.macros : collectMacros, expandMacros, MacroEnvironment, Reserved,
@@ -39,6 +44,7 @@ import texflux.parser : parse;
 import texflux.paths : absoluteNormalized, normalizedPath, openFailure;
 import texflux.ordered : OrderedMap;
 import texflux.source : LoadedSource, SourcePosition, SourceSpan;
+import texflux.trace : BundleResolutionState, CompilationTrace;
 import texflux.syntax : asSpecial, demandText, mapChildren, requiredText, specials, stacks;
 import texflux.text : decodeUtf8, lstripWhitespace, stripSpaces, stripWhitespace,
     UnicodeDecodeError;
@@ -55,6 +61,7 @@ enum Module : string
 {
     import_ = "import",
     macroimport = "macroimport",
+    bundleimport = "bundleimport",
 }
 
 /// The special that imports a module of one kind.
@@ -88,7 +95,7 @@ private enum macroModuleStatements = [cast(string) Reserved.define,
  */
 private enum macroModuleForbidden = [cast(string) Conditional.declare,
     cast(string) Conditional.when, cast(string) Conditional.unless,
-    cast(string) Module.import_];
+    cast(string) Module.import_, cast(string) Module.bundleimport];
 
 /// Template-only constructs, which need no definition to be valid.
 private enum templateNames = [cast(string) Reserved.param, cast(string) Reserved.each,
@@ -102,6 +109,10 @@ private enum templateNames = [cast(string) Reserved.param, cast(string) Reserved
  * session turns into a diagnostic that points at the import.
  */
 alias SourceReader = immutable(ubyte)[] delegate(string display);
+
+/// Optional edge resolver used by a Bundle session to avoid filesystem aliases.
+alias ModulePathResolver = string delegate(string importer, string written,
+        string kind, SourceSpan span);
 
 /// The default reader: whatever is on disk at that spelling.
 immutable(ubyte)[] readSource(string display)
@@ -129,6 +140,8 @@ struct MacroImport
 {
     string path;
     string display;
+    string from;
+    string written;
     /// The path group, which is what an author would fix.
     SourceSpan span;
 }
@@ -356,7 +369,7 @@ void validateMacroModulePurity(Document document)
 // ---------------------------------------------------------------------------
 
 private MacroImport readMacroImport(SpecialInvocation node, ref SourceSpan[string] seen,
-        string importer)
+        string importer, ModulePathResolver pathResolver = null)
 {
     if (node.suite !is null)
         throw new ModuleError("M015", "!macroimport does not accept a suite", node.span);
@@ -373,14 +386,16 @@ private MacroImport readMacroImport(SpecialInvocation node, ref SourceSpan[strin
                 group.span);
 
     const written = group.demandText("!macroimport path");
-    const display = resolveModulePath(importer, written, ModuleKind.macro_, group.span);
+    const display = pathResolver is null
+        ? resolveModulePath(importer, written, ModuleKind.macro_, group.span)
+        : pathResolver(importer, written, "macro", group.span);
     const path = normalizedPath(display);
     if (auto first = path in seen)
         throw new ModuleError("M019", "macro module '" ~ display
                 ~ "' is already imported at " ~ first.location, group.span,
                 [RelatedLocation("first imported here", *first)]);
     seen[path] = group.span;
-    return MacroImport(path, display, group.span);
+    return MacroImport(path, display, normalizedPath(importer), written, group.span);
 }
 
 /// A document with its macro imports removed, and the imports themselves.
@@ -391,7 +406,8 @@ struct ResolvedMacroImports
 }
 
 /// Strip the top-level macro imports and resolve their paths.
-ResolvedMacroImports resolveMacroImports(Document document, string importer)
+ResolvedMacroImports resolveMacroImports(Document document, string importer,
+        ModulePathResolver pathResolver = null)
 {
     SourceSpan[string] seen;
     MacroImport[] imports;
@@ -404,7 +420,7 @@ ResolvedMacroImports resolveMacroImports(Document document, string importer)
             nodes ~= node;
             continue;
         }
-        imports ~= readMacroImport(found.get, seen, importer);
+        imports ~= readMacroImport(found.get, seen, importer, pathResolver);
     }
 
     auto body_ = new Block(nodes, document.body_.span);
@@ -454,12 +470,13 @@ struct CollectedMacroModule
  * bundled standard module, which has no path at all.
  */
 CollectedMacroModule collectMacroModule(Document document, string display, string module_,
-        DirectiveRegistry registry, const(string)[] standard = null)
+        DirectiveRegistry registry, const(string)[] standard = null,
+        ModulePathResolver pathResolver = null)
 {
     validateMacroForms(document);
     validateMacroImportForms(document);
     validateMacroModulePurity(document);
-    auto resolved = resolveMacroImports(desugar(document), display);
+    auto resolved = resolveMacroImports(desugar(document), display, pathResolver);
     auto collected = collectMacros(resolved.document, registry.keys, MacroEnvironment.init,
             module_, standard);
     return CollectedMacroModule(collected.macros, resolved.imports);
@@ -523,10 +540,13 @@ private struct ImportResolver
         foreach (node; source.nodes)
         {
             auto found = node.asSpecial;
-            if (found.isNull || found.get.name != cast(string) Module.import_)
+            if (found.isNull || (found.get.name != cast(string) Module.import_
+                    && found.get.name != cast(string) Module.bundleimport))
                 // Raw TeX and the canonical nodes an inner import produced
                 // hold no blocks, so they come back unchanged.
                 nodes ~= mapChildren(node, &block);
+            else if (found.get.name == cast(string) Module.bundleimport)
+                nodes ~= expandBundle(found.get);
             else
                 nodes ~= expand(found.get);
         }
@@ -566,9 +586,9 @@ private struct ImportResolver
             throw new ModuleError("M025", "!import requires exactly one '{path}' group",
                     node.span);
 
-        const display = resolveModulePath(module_.display,
-                pathGroup.get.demandText("!import path"), ModuleKind.content,
-                pathGroup.get.span);
+        const written = pathGroup.get.demandText("!import path");
+        const display = session.resolveImportPath(module_.display, written,
+                ModuleKind.content, pathGroup.get.span);
         auto bindings = bindingGroup.isNull ? null : parseBindings(bindingGroup.get);
 
         Document imported;
@@ -577,6 +597,8 @@ private struct ImportResolver
             // Loading the target parses it, so a parse error in the callee is
             // inside the chain as much as a later validation error is.
             auto target = session.load(display, pathGroup.get.span);
+            session.recordDependency(module_.path, "import", written, target.path,
+                    pathGroup.get.span);
             // The active import stack, not "ever seen": importing one module
             // twice is legal and simply produces two instances.
             if (stack.canFind(target.path))
@@ -597,6 +619,41 @@ private struct ImportResolver
                     RelatedLocation("imported from here", node.span));
         }
         return imported.body_.nodes;
+    }
+
+    private Node[] expandBundle(SpecialInvocation node)
+    {
+        if (node.suite !is null)
+            throw bundleForm(node.span, "!bundleimport does not accept a suite");
+        if (node.groups.length != 2)
+            throw bundleForm(node.span, "!bundleimport requires exactly two '{...}' groups");
+        foreach (group; node.groups)
+            if (requiredText(group).isNull)
+                throw bundleForm(group.span,
+                        "!bundleimport accepts required inline '{...}' groups only");
+
+        const written = node.groups[0].demandText("!bundleimport path");
+        if (written.length == 0 || written.canFind('\0') || written.canFind('\\')
+                || written.isAbsolute || written.startsWith("//")
+                || (written.length >= 2 && written[1] == ':') || !written.endsWith(".tfxb"))
+            throw bundlePathForm(node.groups[0].span, written);
+        const display = session.resolveBundlePath(module_.display, written, node.groups[0].span);
+        const selector = node.groups[1].demandText("!bundleimport selector");
+        const bytes = readBundleBytes(display);
+        session.recordBundle(normalizedPath(display), display, bytes);
+        session.recordDependency(module_.path, "bundleimport", written,
+                normalizedPath(display), node.span, selector);
+        return resolveBundleFrame(display, selector, node.span, session);
+    }
+
+    private BundleError bundleForm(SourceSpan span, string message)
+    {
+        return new BundleError("B004", message, span);
+    }
+
+    private BundleError bundlePathForm(SourceSpan span, string written)
+    {
+        return new BundleError("B005", "invalid !bundleimport path '" ~ written ~ "'", span);
     }
 }
 
@@ -642,13 +699,47 @@ final class CompilationSession
      * rewritten to contain a synthetic import of them.
      */
     private MacroEnvironment standard;
+    private AssetResolver assetResolver;
+    private CompilationTrace* trace;
+    private BundleLimits limits;
+    private string cacheRoot;
+    private BundleResolutionState bundleState_;
+    private ModulePathResolver moduleResolver;
 
-    this(DirectiveRegistry registry = builtinDirectives(), SourceReader reader = null)
+    this(DirectiveRegistry registry = builtinDirectives(), SourceReader reader = null,
+            AssetResolver assetResolver = null, CompilationTrace* trace = null,
+            BundleLimits limits = BundleLimits.init, string cacheRoot = null,
+            BundleResolutionState bundleState = null,
+            ModulePathResolver moduleResolver = null)
     {
         this.registry = registry;
         this.reader = reader is null ? (string display) => readSource(display) : reader;
+        this.trace = trace;
+        this.assetResolver = assetResolver is null ? &resolveAsset : assetResolver;
+        this.limits = limits;
+        this.cacheRoot = cacheRoot;
+        this.bundleState_ = bundleState is null ? new BundleResolutionState : bundleState;
+        this.moduleResolver = moduleResolver;
         this.standard = loadStandardMacros(registry);
         this.environments[preludeModule] = this.standard;
+    }
+
+    private string resolveAsset(AssetReference reference)
+    {
+        const resolved = resolveFilesystemAsset(reference);
+        if (trace !is null)
+        {
+            import std.file : read;
+            import texflux.paths : normalizedPath;
+
+            const physical = normalizedPath(resolved);
+            trace.asset(physical, resolved,
+                    cast(immutable(ubyte)[]) read(resolved));
+            trace.dependency(normalizedPath(reference.ownerFile), "asset",
+                    reference.path, physical, reference.span);
+        }
+        // Filesystem compilation preserves the authored spelling in TeX.
+        return reference.path;
     }
 
     // -- sources -----------------------------------------------------------
@@ -657,6 +748,69 @@ final class CompilationSession
     LoadedSource[] loaded()
     {
         return readFiles;
+    }
+
+    /// Record one resolved edge without exposing the trace to normal users.
+    void recordDependency(string from, string kind, string path, string target,
+            SourceSpan span, string selector = null)
+    {
+        if (trace !is null)
+            trace.dependency(from, kind, path, target, span, selector);
+    }
+
+    /// Record an opaque nested Bundle payload for a Bundle build.
+    void recordBundle(string path, string display, immutable(ubyte)[] data)
+    {
+        if (trace !is null)
+            trace.bundle(path, display, data);
+    }
+
+    /// Add canonical sources produced by an opaque Bundle compilation so the
+    /// caller's source-map table can still encode their spans.
+    void recordExternalSources(LoadedSource[] sources_)
+    {
+        foreach (source; sources_)
+        {
+            bool present;
+            foreach (loadedSource; readFiles)
+                present |= loadedSource.file == source.file;
+            if (!present)
+                readFiles ~= source;
+        }
+    }
+
+    /// Bundle reader options inherited by nested bundle compilations.
+    BundleLimits bundleLimits() const
+    {
+        return limits;
+    }
+
+    /// A caller may provide an isolated cache root; nested imports share it.
+    string bundleCacheRoot() const
+    {
+        return cacheRoot;
+    }
+
+    /// The active Bundle digest stack shared by nested Bundle sessions.
+    BundleResolutionState bundleResolutionState()
+    {
+        return bundleState_;
+    }
+
+    /// Resolve an ordinary content or macro edge in this session.
+    string resolveImportPath(string importer, string written, ModuleKind kind,
+            SourceSpan span)
+    {
+        return moduleResolver is null
+            ? texflux.modules.resolveModulePath(importer, written, kind, span)
+            : moduleResolver(importer, written, cast(string) kind, span);
+    }
+
+    /// Resolve a Bundle edge in this session.
+    string resolveBundlePath(string importer, string written, SourceSpan span)
+    {
+        return moduleResolver is null ? buildNormalizedPath(importer.dirName, written)
+            : moduleResolver(importer, written, "bundle", span);
     }
 
     /// The display spelling of one loaded module.
@@ -673,6 +827,8 @@ final class CompilationSession
         auto source = ModuleSource(normalizedPath(display), display, data,
                 parse(text, display));
         sources[source.path] = source;
+        if (trace !is null)
+            trace.source(source.path, display, data);
         return source;
     }
 
@@ -765,6 +921,8 @@ final class CompilationSession
         while (at < pending.length)
         {
             auto macroImport = pending[at++];
+            recordDependency(macroImport.from, "macroimport", macroImport.written,
+                    macroImport.path, macroImport.span);
             if ((macroImport.path in publicMacros) !is null)
                 continue;
             if (macroImport.path !in importedFrom)
@@ -774,7 +932,7 @@ final class CompilationSession
             importing(macroImport.path, {
                 auto source = load(macroImport.display, macroImport.span);
                 auto collected = collectMacroModule(source.document, source.display,
-                        source.path, registry, standard.keys);
+                        source.path, registry, standard.keys, moduleResolver);
                 imports = collected.imports;
                 publicMacros[source.path] = collected.macros;
                 moduleImports[source.path] = imports;
@@ -836,6 +994,11 @@ final class CompilationSession
             Flags flags = Flags.init)
     {
         auto source = register(filename, data, text);
+        if (trace !is null)
+        {
+            trace.root = source.path;
+            trace.rootDisplay = filename;
+        }
         return compile(source, flags, true, null, Flags.init, [source.path]);
     }
 
@@ -866,8 +1029,10 @@ final class CompilationSession
         auto resolved = collected.flags;
         if (bindings.length != 0)
             resolved = bindImportFlags(resolved, bindings, callerFlags, source.display);
+        if (trace !is null && isRoot)
+            trace.flags = resolved.dup;
 
-        auto stripped = resolveMacroImports(document, source.display);
+        auto stripped = resolveMacroImports(document, source.display, moduleResolver);
         document = stripped.document;
         buildEnvironments(stripped.imports);
 
@@ -877,8 +1042,11 @@ final class CompilationSession
         environments[source.path] = macros.macros;
 
         document = expandMacros(macros.document, macros.macros, resolved, environments,
-                source.path, true);
+                source.path, true, assetResolver);
         document = resolveContentImports(document, this, source, resolved, stack);
-        return canonicalize(document, registry);
+        auto canonical = canonicalize(document, registry);
+        if (trace !is null && isRoot)
+            trace.document = canonical;
+        return canonical;
     }
 }

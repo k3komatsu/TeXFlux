@@ -626,7 +626,7 @@ suite を付ける場合、suffix は最後のヘッダー行の最右端セグ�
 
 Special は `!` で始まる。未知の special は `DirectiveError` になる。ハンドラは TeX 文字列を直接返すのではなく、正準 AST ノード（canonical AST node）のタプルを返す。
 
-組み込みとして残っているのは、モジュール構文の `!import` と `!macroimport` のちょうど2つだけである（14節）。どちらもハンドラではなくコンパイルセッションが解決する。組み込み名なので `!defmacro` で再定義することはできない。
+`!import`、`!macroimport`、`!bundleimport` はハンドラではなく、コンパイルセッションが解決する構文である。組み込み名なので `!defmacro` で再定義することはできない。`!asset{...}` は別物で、text field 内だけで認識する resource marker であり、AST special ではない。
 
 ### 11.1 標準フロー制御
 
@@ -924,7 +924,7 @@ texflux compile talk.tfx -o talk.tex --flag draft --flag handout=off
 
 **捨てられたペイロードは展開も正規化もされない。**そのため、コンパイルが通らなくなった箇所を一時的に無効化したまま文書をビルドできる。未知の special、引数の数が合わないマクロ呼び出し、トップレベル以外の `!defmacro` は、いずれも捨てられる側にあれば報告されない。
 
-捨てられるペイロードが満たしていなければならないのは、**条件の解決より前に行われる検査のすべて**である。すなわち、構文として解釈できること、`!flag` がトップレベルの文であること、`!macroimport` もトップレベルの文であり `>>` のセグメントにならないこと、そして 12 章のテンプレートの規則（`!defmacro` を `>>` のセグメントにしないこと、`!each` が自前の `:` を持つこと、テンプレート内に `!import` / `!macroimport` を書かないこと）の4つであり、これがその全部である。
+捨てられるペイロードが満たしていなければならないのは、**条件の解決より前に行われる検査のすべて**である。すなわち、構文として解釈できること、`!flag` がトップレベルの文であること、`!macroimport` もトップレベルの文であり `>>` のセグメントにならないこと、そして 12 章のテンプレートの規則（`!defmacro` を `>>` のセグメントにしないこと、`!each` が自前の `:` を持つこと、テンプレート内に `!import` / `!macroimport` / `!bundleimport` を書かないこと）の4つであり、これがその全部である。
 
 この4つはいずれも「その行をどこに書いたか」という純粋に構文的な問いであり、**ファイルを1つも開かない**。したがって、コンパイルが通らなくなった内容も、存在しなくなった依存先も、どちらも `!when` で無効化したまま文書をビルドできる。
 
@@ -952,7 +952,7 @@ texflux compile talk.tfx -o talk.tex --flag draft --flag handout=off
 
 ### 14.1 コンテンツモジュール（.tfx）
 
-`.tfx` には、生の TeX、構造化構文、`!flag`、`!defmacro`、`!macroimport`、`!import`、
+`.tfx` には、生の TeX、構造化構文、`!flag`、`!defmacro`、`!macroimport`、`!import`、`!bundleimport`、
 条件、および通常の本文を書ける。
 
 `!import` は対象を**独立した1つのモジュールインスタンス**としてコンパイルし、
@@ -1096,6 +1096,40 @@ main.tfx:  !import{slide.tfx}
 A.tfx -> B.tfx -> A.tfx             % エラー
 ~~~
 
+### 14.5.1 Bundle と `!bundleimport`
+
+Bundle は、実際に使われた `.tfx` / `.tfxm`、明示的な `!asset`、参照 Bundle を
+source bytes のまま保存する `.tfxb` snapshot である。作成と一覧表示は CLI から行う。
+
+~~~text
+texflux bundle INPUT.tfx -o OUTPUT.tfxb [--flag NAME[=on|off]]
+texflux bundle list OUTPUT.tfxb
+texflux bundle list OUTPUT.tfxb --json
+~~~
+
+~~~text
+!bundleimport{relative/path.tfxb}{frame:3}
+~~~
+
+`!bundleimport` は required inline group をちょうど2つ取り、suite、binding list、
+`!text` interpolation は受け付けない。`.tfxb` の相対 POSIX path と `frame:N` selector
+を使う。active な条件の中には書けるが、捨てられた payload では Bundle を開かない。
+macro template と `.tfxm` には書けない。
+
+`frame:N` は Bundle 作成時の root canonical document の直接の子である `@frame` を、
+macro 展開と active な `!import` の後に source order で数えたものだ。nested frame、
+dropped payload、frame body 内の frame は index に含めない。再利用時は manifest の
+flags と dependency edge だけで root を再コンパイルし、callee の macro namespace と
+flags は caller に漏らさない。manifest index と再コンパイル結果の frame 数、selector、
+title、source、span が一致しない Bundle は拒否する。
+
+`!asset{figures/system.pdf}` は text field 内でのみ有効で、filesystem compile では
+author の path を TeX に残し、Bundle compile では検証済み cache path を返す。PATH 内で
+許可される interpolation は `!text{...}` だけである。`!!asset{...}`、raw mode、`!|`
+は従来どおり literal / verbatim で、行頭の `!asset{...}` は未知の special になる。
+Bundle の archive、manifest、payload hash、dependency closure は読み込み時に検証される。
+詳細は [Bundle v1](bundle.md) と normative spec を参照。
+
 ### 14.6 import のフラグ束縛
 
 束縛リストは、取り込む側が呼び出し先の宣言済みフラグを設定する構文である。
@@ -1144,7 +1178,7 @@ archive/2024/macros.tfxm
 `archive/2024/macros.tfxm` に解決されなければならない。
 
 パスの区切りは `/` のみで、相対パスでなければならず、構文に応じた拡張子
-（`!import` は `.tfx`、`!macroimport` は `.tfxm`）を持たなければならない。
+（`!import` は `.tfx`、`!macroimport` は `.tfxm`、`!bundleimport` は `.tfxb`）を持たなければならない。
 `..` は使える。依存の追跡に使われる識別子は正規化されたファイルシステムパスである。
 
 ### 14.8 生の TeX とモジュール境界

@@ -18,6 +18,7 @@ import std.array : join;
 import std.conv : to;
 import std.file : FileException, read, write;
 import std.path : extension;
+import std.string : endsWith, replace;
 import std.typecons : nullable;
 
 import texflux;
@@ -49,7 +50,7 @@ struct CommandStreams
     }
 }
 
-private enum usage = "usage: texflux [-h] {compile,ast,check,synctex} ...";
+private enum usage = "usage: texflux [-h] {compile,ast,check,bundle,synctex} ...";
 
 /// Run one command and return the status the process should exit with.
 int run(string[] args, CommandStreams streams)
@@ -72,11 +73,13 @@ int run(string[] args, CommandStreams streams)
             return astCommand(args[1 .. $], streams);
         case "check":
             return checkCommand(args[1 .. $], streams);
+        case "bundle":
+            return bundleCommand(args[1 .. $], streams);
         case "synctex":
             return synctexCommand(args[1 .. $], streams);
         default:
             throw new UsageError("argument command: invalid choice: '" ~ args[0]
-                    ~ "' (choose from 'compile', 'ast', 'check', 'synctex')");
+                    ~ "' (choose from 'compile', 'ast', 'check', 'bundle', 'synctex')");
         }
     }
     catch (UsageError error)
@@ -241,6 +244,70 @@ private int checkCommand(string[] words, CommandStreams streams)
                 streams.write(cast(const(ubyte)[])(lines.join("\n") ~ "\n"));
         }
         return report.ok ? 0 : 1;
+    });
+}
+
+private enum bundleBuildOptions = [
+    Option("output", ["-o", "--output"], true, false, true),
+    flagOption,
+    Option("help", ["-h", "--help"], false),
+];
+
+private enum bundleListOptions = [
+    Option("json", ["--json"], false),
+    Option("help", ["-h", "--help"], false),
+];
+
+private int bundleCommand(string[] words, CommandStreams streams)
+{
+    if (words.length != 0 && words[0] == "list")
+    {
+        auto arguments = parse(bundleListOptions, words[1 .. $]);
+        if (arguments.has("help"))
+        {
+            streams.writeLine("usage: texflux bundle list INPUT [--json]");
+            return 0;
+        }
+        const input = arguments.onePositional("INPUT");
+        if (!input.endsWith(".tfxb"))
+            return fail(streams, "Bundle input must have a .tfxb extension", 2);
+        return guarded(input, streams, 2, {
+            auto index = readBundleIndex(input);
+            if (arguments.has("json"))
+                streams.write(cast(const(ubyte)[]) serializeBundleIndex(index));
+            else
+            {
+                foreach (fragment; index.fragments)
+                {
+                    const title = fragment.title.isNull ? "<untitled>"
+                        : fragment.title.get.replace("\n", " ").replace("\t", " ");
+                    streams.writeLine(fragment.selector ~ "\t" ~ title);
+                }
+            }
+            return 0;
+        });
+    }
+
+    auto arguments = parse(bundleBuildOptions, words);
+    if (arguments.has("help"))
+    {
+        streams.writeLine("usage: texflux bundle [-h] -o OUTPUT.tfxb"
+                ~ " [--flag NAME[=on|off]] INPUT.tfx");
+        return 0;
+    }
+    const input = arguments.onePositional("INPUT");
+    const output = arguments.value("output");
+    if (!input.endsWith(".tfx"))
+        return fail(streams, "Bundle input must have a .tfx extension", 2);
+    if (!output.endsWith(".tfxb"))
+        return fail(streams, "Bundle output must have a .tfxb extension", 2);
+    if (samePath(input, output))
+        return fail(streams, "input and output must be different paths");
+
+    return guarded(input, streams, 1, {
+        auto result = buildBundle(input, BundleBuildOptions(readFlags(arguments)));
+        writeBundleAtomic(output, result.archive);
+        return 0;
     });
 }
 

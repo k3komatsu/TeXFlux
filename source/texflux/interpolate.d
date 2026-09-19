@@ -22,9 +22,10 @@ import std.sumtype : get, has;
 import std.typecons : Nullable, nullable;
 
 import texflux.ast : RawTex;
-import texflux.errors : MacroExpansionError;
+import texflux.assets : AssetReference, AssetResolver, validateAssetPath;
+import texflux.errors : BundleError, MacroExpansionError;
 import texflux.macros : expansionError, Frame, isParameterName;
-import texflux.source : SourcePosition, SourceSpan, SourceText, TextFragment;
+import texflux.source : plainText, SourcePosition, SourceSpan, SourceText, TextFragment;
 import texflux.syntax : isEscaped;
 
 /// The two markers a text field is scanned for, and nothing else.
@@ -32,6 +33,47 @@ private enum textMarker = "!text{"d;
 
 /// ditto
 private enum paramMarker = "!param{"d;
+
+/// The resource marker is still a text-field marker, not a syntax node.
+private enum assetMarker = "!asset{"d;
+
+private BundleError malformedAsset(SourceSpan span, string message)
+{
+    return new BundleError("B001", message, span);
+}
+
+/** Find the closing brace of an asset path, including nested !text groups. */
+private ptrdiff_t matchingAssetBrace(dstring text, size_t from) @safe pure
+{
+    size_t depth = 1;
+    foreach (index; from .. text.length)
+    {
+        if (text[index] == '{')
+            ++depth;
+        else if (text[index] == '}' && --depth == 0)
+            return cast(ptrdiff_t) index;
+    }
+    return -1;
+}
+
+private void validateAssetMarkers(dstring path, SourceSpan span)
+{
+    size_t index;
+    while (index < path.length)
+    {
+        const at = path[index .. $].countUntil('!');
+        if (at < 0)
+            return;
+        const marker = index + at;
+        if (!path[marker .. $].startsWith(textMarker))
+            throw malformedAsset(span,
+                    "!asset paths may contain only !text{...} interpolation");
+        const closeAt = path[marker + textMarker.length .. $].countUntil('}');
+        if (closeAt < 0)
+            throw malformedAsset(span, "unterminated !text{...} in !asset path");
+        index = marker + textMarker.length + closeAt + 1;
+    }
+}
 
 /**
  * One range inside a field's own span.
@@ -99,7 +141,7 @@ void rejectMarkers(string text, SourceSpan span, string where)
  * line.
  */
 Nullable!SourceText interpolate(string text, SourceSpan origin, SourceSpan target,
-        size_t offset, Frame* lookup)
+        size_t offset, Frame* lookup, AssetResolver assets = null)
 {
     if (!text.canFind('!'))
         return Nullable!SourceText.init;
@@ -134,7 +176,8 @@ Nullable!SourceText interpolate(string text, SourceSpan origin, SourceSpan targe
         // A doubled marker writes the marker itself. What that produces is
         // never scanned again, which is what makes the escape final.
         const escape = scanned[j .. $].startsWith("!" ~ textMarker) ? textMarker
-            : scanned[j .. $].startsWith("!" ~ paramMarker) ? paramMarker : ""d;
+            : scanned[j .. $].startsWith("!" ~ paramMarker) ? paramMarker
+            : scanned[j .. $].startsWith("!" ~ assetMarker) ? assetMarker : ""d;
         if (escape.length != 0)
         {
             literal(scanned[last .. j]);
@@ -174,6 +217,35 @@ Nullable!SourceText interpolate(string text, SourceSpan origin, SourceSpan targe
             throw expansionError("E008", "!param cannot be used inside a text field;"
                     ~ " use !text for text interpolation",
                     markerSpan(origin, offset + j, paramMarker.length), lookup);
+
+        if (scanned[j .. $].startsWith(assetMarker))
+        {
+            const from = j + assetMarker.length;
+            const closeAt = matchingAssetBrace(scanned, from);
+            const span = closeAt < 0
+                ? markerSpan(origin, offset + j, assetMarker.length)
+                : markerSpan(origin, offset + j, cast(size_t) closeAt + 1 - j);
+            if (closeAt < 0)
+                throw malformedAsset(span, "unterminated !asset{...}");
+
+            const rawPath = scanned[from .. cast(size_t) closeAt];
+            validateAssetMarkers(rawPath, span);
+
+            // Reuse the text scanner for the one permitted nested marker, but
+            // do not let a nested asset invoke the resolver a second time.
+            const nested = interpolate(rawPath.to!string, origin, target,
+                    offset + j + assetMarker.length, lookup);
+            const path = nested.isNull ? rawPath.to!string : plainText(nested.get);
+            validateAssetPath(path, span);
+            const rendered = assets is null ? path
+                : assets(AssetReference(path, span, target, origin.file, lookup !is null));
+
+            literal(scanned[last .. j]);
+            parts ~= TextFragment(rendered, span, lookup !is null);
+            index = last = cast(size_t) closeAt + 1;
+            found = true;
+            continue;
+        }
 
         index = j + 1;
     }

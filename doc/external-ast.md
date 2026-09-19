@@ -18,17 +18,19 @@ TeXや`.tfxmap`は生成しない。
 ## 出力する段階
 
 出力するのは、通常のcompileでrendererに渡すのと同じcanonical ASTである。
-すなわち`>>`のdesugar、フラグの解決、マクロ展開、`!import` / `!macroimport`の解決、
+すなわち`>>`のdesugar、フラグの解決、マクロ展開、`!import` / `!macroimport` /
+`!bundleimport`の解決、
 値の消費とspecialの展開がすべて終わった後の木で、次のものは出現しない。
 
 - syntax専用ノード: `Stack`、`SequenceEntry`、`ParsedInvocation`、`SpecialInvocation`
 - マクロ構文: `!defmacro`、`!param`、`!each`、`!text`
 - フラグ構文: `!flag`、`!when`、`!unless`
-- モジュール構文: `!import`、`!macroimport`
+- モジュール構文: `!import`、`!macroimport`、`!bundleimport`
 - 標準フロー制御: `!before`、`!after`、`!around`、`!off`、`!drop`（展開されて消える）
 
 このASTは「ユーザーがどのsyntax sugarを書いたか」を復元することを目的としない。
 また、`texflux ast`は必ず`CompilationSession`を通し、`!import` / `!macroimport` /
+`!bundleimport` /
 フラグ束縛 / モジュールごとのマクロスコープを通常のcompileと同じ意味論で解決する。
 単純な`normalize(parse(...))`で代用してはならない。
 
@@ -53,6 +55,10 @@ UTF-8で符号化したバイト列をハッシュに使用する。CRLFなど�
 ハッシュが必要なら、上の例のように元バイト列を渡す。
 `serializeAst(result, pretty)`の`pretty`はCLIの`--pretty`と同じ。
 `compileWithMap`も同じ`compileAst`の結果をTeX rendererへ渡す。
+
+Bundle から取り込んだ source は、既存の `sources` / `span` 形を変更せず、
+`tfxb:<bundle-sha256>!/<logicalPath>` を `LoadedSource.file` として表す。
+archive member と physical cache path は外部 AST の新しい field には出さない。
 
 ## Consumerが読む形式
 

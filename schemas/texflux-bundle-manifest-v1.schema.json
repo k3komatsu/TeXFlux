@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TeXFlux Bundle Manifest v1",
+  "description": "The manifest stored at the root of a .tfxb archive. Unknown object members are allowed; cross-file reachability, hashes, and path uniqueness are reader checks.",
+  "$comment": "archivePath names the writer-generated payload member. logicalPath is display/provenance metadata and is not used to resolve imports.",
+  "type": "object",
+  "required": ["format", "version", "producer", "root", "flags", "files", "dependencies", "fragments"],
+  "properties": {
+    "format": {"const": "texflux-bundle"},
+    "version": {"type": "integer", "const": 1},
+    "producer": {"$ref": "#/$defs/producer"},
+    "root": {"type": "string"},
+    "flags": {
+      "type": "object",
+      "description": "Effective boolean root flags. Unknown flag names are allowed because declarations are document-defined."
+    },
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+    "dependencies": {"type": "array", "items": {"$ref": "#/$defs/dependency"}},
+    "fragments": {"type": "array", "items": {"$ref": "#/$defs/fragment"}}
+  },
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "texflux"},
+        "version": {"type": "string"}
+      }
+    },
+    "position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"$ref": "#/$defs/position"},
+        "end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "file": {
+      "type": "object",
+      "required": ["id", "kind", "archivePath", "logicalPath", "size", "sha256"],
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"enum": ["source", "asset", "bundle"]},
+        "sourceKind": {"enum": ["content", "macro"]},
+        "archivePath": {"type": "string"},
+        "logicalPath": {"type": "string"},
+        "size": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "minLength": 64, "maxLength": 64}
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["from", "kind", "path", "target", "span"],
+      "properties": {
+        "from": {"type": "string"},
+        "kind": {"enum": ["import", "macroimport", "asset", "bundleimport"]},
+        "path": {"type": "string"},
+        "target": {"type": "string"},
+        "selector": {"type": "string"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    },
+    "fragment": {
+      "type": "object",
+      "required": ["selector", "kind", "title", "source", "span"],
+      "properties": {
+        "selector": {"type": "string"},
+        "kind": {"const": "frame"},
+        "title": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+        "source": {"type": "string"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    }
+  }
+}

@@ -169,6 +169,25 @@ TeXFlux では **1 ファイル = 1 モジュール**です。
 ### 5. 🪶 外部依存ゼロ（Zero Dependencies）
 D 1.43 以上の標準ライブラリ（Phobos）だけで実装されています。余計なパッケージのインストールや環境構築の競合に悩まされることはありません。
 
+### 6. 📦 Bundle（`.tfxb`）
+使用した `.tfx` / `.tfxm` と明示的に参照した asset を、検証済みの自己完結 archive として保存できます。
+
+```bash
+texflux bundle slides.tfx -o slides.tfxb
+texflux bundle list slides.tfxb
+texflux bundle list slides.tfxb --json
+```
+
+別の文書からは、保存済みの root frame を selector で取り込みます。
+
+```text
+!bundleimport{slides.tfxb}{frame:1}
+```
+
+`!asset{figures/system.pdf}` は text field 内で使う resource marker です。Bundle は source
+bytes、dependency edge、effective flags、frame index を保持し、再利用時は archive 内の
+snapshot と manifest だけで再コンパイルします。詳細は [Bundle v1 設計](doc/bundle.md) を参照してください。
+
 ---
 
 ## 🚀 クイックスタート
@@ -247,7 +266,7 @@ TeXFlux の文法は極めてシンプルです。**「3つの接頭辞」** と
 | :---: | :--- | :--- |
 | `\` | **TeX コマンド** | `\section{...}`, `\textbf{...}`, `\input{...}` などの TeX コマンド |
 | `@` | **構造コンテナ / 環境** | `@frame`, `@columns`, `@center`, `@{...}`（中括弧グループ） |
-| `!` | **TeXFlux 特殊機能** | `!when`, `!unless`, `!flag`, `!defmacro`, `!import`, `!macroimport` と、標準フロー制御の `!before`, `!after`, `!around`, `!off`, `!drop` |
+| `!` | **TeXFlux 特殊機能** | `!when`, `!unless`, `!flag`, `!defmacro`, `!import`, `!macroimport`, `!bundleimport` と、標準フロー制御の `!before`, `!after`, `!around`, `!off`, `!drop` |
 
 ※ 行頭の `@` / `!` を1行だけ生の TeX として出力するには `@@` / `!!` と書きます（`!!foo` → `!foo`、`!!!foo` → `!!foo`）。環境本文や生成シーケンスの payload（`- !!bar`）でも使えます。`+` の明示グループは内容全体が raw TeX なので、この escape は適用されません。
 

@@ -56,7 +56,7 @@ private string tempRoot(string name)
 
 unittest
 {
-    assert(texfluxVersion == "0.2.0");
+    assert(texfluxVersion == "0.3.0");
     auto ast = parseJSON(serializeAst(compileAst("", "version.tfx")));
     assert(ast["producer"]["version"].str == texfluxVersion);
     auto diagnostics = parseJSON(serializeDiagnostics(diagnose("", "version.tfx")));
@@ -149,6 +149,26 @@ unittest
     assert(clean.status == 0 && clean.stdout == "" && clean.stderr == "");
     auto usage = invoke(["compile", input]);
     assert(usage.status == 2 && usage.stdout == "" && usage.stderr.canFind("usage:"));
+
+    const bundleInput = buildPath(root, "bundle-input.tfx");
+    const bundleOutput = buildPath(root, "bundle-output.tfxb");
+    write(bundleInput, "@frame{Title}::\n    body\n");
+    auto bundled = invoke(["bundle", bundleInput, "-o", bundleOutput]);
+    assert(bundled.status == 0 && exists(bundleOutput));
+    auto listed = invoke(["bundle", "list", bundleOutput]);
+    assert(listed.status == 0 && listed.stdout == "frame:1\tTitle\n");
+    auto listedJson = invoke(["bundle", "list", bundleOutput, "--json"]);
+    assert(listedJson.status == 0 && listedJson.stdout.canFind("texflux-bundle-index"));
+
+    const untitledInput = buildPath(root, "bundle-untitled.tfx");
+    const untitledOutput = buildPath(root, "bundle-untitled.tfxb");
+    write(untitledInput, "@frame::\n    body\n");
+    auto untitledBuild = invoke(["bundle", untitledInput, "-o", untitledOutput]);
+    assert(untitledBuild.status == 0);
+    auto untitledList = invoke(["bundle", "list", untitledOutput]);
+    assert(untitledList.status == 0 && untitledList.stdout == "frame:1\t<untitled>\n");
+    auto untitledJson = invoke(["bundle", "list", untitledOutput, "--json"]);
+    assert(untitledJson.status == 0 && untitledJson.stdout.canFind("\"title\":null"));
 }
 
 unittest

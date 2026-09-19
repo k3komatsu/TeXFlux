@@ -152,6 +152,12 @@ final class ModuleError : TeXFluxError
     mixin DiagnosticClass!"module";
 }
 
+/// A resource marker, archive, or Bundle resolver failure.
+final class BundleError : TeXFluxError
+{
+    mixin DiagnosticClass!"bundle";
+}
+
 ///
 @safe pure unittest
 {

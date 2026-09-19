@@ -18,20 +18,28 @@
 module texflux;
 
 public import texflux.ast : Document;
+public import texflux.bundle : BundleBuildOptions, BundleBuildResult, BundleDependency,
+    BundleFile, BundleFragment, BundleIndex, BundleManifest, BundlePosition, BundleSpan,
+    buildBundle, readBundleIndex, readBundleManifest, serializeBundleIndex,
+    writeBundleAtomic;
+public import texflux.archive : BundleLimits;
+public import texflux.assets : AssetReference;
 public import texflux.errors : DirectiveError, FlagError, InternalError,
-    MacroExpansionError, ModuleError, ParseError, RelatedLocation, TeXFluxError,
-    ValidationError, ValueError;
+    BundleError, MacroExpansionError, ModuleError, ParseError, RelatedLocation,
+    TeXFluxError, ValidationError, ValueError;
 public import texflux.flags : Flags;
 public import texflux.modules : CompilationSession, SourceReader;
 public import texflux.render : CompilationResult, RenderedDocument, RenderedFragment;
 public import texflux.source : LoadedSource, SourcePosition, SourceSpan, SourceText,
     TextFragment;
 public import texflux.sourcemap : serializeSourceMap;
+public import texflux.trace : CompilationTrace, TraceAsset, TraceBundle, TraceDependency,
+    TraceSource;
 
 import texflux.render : renderWithProvenance;
 
 /// The released version, which every published document names as its producer.
-enum texfluxVersion = "0.2.0";
+enum texfluxVersion = "0.3.0";
 
 /// A compiled document, and every file the compilation read.
 struct AstCompilationResult

@@ -31,7 +31,7 @@ VSCode 拡張や Language Server は、位置・重大度・コード・関連�
 | 論点 | 決定 |
 | --- | --- |
 | 関連位置情報 | 構造化する（`TeXFluxError.related`） |
-| 診断コード | 全 raise 箇所に付与する（`P/V/D/E/M` + 3 桁）。v1 以降は改番・再利用しない |
+| 診断コード | 全 raise 箇所に付与する（`B/P/V/D/E/M` + 3 桁）。v1 以降は改番・再利用しない |
 | 未保存バッファの overlay | D API に含める（`CompilationSession(reader)`）。CLI は root の stdin のみ |
 | エラー件数 | fail-fast のまま。エラー最大 1 件。`severity: "warning"` は予約値で、生成箇所は無い |
 
@@ -184,7 +184,7 @@ LSP からは **絶対パス**を `INPUT` / `--stdin-filename` に渡すこと�
 {
   "format": "texflux-diagnostics",
   "version": 1,
-  "producer": {"name": "texflux", "version": "0.2.0"},
+  "producer": {"name": "texflux", "version": "0.3.0"},
   "root": 0,
   "sources": [
     {"id": 0, "file": "/w/main.tfx", "sha256": "…64 hex…"},
@@ -215,7 +215,7 @@ LSP からは **絶対パス**を `INPUT` / `--stdin-filename` に渡すこと�
 | `sources` | 外部 AST と同じ表。`id` は読み込み順、`file` は診断と同じ display 綴りを `/` 区切りに正規化、`sha256` は読んだバイト列（stdin / overlay ならその内容）の小文字 hex。**パースに失敗したファイルも含む**。`.tfxm` も含む。落ちた条件分岐で読まなかったファイルは含まない |
 | `diagnostics` | コンパイラが生成した順。fail-fast なので最大 1 件 |
 | `severity` | `"error"` / `"warning"`（閉じた列挙。追加は version bump）。`"warning"` は予約値で、v1 の producer は `"error"` だけを出す。consumer は両方を扱うこと |
-| `kind` | 小文字英字。現在 `parse` `validation` `directive` `macro` `module`。consumer は未知の値も受け入れる（表示用） |
+| `kind` | 小文字英字。現在 `parse` `validation` `directive` `macro` `module` `bundle`。consumer は未知の値も受け入れる（表示用） |
 | `code` | `^[A-Z][0-9]{3}$`。§2 の表。一度公開したコードは再利用・改番しない |
 | `message` | 例外のメッセージそのもの（コード・位置プレフィックスを含まない） |
 | `span` | 外部 AST と同一: `source` は source ID、`start`/`end` は 1 始まり行・1 始まり列（code point）、半開 `[start, end)`。`end` は別行でもよい |
@@ -307,8 +307,8 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
 
 ### 2.1 規則
 
-- 形式: 種別 1 文字 + 3 桁。`P` parse、`V` validation、`D` directive、`E` macro expansion、`M` module。
-  `kind` との対応: P→parse、V→validation、D→directive、E→macro、M→module。
+- 形式: 種別 1 文字 + 3 桁。`P` parse、`V` validation、`D` directive、`E` macro expansion、`M` module、`B` bundle/resource。
+  `kind` との対応: P→parse、V→validation、D→directive、E→macro、M→module、B→bundle。
 - **1 生成箇所 = 1 コード**。同じメッセージでも生成箇所が違えば別コード（例: P005/P007）。
   1 箇所が動的な文字列連結で複数の文言を出す場合は 1 コード（例: P016、E004、M005）。
 - 番号は付与順。v1 リリース前に一度だけ欠番を圧縮した（到達不能だった当時の P018 と M022 を削除し、
@@ -498,6 +498,32 @@ function toPosition(p: {line: number; column: number}, lineText: string): Positi
   `; imported from {loc}` を積む各段で **related: "imported from here" → `site`** を同じ条件
   （`error.span.file != site.file`）で積み、`error.chained(message, related)` を送出する
   （related が空なら元の例外をそのまま再送出する）。
+
+### 2.7 B — `BundleError`（21 件）
+
+| コード | 生成箇所 | メッセージ |
+| --- | --- | --- |
+| B001 | interpolate.d `interpolate` | `unterminated !asset{...}` / `!asset paths may contain only !text{...} interpolation` |
+| B002 | assets.d `validateAssetPath` | `asset path ...` |
+| B003 | assets.d `resolveFilesystemAsset` | `cannot read asset ...` |
+| B004 | modules.d `ImportResolver.expandBundle` | `!bundleimport ...` |
+| B005 | modules.d `ImportResolver.expandBundle` | `invalid !bundleimport path ...` |
+| B006 | bundle.d `readBundleBytes` | `cannot read Bundle ...` |
+| B007 | archive.d `readArchive` | `malformed or unsupported ZIP ...` |
+| B008 | archive.d `readArchive` | `Bundle archive exceeds ... limit` |
+| B009 | bundle.d `parseManifest` | `malformed Bundle manifest ...` |
+| B010 | bundle.d `parseManifest` | `unsupported Bundle format or version` |
+| B011 | bundle.d `validateManifest` | `Bundle payload ...` |
+| B012 | bundle.d `resolveBundleFrame` | `invalid Bundle frame selector ...` |
+| B013 | bundle.d `validateManifest` | `Bundle fragment ...` |
+| B014 | bundle.d `validateManifest` | `Bundle dependency ...` |
+| B015 | bundle.d `resolveBundleFrame` | `Bundle import cycle ...` |
+| B016 | bundle.d `writeBundleAtomic` | `cannot atomically write Bundle ...` |
+| B017 | bundle.d `buildBundle` | `Bundle input ...` |
+| B018 | bundle.d `materializeBundle` | `Bundle cache ...` |
+| B019 | bundle.d `resolveBundleFrame` | `Bundle root source ...` |
+| B020 | bundle.d `resolveBundleFrame` | `Bundle flags ...` |
+| B021 | bundle.d `resolveBundleFrame` | `Bundle manifest frame index ...` |
 
 ---
 

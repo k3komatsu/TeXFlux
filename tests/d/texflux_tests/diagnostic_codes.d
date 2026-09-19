@@ -13,13 +13,14 @@ import std.string : endsWith, indexOf, replace, split, startsWith, strip;
 
 private enum root = ".";
 private enum design = "doc/diagnostics.md";
-private enum codePattern = "PVDEM";
+private enum codePattern = "BPVDEM";
 private immutable string[] builders = [
     "ParseError", "ValidationError", "DirectiveError", "MacroExpansionError", "ModuleError",
+    "BundleError",
     "fail", "expansionError",
 ];
-private immutable int[string] highWater = ["P": 37, "V": 43, "D": 1, "E": 19, "M": 29];
-private immutable int[string] expectedCounts = ["P": 37, "V": 43, "D": 1, "E": 19, "M": 29];
+private immutable int[string] highWater = ["B": 21, "P": 37, "V": 43, "D": 1, "E": 19, "M": 29];
+private immutable int[string] expectedCounts = ["B": 21, "P": 37, "V": 43, "D": 1, "E": 19, "M": 29];
 
 struct Site
 {

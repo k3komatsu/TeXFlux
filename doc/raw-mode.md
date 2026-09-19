@@ -86,6 +86,7 @@ escape なしでそのまま生の TeX である。
 - ブロック終了判定（インデントが基準位置より浅くても領域は閉じない）
 - 空行の巻き戻し（`Parser.blankRun`）
 - 文字列 interpolation（`!text{...}` はリテラル）
+- resource marker（`!asset{...}` も text field scan を行わずリテラル）
 
 ### 2.3 出力
 

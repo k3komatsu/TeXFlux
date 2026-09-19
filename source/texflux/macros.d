@@ -26,6 +26,7 @@ import std.typecons : Nullable, nullable;
 import std.utf : byCodeUnit;
 
 import texflux.ast;
+import texflux.assets : AssetResolver;
 import texflux.errors : Descent, MacroExpansionError, RelatedLocation, ValidationError;
 import texflux.flags : Conditional, conditionalNames, evaluateConditional, Flags;
 import texflux.interpolate : interpolate, rejectMarkers;
@@ -55,7 +56,7 @@ private enum reservedNames = [
  * Spelled here rather than imported, because the module system builds on this
  * module rather than the other way round.
  */
-private enum moduleNames = ["import", "macroimport"];
+private enum moduleNames = ["import", "macroimport", "bundleimport"];
 
 /// What marks a parameter as taking everything left over.
 private enum restPrefix = "...";
@@ -358,10 +359,10 @@ private struct Interpolated
  * again. That is the whole of the rule that inserted text is not rescanned.
  */
 private Interpolated textField(string text, Nullable!SourceText parts, SourceSpan origin,
-        SourceSpan target, size_t offset, Frame* frame)
+        SourceSpan target, size_t offset, Frame* frame, AssetResolver assets = null)
 {
     if (parts.isNull)
-        parts = interpolate(text, origin, target, offset, frame);
+        parts = interpolate(text, origin, target, offset, frame, assets);
     return Interpolated(parts.isNull ? text : plainText(parts.get), parts);
 }
 
@@ -379,9 +380,9 @@ private Interpolated textField(string text, Nullable!SourceText parts, SourceSpa
  */
 Document expandMacros(Document document, MacroEnvironment macros, Flags flags,
         MacroEnvironment[string] environments = null, string module_ = "",
-        bool scoped = false)
+        bool scoped = false, AssetResolver assets = null)
 {
-    auto expander = Expander(macros, flags, environments, module_, scoped);
+    auto expander = Expander(macros, flags, environments, module_, scoped, assets);
     return Document(expander.block(document.body_, null), document.span);
 }
 
@@ -392,6 +393,7 @@ private struct Expander
     private MacroEnvironment[string] environments;
     private string module_;
     private bool scoped;
+    private AssetResolver assets;
     private size_t depth;
 
     /// The macro names one template, or the document itself, can see.
@@ -472,7 +474,7 @@ private struct Expander
             node.span = target;
             return Node(node);
         }
-        auto field = textField(node.text, node.parts, node.span, target, 0, frame);
+        auto field = textField(node.text, node.parts, node.span, target, 0, frame, assets);
         return Node(rawTex(field.text, target, field.parts, node.verbatim));
     }
 
@@ -529,7 +531,7 @@ private struct Expander
         // A string-valued argument is an inline group: that is the one layout
         // the header scanner gives it, and nothing rewrites it before here.
         assert(value.layout == ArgumentLayout.inline);
-        auto field = textField(text, value.parts, value.span, target, 1, frame);
+        auto field = textField(text, value.parts, value.span, target, 1, frame, assets);
         return inlineArgument(value.kind, field.text, target, field.parts);
     }
 
@@ -668,7 +670,7 @@ private struct Expander
                 throw expansionError("E017", "macro calls accept required '{...}' values only",
                         group.span, frame);
             const target = retarget(group.span, frame);
-            auto field = textField(text.get, group.parts, group.span, target, 1, frame);
+            auto field = textField(text.get, group.parts, group.span, target, 1, frame, assets);
             values ~= [Node(rawTex(field.text, target, field.parts))];
         }
 

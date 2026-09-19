@@ -56,6 +56,7 @@
 ```text
 コンテンツ依存        !import{foo.tfx}        コンテンツ（正準 AST）を生む
 マクロ名前空間依存    !macroimport{foo.tfxm}  名前空間のみを生む。出力ゼロ
+Bundle fragment 依存  !bundleimport{foo.tfxb}{frame:1}  archive 内の正準 AST fragment を生む
 ```
 
 ---
@@ -67,7 +68,7 @@
 トップレベルに書けるもの:
 
 ```text
-生 TeX / 構造構文 / !flag / !defmacro / !macroimport / !import / !when / !unless / 通常のコンテンツ
+生 TeX / 構造構文 / !flag / !defmacro / !macroimport / !import / !bundleimport / !when / !unless / 通常のコンテンツ
 ```
 
 `.tfx` は 1 つの独立したモジュールインスタンスとしてコンパイルされる。
@@ -242,7 +243,7 @@ import してはならない（循環 import になる）ので、末尾の `can
 
 1. ペイロードは構文として解析できなければならない。
 2. `!flag` はトップレベル宣言でなければならない。
-3. `!defmacro` と `!each` のテンプレート規則。テンプレートに `!import` / `!macroimport` を
+3. `!defmacro` と `!each` のテンプレート規則。テンプレートに `!import` / `!macroimport` / `!bundleimport` を
    書けないこともここに含まれる。
 4. **`!macroimport` はトップレベル宣言であり、`>>` セグメントになれない。**
 
@@ -697,7 +698,7 @@ texflux compile main.tfx -o main.tex --flag draft --flag handout=off
 
 | コード | 条件 |
 | --- | --- |
-| V024 | テンプレート内の `!import` / `!macroimport`（モジュール経路では `!macroimport` は M020 が先に出るので、この分岐が実際に使われるのは `normalize()` 直呼びの経路と `!import`） |
+| V024 | テンプレート内の `!import` / `!macroimport` / `!bundleimport`（モジュール経路では `!macroimport` は M020 が先に出るので、この分岐が実際に使われるのは `normalize()` 直呼びの経路と `!import` / `!bundleimport`） |
 | V022 | 取り込み名とローカル定義名の衝突 |
 | V021 | 標準フロー制御と同名の定義 |
 | P005 / P007 / P008 / P019 / P020 | `(...)` の走査（ブレースの不釣り合い、閉じない、群より前、2 個以上） |
@@ -720,8 +721,12 @@ public / private / export 宣言
 マクロテンプレートから生成される !import
 生 TeX マクロの自動隔離
 LaTeX の意味検証
-!asset
 ```
+
+`!asset` is a text-field resource marker, documented in [Bundle v1](bundle.md),
+not a module construct. `!bundleimport` is resolved by the same compilation
+session boundary as `!import`, but its archive-local dependencies never fall
+back to the caller's filesystem.
 
 加えて次も対象外とする。必要になったときの設計の出発点を添える。
 
@@ -741,12 +746,12 @@ LaTeX の意味検証
 
 .tfx:
     コンテンツモジュール
-    ローカル !flag / ローカル !defmacro / !macroimport / !import
+    ローカル !flag / ローカル !defmacro / !macroimport / !import / !bundleimport
 
 .tfxm:
     純粋なマクロ定義モジュール
     !defmacro / !macroimport / コメント / 空行 のみ
-    フラグなし、条件式なし、コンテンツなし、!import なし
+    フラグなし、条件式なし、コンテンツなし、!import / !bundleimport なし
 
 !macroimport:
     私的・非推移的・語彙的

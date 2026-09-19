@@ -28,7 +28,7 @@
 | D4 | コンパイラ metadata（flag 名・マクロ名・パラメータ名・import path・構造名）には一切許可しない | 依存グラフと名前解決を静的に保つ |
 | D5 | provenance は fragment 単位。`RawTex` / `Argument` / `BraceGroup` に `parts` を持たせ、renderer が fragment ごとに `emit()` する | `!param` と同等の逆引き品質を保つ。`\foo{pre-!text{x}-post}` で `x` の値が別行にある場合、PDF から値の行へ飛べる |
 | D6 | `RenderRole` `"scaffold"`（rank 1）をテンプレート側リテラルに与える | §10.4 参照。これが無いと列情報なしの SyncTeX 入力で `remap` が `ambiguous source mappings` を送出する |
-| D7 | built-in special の group は例外なく metadata 扱い（fail-closed） | 残っている built-in special（`!import` / `!macroimport`）の group はコンパイラ側のメタデータを指す。将来 built-in special を足すときも、その special が group を明示的に「出力 TeX text」だと宣言しない限り補間しない。最初から「すべての SpecialInvocation の str group を補間」してはならない——special が増えたときにコンパイラ metadata が意図せず動的化するからである。マクロの値は A5 の経路で補間されるので `!before{\vspace{!text{gap}}}` は書ける |
+| D7 | built-in special の group は例外なく metadata 扱い（fail-closed） | 残っている built-in special（`!import` / `!macroimport` / `!bundleimport`）の group はコンパイラ側のメタデータを指す。将来 built-in special を足すときも、その special が group を明示的に「出力 TeX text」だと宣言しない限り補間しない。最初から「すべての SpecialInvocation の str group を補間」してはならない——special が増えたときにコンパイラ metadata が意図せず動的化するからである。マクロの値は A5 の経路で補間されるので `!before{\vspace{!text{gap}}}` は書ける |
 | D8 | マクロテンプレート外のテキストフィールドに marker があればエラーにする | 綴り間違いが黙って TeX に流れる事故を防ぐ |
 | D9 | 補間の escape は `!!text{` と `\!text{` の 2 系統。独立した行頭 `!!` raw-line escape と二層になる（§3.3）。raw mode 領域と行頭 `!\| ` は補間しない | `\!` は TeX の負の細空白という実在コマンドなので backslash escape は必須。行頭 `!!` は `@@` と対になる別機能として parser が先に 1 文字剥がす。raw mode と `!\| ` は行全体を verbatim にするため、補間走査の対象外になる |
 
@@ -41,7 +41,8 @@
 - **structural splice**: `!param{name}`。束縛された `Value`（AST ノード列）を AST 位置へ挿入する。
 - **text interpolation**: `!text{name}`。束縛された `Value` から取り出した文字列を、
   文字列フィールドの途中へ挿入する。
-- **marker**: 文字列中に現れる `!text{` および `!param{` の 6 / 7 文字。
+- **marker**: 文字列中に現れる `!text{`、`!param{`、`!asset{`。前二者は補間、後者は
+  Bundle の resource 解決を起動する。
 - **hole**: `!text{name}` 全体。補間で値に置き換わる範囲。
 - **text field**: TeXFlux が内容を構文解析しない `string`。具体的には
   `RawTex.text`、インライン `Argument.value`（`string` の場合）、`BraceGroup.headerRaw`。
@@ -75,7 +76,12 @@
 
 ### 3.2 走査対象
 
-走査するのは次の 2 つの marker だけである。
+`!asset{...}` も text field の走査器で処理するが、macro value の補間ではなく、
+session の asset resolver に相対 path と provenance を渡す resource marker である。
+asset path 内で許可される marker は `!text{...}` だけで、値は再走査しない。path 内の
+literal `!` は v1 では許可しない。
+
+通常の `!text` / `!param` について走査する marker は次の 2 つである。
 
 | marker | 綴り | 長さ |
 |---|---|---|
@@ -338,7 +344,7 @@ macro composition（§12.3）を成立させる。`interpolate` に渡す frame 
 | B3 | text field 内の `!param{` | `interpolate()` | E008 |
 | B4 | `!when` / `!unless` の group | `Expander.conditional()` | E004 |
 | B5 | `!param` / `!each` の name group | `Expander.singleNames()` | E004 |
-| B6 | built-in special の group（`!import` / `!macroimport` と未知の special） | `Expander.argument()` | E004 |
+| B6 | built-in special の group（`!import` / `!macroimport` / `!bundleimport` と未知の special） | `Expander.argument()` | E004 |
 | B7 | `(...)` binding list（`GroupKind.binding`） | `Expander.argument()` | E004 |
 
 B4〜B7 は文字列に `!text{` / `!param{` の綴りが含まれるかを検査する。これらは補間対象のテキストではなく、
@@ -479,7 +485,7 @@ fragment provenance を素朴に入れると、§9.3 の例で `\foo{pre-` が `
 expander から出なくなる。
 
 lexical scope と import graph は補間の有無で変化しない。`!text` はマクロ名を一切 lookup しないし、
-`!import` / `!macroimport` を生成できない（§7.2 B6・§7.3）。
+`!import` / `!macroimport` / `!bundleimport` を生成できない（§7.2 B6・§7.3）。
 
 ### 10.6 `sourcemap.d` — 変更なし
 
@@ -609,7 +615,7 @@ Result of the experiment
 - 正規表現置換
 - 生成された TeXFlux 構文、`eval`、生成テキストの `parse` / `read`
 - 動的なマクロ名・command 名・environment 名
-- 動的な `!import` / `!macroimport`
+- 動的な `!import` / `!macroimport` / `!bundleimport`
 - 任意 AST の文字列化
 - TeX parser、TeX の意味論検証（catcode、math mode、パッケージ意味論）
 - パラメータ宣言側の型構文（`{x:text}`）

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TeXFlux Bundle Index v1",
+  "description": "The stable, source-free listing emitted by `texflux bundle list --json`.",
+  "type": "object",
+  "required": ["format", "version", "producer", "bundle", "fragments"],
+  "properties": {
+    "format": {"const": "texflux-bundle-index"},
+    "version": {"type": "integer", "const": 1},
+    "producer": {"$ref": "#/$defs/producer"},
+    "bundle": {"$ref": "#/$defs/bundle"},
+    "fragments": {"type": "array", "items": {"$ref": "#/$defs/fragment"}}
+  },
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "texflux"},
+        "version": {"type": "string"}
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "required": ["format", "version"],
+      "properties": {
+        "format": {"const": "texflux-bundle"},
+        "version": {"type": "integer", "const": 1}
+      }
+    },
+    "position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"$ref": "#/$defs/position"},
+        "end": {"$ref": "#/$defs/position"}
+      }
+    },
+    "fragment": {
+      "type": "object",
+      "required": ["selector", "kind", "title", "source", "span"],
+      "properties": {
+        "selector": {"type": "string"},
+        "kind": {"const": "frame"},
+        "title": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+        "source": {"type": "string"},
+        "span": {"$ref": "#/$defs/span"}
+      }
+    }
+  }
+}

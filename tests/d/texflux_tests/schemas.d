@@ -15,7 +15,8 @@ import std.range : repeat;
 import std.string : startsWith;
 import std.utf : byDchar;
 
-import texflux : compileAst;
+import texflux : buildBundle, compileAst, readBundleIndex, serializeBundleIndex;
+import texflux.archive : readArchive;
 import texflux.diagnostics : diagnose;
 import texflux.external_ast : serializeAst;
 import texflux.diagnostics : serializeDiagnostics;
@@ -23,6 +24,8 @@ import std.file : SpanMode, dirEntries, exists, mkdirRecurse, rmdirRecurse, temp
 
 private enum astSchemaPath = "schemas/texflux-ast-v1.schema.json";
 private enum diagnosticsSchemaPath = "schemas/texflux-diagnostics-v1.schema.json";
+private enum bundleManifestSchemaPath = "schemas/texflux-bundle-manifest-v1.schema.json";
+private enum bundleIndexSchemaPath = "schemas/texflux-bundle-index-v1.schema.json";
 
 private immutable string[] assertionKeywords = [
     "$ref", "type", "const", "enum", "required", "properties", "items",
@@ -378,11 +381,19 @@ unittest
 {
     auto ast = schema(astSchemaPath);
     auto diagnostics = schema(diagnosticsSchemaPath);
+    auto bundleManifest = schema(bundleManifestSchemaPath);
+    auto bundleIndex = schema(bundleIndexSchemaPath);
     assertSchemaSelfConsistent(ast);
     assertSchemaSelfConsistent(diagnostics);
+    assertSchemaSelfConsistent(bundleManifest);
+    assertSchemaSelfConsistent(bundleIndex);
     assert(valid(astPayload(), ast, ast));
     assert(valid(parseJSON(serializeAst(compileAst("", "empty.tfx"))), ast, ast));
     assert(valid(diagnosticsPayload(), diagnostics, diagnostics));
+    auto bundleDiagnostics = parseJSON(serializeDiagnostics(
+            diagnose("\\includegraphics{!asset{/absolute.pdf}}\n", "schema.tfx")));
+    assert(valid(bundleDiagnostics, diagnostics, diagnostics));
+    assert(bundleDiagnostics["diagnostics"].array[0]["kind"].str == "bundle");
     auto clean = parseJSON(serializeDiagnostics(diagnose("@frame{x}::\n    body\n",
             "clean.tfx")));
     assert(valid(clean, diagnostics, diagnostics));
@@ -395,6 +406,20 @@ unittest
     auto related = relatedDiagnosticsPayload();
     assert(valid(related, diagnostics, diagnostics));
     assert(related["diagnostics"].array[0]["related"].array.length != 0);
+
+    const bundleRoot = buildPath(tempDir(), "texflux-schema-bundle");
+    mkdirRecurse(bundleRoot);
+    scope (exit) rmdirRecurse(bundleRoot);
+    const bundleInput = buildPath(bundleRoot, "deck.tfx");
+    write(bundleInput, "@frame{Schema}::\n    body\n");
+    auto bundle = buildBundle(bundleInput);
+    JSONValue manifest;
+    foreach (entry; readArchive(bundle.archive))
+        if (entry.name == "manifest.json")
+            manifest = parseJSON(cast(string) entry.data);
+    assert(valid(manifest, bundleManifest, bundleManifest));
+    assert(valid(parseJSON(serializeBundleIndex(readBundleIndex(bundle.archive))),
+            bundleIndex, bundleIndex));
 }
 
 unittest

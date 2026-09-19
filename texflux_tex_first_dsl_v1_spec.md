@@ -491,10 +491,12 @@ spans; the parser produces one ordinary Stack, with no new canonical node type.
 Special handlers are in-process AST-to-AST transformations. They return
 canonical node tuples, never TeX strings. Unknown specials fail.
 
-`!import` and `!macroimport` are the only built-in names left, and neither is
-a handler: both are module constructs, defined in section 12 and resolved by
-the compilation session. Being built-in names, neither may be redefined by
-`!defmacro`.
+`!import`, `!macroimport`, and `!bundleimport` are session constructs, and none
+is a handler: they are resolved by the compilation session. `!import` and
+`!macroimport` are module constructs of section 12; `!bundleimport` is the
+archive-fragment construct of section 12.6.1. Being built-in names, none may
+be redefined by `!defmacro`. The `!asset{...}` spelling is different: it is a
+text-field resource marker described in section 10.7, not a special AST node.
 
 ### 9.1 Standard flow controls
 
@@ -628,8 +630,8 @@ lines, remain ordinary content.
 
 Definitions are collected from the top level only. A `!defmacro` anywhere else,
 including inside another macro's template, is a validation error, so macros
-cannot be defined dynamically. A template may not contain `!import` or
-`!macroimport` either, so content dependency discovery never depends on macro
+cannot be defined dynamically. A template may not contain `!import`,
+`!macroimport`, or `!bundleimport` either, so content dependency discovery never depends on macro
 expansion. Every definition is collected before any call is
 expanded, which makes forward references valid:
 
@@ -801,6 +803,26 @@ concatenation. The source-map version remains 1; `scaffold` has rank 1, below
 multiple content fragments to one generated line remain ambiguous. A document
 without holes or escapes renders exactly as it would without interpolation.
 
+### 10.7 Asset markers
+
+`!asset{PATH}` is recognized only while an opaque text field is scanned. It is
+not a `SpecialInvocation`, is not recognized at the start of a structural
+special line, and never reaches normalization or the renderer as a compiler
+node. The marker validates a non-empty relative POSIX path, rejecting NUL,
+backslash, absolute, UNC, and drive paths; `.` and `..` components are allowed.
+The base is the module that authored the marker, not a macro call site. A
+filesystem compilation preserves the authored path in TeX and verifies that
+the resolved target is a regular file.
+
+An asset path may contain `!text{NAME}` and no other interpolation. The value is
+inserted once and is not rescanned. A literal `!` in the path is reserved and is
+rejected in v1; there is no path-level escape for it. `!!asset{...}` emits a literal marker;
+raw-mode lines and `!|` are verbatim. In a Bundle compilation the session
+resolver returns a validated cache path, while the public AST and
+`TextFragment` shape remain unchanged. Each active use creates a dependency
+edge; identical canonical files share one payload but not their authored
+edges.
+
 ## 11. Build flags
 
 A build flag is a boolean that lets one source produce several versions of the
@@ -910,7 +932,8 @@ conditionals are resolved. Its syntax must parse; `!flag` must be a top-level
 statement; `!macroimport` must be one too, and may not be a `>>` segment; and
 the template rules of section 10 hold, so `!defmacro` may not be a `>>`
 segment, `!each` must own its `':'` suite, and a template may contain
-neither `!import` nor `!macroimport`. Those four are the complete list.
+neither `!import`, `!macroimport`, nor `!bundleimport`. Those four are the
+complete list.
 
 Every one of them is a purely syntactic question about where a line is
 written, and none of them opens a file. Content that no longer compiles, and a
@@ -942,7 +965,7 @@ are never collapsed into one generic import.
 ### 12.1 Content modules
 
 A `.tfx` file may state raw TeX, structural syntax, `!flag`, `!defmacro`,
-`!macroimport`, `!import`, conditionals, and ordinary content. `!import`
+`!macroimport`, `!import`, `!bundleimport`, conditionals, and ordinary content. `!import`
 compiles it as one independent module instance and splices the canonical AST
 it produces at the import site. The callee's local flags and macro names never
 enter the caller's tables, so two modules may each declare `draft` or define
@@ -954,7 +977,7 @@ distinct instance, so importing one module twice produces its content twice.
 ### 12.2 Macro modules
 
 A `.tfxm` file may state only `!defmacro`, `!macroimport`, comment lines and
-blank lines. `!flag`, `!when`, `!unless` and `!import` are errors anywhere in
+blank lines. `!flag`, `!when`, `!unless`, `!import`, and `!bundleimport` are errors anywhere in
 one, template interiors included: a macro module declares no flags, so a
 conditional inside one would read the flags of whichever content module
 instantiated it. This purity is what makes macro imports order-insensitive,
@@ -1057,6 +1080,35 @@ extension their construct requires. A module's identity, for the parse cache,
 the macro-module graph, cycle detection and dependency reporting, is a
 normalized filesystem path.
 
+### 12.6.1 !bundleimport
+
+~~~text
+!bundleimport{relative/path.tfxb}{frame:3}
+~~~
+
+`!bundleimport` takes exactly two required inline groups, no suite, no binding
+list, and no text interpolation. The path is a relative POSIX `.tfxb` path;
+NUL, backslash, absolute, drive, and UNC paths are rejected. It is valid in
+content modules and active conditional payloads, but not in a macro template or
+`.tfxm` file. A dropped conditional never opens the Bundle.
+
+A Bundle is first verified against its manifest and archive limits. Its root is
+then recompiled in a private session using the stored effective flags. Imports,
+macro imports, assets, and nested Bundles are resolved only through manifest
+edges and archive payloads. The root canonical document is indexed by its
+direct top-level `GenericInvocation` frames: `frame:N` is one-based source
+order, after macro expansion and active content imports. Nested frames and
+dropped frames are not indexed. The selected canonical subtree is spliced into
+the caller after caller macro expansion and before caller canonicalization.
+
+The manifest index must agree with the recompiled frame count, selector, title,
+source, and span. The callee's flags and macro namespace do not leak into the
+caller. Active Bundle digests form a stack; re-entering one digest is a Bundle
+cycle and carries the first import location as a related location. A Bundle
+reader exposes a logical source identity `tfxb:<sha256>!/<logicalPath>` and a
+separate physical cache path, so external AST and diagnostics remain logical
+while source maps can point at an existing materialized file.
+
 ### 12.7 Compilation order
 
 ~~~text
@@ -1067,7 +1119,7 @@ normalized filesystem path.
     environment seeded with the standard flow macros of section 12.9
  5. source macro collection
  6. conditional resolution and macro expansion
- 7. content import resolution, recursively
+ 7. content and Bundle import resolution, recursively
  8. value consumption and special expansion
  9. canonical AST validation
 10. renderer
@@ -1295,7 +1347,9 @@ DirectiveError covers unknown specials. MacroExpansionError covers macro
 expansion: arity, unbound or misused parameters, shadowing, and recursion.
 ModuleError covers the module system: import forms, path resolution, content
 import cycles, macro module purity and self-containment, macro name conflicts
-between modules, and import flag bindings. All diagnostics point to the
+between modules, and import flag bindings. BundleError covers asset markers,
+archives, Bundle manifests, selectors, cache materialization, and Bundle import
+cycles. All diagnostics point to the
 originating span. Two exceptions carry no span because neither describes a
 place in a document. FlagError covers a command-line override that no
 declaration matches. InternalError covers a broken TeXFlux installation --
@@ -1403,6 +1457,7 @@ macro-call        ::= special-segment
 param-reference   ::= "!param" "{" parameter-name "}"
 each-construct    ::= "!each" "{" parameter-name "}" "{" parameter-name "}"
                       block-suffix
+bundle-import     ::= "!bundleimport" "{" bundle-path "}" "{" frame-selector "}"
 ~~~
 
 This grammar is conceptual; item metadata and balanced raw groups are scanned by

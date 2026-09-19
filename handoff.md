@@ -30,6 +30,12 @@ dub run -c update-regression -- --accept-current
 
 ## 既知の残差
 
+- Bundle v1 は `doc/bundle.md` の設計に沿って実装済み。`.tfxb` は
+  source / asset / nested Bundle snapshot、manifest edge、frame index を保持し、
+  `!bundleimport` は保存済み flags と archive-local resolver で再コンパイルする。
+- Bundle cache は検証済み archive の materialized source を保持する。cache 清掃、署名、
+  remote registry、nested selector、archive flatten は v1 の非スコープである。
+
 - 大文字小文字を区別しない volume でも、ケース違いの path は別 source として扱われる。
 - ルート filename の NUL は span のない `ValueError` になる。
 - 壊れた `.tfxmap` の後置メッセージは JSON reader 実装に依存する。
