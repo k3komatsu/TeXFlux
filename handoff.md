@@ -60,16 +60,21 @@ CI/CD・バイナリ配布の初回実装は完了している。詳細な設計
 - `380dde4`: Dependabotによる`actions/attest` 4.2.1 → 4.2.2更新。
 - `v0.3.0`: `100e407`を指すtagとしてpush済み。
 - [v0.3.0 Release](https://github.com/k3komatsu/TeXFlux/releases/tag/v0.3.0) は公開済みで、Release workflowは成功済み。
+- `v0.3.1`: `cc51116`を指すtagとしてpush済み。
+- [v0.3.1 Release](https://github.com/k3komatsu/TeXFlux/releases/tag/v0.3.1) は公開済みで、Release workflowの5 platform build、checksum、attestation、asset公開が成功済み。
 - 5 platform archiveと`SHA256SUMS`を公開済み。
 - 公開URLから全archiveを取得し、`SHA256SUMS`を検証済み。
-- macOS arm64 binaryは`texflux 0.3.0`を出力し、Windows ZIPは`texflux.exe`、`LICENSE`、`README.md`を含む。
+- v0.3.0のmacOS arm64 binaryは`texflux 0.3.0`を出力し、Windows ZIPは`texflux.exe`、`LICENSE`、`README.md`を含む。
+- v0.3.1のmacOS arm64 release binaryも`texflux 0.3.1`を出力することを確認済み。
 - `k3komatsu/homebrew-tap` を別repositoryとして作成・push済み。
-  - `Formula/texflux.rb` は `v0.3.0` source archiveを使うsource Formula。
+  - `Formula/texflux.rb` は `v0.3.1` source archiveを使うsource Formulaへ更新済み。
   - `7fffa60`: Formula testを`version`参照に変更し、将来のversion bumpへ追従可能にした。
   - `ldc` / `dub`によるsource build、`brew test`、linkage検査をローカルで確認済み。
   - Homebrew標準の `autobump.yml`、`tests.yml`、`publish.yml` を配置済み。
   - 初回 `brew test-bot` はmacOS/Linuxとも成功済み。
-- Bottle実体はまだ公開していない。次回以降のFormula更新PRで、Bottle生成・公開workflowを使用する。
+  - Formula PR #2のhead SHA `a3ccf99`を固定して`publish.yml` / `brew pr-pull`を実行し、v0.3.1のBottleを公開済み。
+  - Bottle publish run `35449736881`は成功し、`arm64_tahoe`と`x86_64_linux`のBottle stanzaをmainへ反映した。
+  - macOS arm64でBottleをpoured後、`brew test texflux`、`brew linkage --test texflux`、`texflux --version`（`texflux 0.3.1`）を確認済み。
 - READMEの標準install導線をHomebrewにし、WindowsのRelease ZIP/PowerShell手順とmacOS/Linuxのarchive手順を記載した。
 
 ### 次回以降のrelease手順
