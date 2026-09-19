@@ -234,7 +234,9 @@ class NestingError : Exception
 }
 
 /// How deep any one pass will follow a document before refusing it.
-enum size_t maximumNestingDepth = 400;
+// Keep this below the smallest hosted runner stack margin; the guard must
+// prevent a recursive pass from depending on the host platform's stack size.
+enum size_t maximumNestingDepth = 128;
 
 /**
  * One level of a recursive walk over a document.

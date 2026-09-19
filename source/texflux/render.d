@@ -21,7 +21,8 @@ module texflux.render;
 
 import std.array : Appender, join;
 import std.conv : to;
-import std.string : lastIndexOf;
+import std.path : dirSeparator;
+import std.string : lastIndexOf, replace;
 import std.sumtype : get, has, match;
 import std.typecons : Nullable, nullable;
 
@@ -241,7 +242,8 @@ private struct Renderer
         import std.format : format;
 
         const span = node.spanOf;
-        emitter.emit(format("%% texflux: %s:%d", span.file, span.start.line),
+        emitter.emit(format("%% texflux: %s:%d", span.file.replace(dirSeparator, "/"),
+                span.start.line),
                 Nullable!SourceSpan.init, RenderRole.synthetic);
         emitter.newline();
     }

@@ -41,7 +41,7 @@ import texflux.flags : collectFlags, Conditional, declaredFlagsHint, Flags, flag
 import texflux.macros : collectMacros, expandMacros, MacroEnvironment, Reserved,
     validateMacroForms;
 import texflux.parser : parse;
-import texflux.paths : absoluteNormalized, normalizedPath, openFailure;
+import texflux.paths : absoluteNormalized, displayPath, normalizedPath, openFailure;
 import texflux.ordered : OrderedMap;
 import texflux.source : LoadedSource, SourcePosition, SourceSpan;
 import texflux.trace : BundleResolutionState, CompilationTrace;
@@ -163,7 +163,7 @@ string resolveModulePath(string importer, string written, ModuleKind kind, Sourc
         throw new ModuleError("M002", "module path must not contain a NUL character", span);
     if (written.canFind('\\'))
         throw new ModuleError("M003", "module paths use '/' separators", span);
-    if (written.isAbsolute)
+    if (written.isAbsolute || written.startsWith("/"))
         throw new ModuleError("M004",
                 "module paths must be relative to the importing file", span);
     if (!written.endsWith(cast(string) kind))
@@ -860,7 +860,7 @@ final class CompilationSession
 
         if (reason !is null)
             throw new ModuleError("M027",
-                    "cannot read module '" ~ display ~ "': " ~ reason, span);
+                    "cannot read module '" ~ displayPath(display) ~ "': " ~ reason, span);
         return register(display, data, text);
     }
 

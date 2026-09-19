@@ -299,6 +299,8 @@ private string normalizeSynctex(string text)
             ++after;
         auto body = text[start .. bodyEnd];
         auto ending = text[bodyEnd .. after];
+        if (body.startsWith("Input:"))
+            body = body.replace("\\", "/");
         bool anchor = body.length > 1 && body[0] == '!';
         for (size_t index = 1; anchor && index < body.length; ++index)
             anchor = body[index] >= '0' && body[index] <= '9';
@@ -341,6 +343,28 @@ private string normalizeWorkspace(string text, string workspace, bool jsonLike =
     aliases.sort!((a, b) => a.length > b.length);
     foreach (spelling; aliases)
         text = text.replace(spelling, "${WORKSPACE}");
+    version (Windows)
+    {
+        foreach (spelling; aliases.dup)
+        {
+            auto portable = spelling.replace("\\", "/");
+            if (portable != spelling)
+                aliases ~= portable;
+        }
+        aliases.sort!((a, b) => a.length > b.length);
+        foreach (spelling; aliases)
+        {
+            auto escaped = spelling;
+            foreach (ignored; 0 .. 3)
+            {
+                escaped = escaped.replace("\\", "\\\\");
+                text = text.replace(escaped, "${WORKSPACE}");
+            }
+        }
+        text = text.replace("${WORKSPACE}\\\\\\\\", "${WORKSPACE}/")
+            .replace("${WORKSPACE}\\\\", "${WORKSPACE}/")
+            .replace("${WORKSPACE}\\", "${WORKSPACE}/");
+    }
     if (synctex)
         text = normalizeSynctex(text);
     return jsonLike ? normalizeProducerVersion(text) : text;

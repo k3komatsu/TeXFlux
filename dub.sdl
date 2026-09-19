@@ -1,9 +1,14 @@
 name "texflux"
 description "A TeX-first indentation-based preprocessor for structural LaTeX boilerplate"
+license "0BSD"
 targetType "executable"
 targetName "texflux"
 targetPath "bin"
 mainSourceFile "source/texflux/app.d"
+
+// Keep the explicit nesting guard usable on Windows, whose default PE stack
+// reserve is smaller than the POSIX runner's stack.
+lflags-windows-x86_64-ldc "/STACK:8388608"
 
 // The bundled standard flow macros are source, not documentation: the D
 // compiler embeds this package resource into every product configuration.

@@ -1,0 +1,394 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-test:
+    name: Validate tag and run full tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "invalid release tag: $tag" >&2
+            exit 1
+          fi
+          if ! git tag --points-at HEAD | grep -Fxq "$tag"; then
+            echo "tag does not point at the checked-out commit: $tag" >&2
+            exit 1
+          fi
+
+      - name: Install LDC 1.43.0
+        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        with:
+          compiler: ldc-1.43.0
+          dub: ''
+
+      - name: Install TeX integration dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends texlive-latex-recommended texlive-pictures
+
+      - name: Verify TeX integration tools
+        shell: bash
+        run: |
+          command -v pdflatex
+          command -v synctex
+          test -n "$(kpsewhich beamer.cls)"
+
+      - name: Run full tests and build configurations
+        shell: bash
+        run: |
+          dub test
+          dub build
+          dub build -c library
+          dub build --build=release
+          dub build -c update-regression
+
+      - name: Check tag and binary versions
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          test "$(bin/texflux --version)" = "texflux $expected"
+
+      - name: Check for tracked-file changes
+        shell: bash
+        run: git diff --exit-code
+
+  build-native:
+    name: Build ${{ matrix.name }}
+    needs: validate-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            platform: macos-arm64
+            runner: macos-15
+            kind: macos
+            expected_arch: arm64
+            binary: bin/texflux
+            deployment_target: '13.0'
+          - name: macOS x86_64
+            platform: macos-x86_64
+            runner: macos-15-intel
+            kind: macos
+            expected_arch: x86_64
+            binary: bin/texflux
+            deployment_target: '13.0'
+          - name: Linux arm64
+            platform: linux-arm64
+            runner: ubuntu-22.04-arm
+            kind: linux
+            expected_arch: arm64
+            binary: bin/texflux
+            deployment_target: ''
+          - name: Linux x86_64
+            platform: linux-x86_64
+            runner: ubuntu-22.04
+            kind: linux
+            expected_arch: x86_64
+            binary: bin/texflux
+            deployment_target: ''
+          - name: Windows x86_64
+            platform: windows-x86_64
+            runner: windows-2022
+            kind: windows
+            expected_arch: x86_64
+            binary: bin/texflux.exe
+            deployment_target: ''
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set macOS deployment target
+        if: matrix.kind == 'macos'
+        shell: bash
+        run: echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}" >> "$GITHUB_ENV"
+
+      - name: Install LDC 1.43.0
+        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        with:
+          compiler: ldc-1.43.0
+          dub: ''
+
+      - name: Run native tests and release build
+        shell: bash
+        run: |
+          dub test
+          dub build --build=release
+
+      - name: Check binary version
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          binary="${{ matrix.binary }}"
+          test "$("$binary" --version)" = "texflux $expected"
+
+      - name: Inspect Linux binary
+        if: matrix.kind == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="${{ matrix.binary }}"
+          file_output="$(file -b "$binary")"
+          echo "$file_output"
+          case "${{ matrix.expected_arch }}" in
+            x86_64) grep -Eq 'ELF 64-bit.*x86-64' <<<"$file_output" ;;
+            arm64) grep -Eq 'ELF 64-bit.*ARM aarch64' <<<"$file_output" ;;
+            *) echo "unknown expected architecture" >&2; exit 1 ;;
+          esac
+          dependencies="$(ldd "$binary")"
+          echo "$dependencies"
+          if grep -Fq 'not found' <<<"$dependencies"; then
+            echo "missing Linux runtime dependency" >&2
+            exit 1
+          fi
+          if grep -Eiq 'lib(phobos2|druntime)-ldc' <<<"$dependencies"; then
+            echo "binary depends on shared LDC runtime" >&2
+            exit 1
+          fi
+
+      - name: Inspect macOS binary
+        if: matrix.kind == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="${{ matrix.binary }}"
+          file_output="$(file -b "$binary")"
+          echo "$file_output"
+          grep -Fq "${{ matrix.expected_arch }}" <<<"$file_output"
+          dependencies="$(otool -L "$binary" | tail -n +2 | sed '/^[[:space:]]*$/d')"
+          echo "$dependencies"
+          unexpected="$(grep -Ev '^[[:space:]]*(/usr/lib/|/System/Library/)' <<<"$dependencies" || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "unexpected macOS dylib dependency:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+          load_commands="$(otool -l "$binary")"
+          minos="$(awk '/LC_BUILD_VERSION/{found=1; next} found && /minos/{print $2; exit}' <<<"$load_commands")"
+          test "$minos" = '13.0'
+
+      - name: Inspect Windows binary
+        if: matrix.kind == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio installation was not found' }
+          $devCmd = Join-Path $vsPath 'Common7\Tools\VsDevCmd.bat'
+          $command = 'call "' + $devCmd + '" -arch=x64 -host_arch=x64 && dumpbin /HEADERS bin\texflux.exe && dumpbin /DEPENDENTS bin\texflux.exe'
+          cmd.exe /d /s /c $command 2>&1 | Tee-Object -FilePath pe.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Select-String -Path pe.txt -Pattern 'machine \(x64\)' -Quiet)) {
+            throw 'PE binary is not x86_64'
+          }
+          $runtimePattern = 'phobos2-ldc.*\.dll|druntime-ldc.*\.dll|zlib.*\.dll|VCRUNTIME.*\.dll|MSVCP.*\.dll'
+          if (Select-String -Path pe.txt -Pattern $runtimePattern -CaseSensitive:$false -Quiet) {
+            throw 'standalone runtime dependency detected; inspect pe.txt before choosing a CRT fallback'
+          }
+
+      - name: Check for tracked-file changes
+        shell: bash
+        run: git diff --exit-code
+
+      - name: Upload raw executable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: raw-${{ matrix.platform }}
+          path: ${{ matrix.binary }}
+          if-no-files-found: error
+          retention-days: 7
+
+  package-and-attest:
+    name: Package, checksum, and attest release assets
+    needs: build-native
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS arm64 binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: raw-macos-arm64
+          path: raw/macos-arm64
+
+      - name: Download macOS x86_64 binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: raw-macos-x86_64
+          path: raw/macos-x86_64
+
+      - name: Download Linux arm64 binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: raw-linux-arm64
+          path: raw/linux-arm64
+
+      - name: Download Linux x86_64 binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: raw-linux-x86_64
+          path: raw/linux-x86_64
+
+      - name: Download Windows x86_64 binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: raw-windows-x86_64
+          path: raw/windows-x86_64
+
+      - name: Create deterministic archives and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          source_date_epoch="$(git log -1 --format=%ct)"
+          rm -rf dist packages
+          mkdir -p dist packages
+
+          make_unix_package() {
+            local platform="$1"
+            local source="$2"
+            local root="texflux-${version}-${platform}"
+            mkdir -p "packages/$root"
+            install -m 0755 "$source" "packages/$root/texflux"
+            install -m 0644 LICENSE "packages/$root/LICENSE"
+            install -m 0644 README.md "packages/$root/README.md"
+            tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 \
+              --numeric-owner -C packages -cf - "$root" | gzip -n \
+              > "dist/${root}.tar.gz"
+          }
+
+          make_windows_package() {
+            local platform="$1"
+            local source="$2"
+            local root="texflux-${version}-${platform}"
+            mkdir -p "packages/$root"
+            install -m 0755 "$source" "packages/$root/texflux.exe"
+            install -m 0644 LICENSE "packages/$root/LICENSE"
+            install -m 0644 README.md "packages/$root/README.md"
+            find "packages/$root" -exec touch -d "@$source_date_epoch" {} +
+            (cd packages && find "$root" -print | LC_ALL=C sort | zip -X -q "../dist/${root}.zip" -@)
+          }
+
+          make_unix_package macos-arm64 raw/macos-arm64/texflux
+          make_unix_package macos-x86_64 raw/macos-x86_64/texflux
+          make_unix_package linux-arm64 raw/linux-arm64/texflux
+          make_unix_package linux-x86_64 raw/linux-x86_64/texflux
+          make_windows_package windows-x86_64 raw/windows-x86_64/texflux.exe
+
+          (cd dist && sha256sum texflux-*.tar.gz texflux-*.zip | LC_ALL=C sort -k2) > dist/SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      - name: Generate artifact attestations
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: |
+            dist/texflux-*.tar.gz
+            dist/texflux-*.zip
+            dist/SHA256SUMS
+
+      - name: Upload release assets for publication
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-assets
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: package-and-attest
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: downloaded-release
+
+      - name: Verify release asset set
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find downloaded-release -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name 'SHA256SUMS' \) -exec cp {} release-assets/ \;
+          version="${GITHUB_REF_NAME#v}"
+          cat > expected-assets <<EOF
+          SHA256SUMS
+          texflux-${version}-linux-arm64.tar.gz
+          texflux-${version}-linux-x86_64.tar.gz
+          texflux-${version}-macos-arm64.tar.gz
+          texflux-${version}-macos-x86_64.tar.gz
+          texflux-${version}-windows-x86_64.zip
+          EOF
+          (cd release-assets && sha256sum -c SHA256SUMS)
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort > actual-assets
+          grep -v '^SHA256SUMS$' expected-assets | LC_ALL=C sort > expected-archives
+          grep -v '^SHA256SUMS$' actual-assets | LC_ALL=C sort > actual-archives
+          diff -u expected-archives actual-archives
+
+      - name: Create or reuse draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+
+      - name: Verify remote release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | LC_ALL=C sort > remote-assets
+          grep -v '^SHA256SUMS$' expected-assets | LC_ALL=C sort > expected-archives
+          grep -v '^SHA256SUMS$' remote-assets | LC_ALL=C sort > remote-archives
+          diff -u expected-archives remote-archives
+          grep -Fxq SHA256SUMS remote-assets
+
+      - name: Publish immutable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

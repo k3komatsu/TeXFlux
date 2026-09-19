@@ -203,6 +203,13 @@ dub build --build=release
 
 生成された `./bin/texflux` がCLIです。
 
+versionを確認できます。
+
+```bash
+./bin/texflux --version
+# texflux 0.3.0
+```
+
 ### 2. `.tfx` ファイルの作成
 
 お気に入りのエディタで `slides.tfx` を作成します。
@@ -253,6 +260,35 @@ texflux synctex remap slides.synctex.gz --map slides.tex.tfxmap
 > `-latex=uplatex` を毎回書く代わりに `.latexmkrc` に `$latex = 'uplatex %O %S';` と置いても構いません。
 > `lualatex` + `luatexja` を使う場合は `\documentclass` から `dvipdfmx` を外し、`latexmk -lualatex`
 > でビルドします。欧文だけの文書なら `pdflatex` のままで構いません。TeXFlux はエンジンを選びません。
+
+---
+
+## 📦 Pre-built binary
+
+正式なreleaseでは、D toolchainをインストールせずに使えるbinaryをGitHub Releasesから取得できます。
+
+```text
+texflux-vX.Y.Z-macos-arm64.tar.gz
+texflux-vX.Y.Z-macos-x86_64.tar.gz
+texflux-vX.Y.Z-linux-arm64.tar.gz
+texflux-vX.Y.Z-linux-x86_64.tar.gz
+texflux-vX.Y.Z-windows-x86_64.zip
+SHA256SUMS
+```
+
+各archiveには実行ファイル、`LICENSE`、この`README.md`だけが含まれます。archiveを展開したディレクトリから実行してください。
+
+Linux binaryはUbuntu 22.04をglibc baselineとしてbuildします。macOS binaryは`MACOSX_DEPLOYMENT_TARGET=13.0`でbuildし、macOS 15でruntime testします。したがって、macOS 13/14でのruntime test済みとは表現していません。Windows binaryはx86_64向けです。
+
+checksumはrelease pageの`SHA256SUMS`で確認できます。
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+GitHub Actionsのartifact attestationも各release archiveとchecksumに付与します。配布方式やpackage managerからの利用は、各repositoryの方針に従ってください。
+
+TeXFluxは[0BSD](LICENSE)で提供します。
 
 ---
 
