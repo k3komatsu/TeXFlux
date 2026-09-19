@@ -15,7 +15,7 @@ module texflux.paths;
 
 import std.file : exists;
 import std.path : absolutePath, buildNormalizedPath, buildPath, dirName, pathSplitter;
-import std.string : startsWith;
+import std.string : replace, startsWith;
 import std.typecons : Nullable, nullable, Tuple, tuple;
 
 version (Posix)
@@ -39,6 +39,15 @@ version (Windows)
 string absoluteNormalized(string path)
 {
     return buildNormalizedPath(absolutePath(path));
+}
+
+/// The portable spelling used in diagnostics and other user-facing paths.
+string displayPath(string path)
+{
+    version (Windows)
+        return path.replace("\\", "/");
+    else
+        return path;
 }
 
 /// One comparable spelling of a path.
@@ -215,7 +224,15 @@ string openFailure(Exception error, string path)
     import texflux.text : quoted;
 
     auto fileError = cast(FileException) error;
-    const code = fileError is null ? ENOENT : cast(int) fileError.errno;
+    int code = fileError is null ? ENOENT : cast(int) fileError.errno;
+    version (Windows)
+    {
+        // The Windows CRT reports a missing parent directory as
+        // ERROR_PATH_NOT_FOUND (3), while the public diagnostic contract
+        // uses the portable missing-file errno.
+        if (code == 3)
+            code = ENOENT;
+    }
     return "[Errno " ~ code.to!string ~ "] " ~ strerror(code).fromStringz.idup
-        ~ ": " ~ quoted(path);
+        ~ ": " ~ quoted(displayPath(path));
 }

@@ -41,7 +41,7 @@ import texflux.flags : collectFlags, Conditional, declaredFlagsHint, Flags, flag
 import texflux.macros : collectMacros, expandMacros, MacroEnvironment, Reserved,
     validateMacroForms;
 import texflux.parser : parse;
-import texflux.paths : absoluteNormalized, normalizedPath, openFailure;
+import texflux.paths : absoluteNormalized, displayPath, normalizedPath, openFailure;
 import texflux.ordered : OrderedMap;
 import texflux.source : LoadedSource, SourcePosition, SourceSpan;
 import texflux.trace : BundleResolutionState, CompilationTrace;
@@ -169,7 +169,7 @@ string resolveModulePath(string importer, string written, ModuleKind kind, Sourc
     if (!written.endsWith(cast(string) kind))
         throw new ModuleError("M005", "!" ~ kind.construct ~ " requires a '"
                 ~ cast(string) kind ~ "' module; got '" ~ written ~ "'", span);
-    return buildNormalizedPath(importer.dirName, written);
+    return displayPath(buildNormalizedPath(importer.dirName, written));
 }
 
 // ---------------------------------------------------------------------------
@@ -809,7 +809,7 @@ final class CompilationSession
     /// Resolve a Bundle edge in this session.
     string resolveBundlePath(string importer, string written, SourceSpan span)
     {
-        return moduleResolver is null ? buildNormalizedPath(importer.dirName, written)
+        return moduleResolver is null ? displayPath(buildNormalizedPath(importer.dirName, written))
             : moduleResolver(importer, written, "bundle", span);
     }
 

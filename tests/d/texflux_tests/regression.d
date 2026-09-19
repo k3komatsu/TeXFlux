@@ -345,6 +345,13 @@ private string normalizeWorkspace(string text, string workspace, bool jsonLike =
         text = text.replace(spelling, "${WORKSPACE}");
     version (Windows)
     {
+        foreach (spelling; aliases.dup)
+        {
+            auto portable = spelling.replace("\\", "/");
+            if (portable != spelling)
+                aliases ~= portable;
+        }
+        aliases.sort!((a, b) => a.length > b.length);
         foreach (spelling; aliases)
         {
             auto escaped = spelling;
