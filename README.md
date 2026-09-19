@@ -194,21 +194,32 @@ snapshot と manifest だけで再コンパイルします。詳細は [Bundle v
 
 ### 1. インストール
 
-```bash
-# リポジトリから取得してビルド
-git clone https://github.com/k3komatsu/TeXFlux.git
-cd TeXFlux
-dub build --build=release
-```
-
-生成された `./bin/texflux` がCLIです。
-
-versionを確認できます。
+macOS（Apple Silicon/Intel）とLinux x86_64では、Homebrewからインストールできます。
 
 ```bash
-./bin/texflux --version
-# texflux 0.3.0
+brew install k3komatsu/tap/texflux
+texflux --version
 ```
+
+Homebrewは対応するBottleがある場合はそれを使い、ない場合はFormulaから自動的にbuildします。Bottleがない場合も、build dependencyはHomebrewが導入するため、利用者がD toolchainを手動で導入する必要はありません。
+
+Windows、Linux arm64、またはHomebrewを使わない場合は、下のGitHub Release binaryを利用してください。
+
+Windows (x86_64)では、[最新のRelease](https://github.com/k3komatsu/TeXFlux/releases/latest)から
+`texflux-vX.Y.Z-windows-x86_64.zip`と`SHA256SUMS`をダウンロードします。PowerShellでchecksumを確認し、archiveを展開します。
+
+```powershell
+$version = "X.Y.Z" # ダウンロードしたReleaseのversionに置き換える
+$archive = ".\texflux-v$version-windows-x86_64.zip"
+Get-FileHash $archive -Algorithm SHA256
+# SHA256SUMSの同名行とHashを比較する（大文字小文字は区別しない）
+
+Expand-Archive $archive -DestinationPath . -Force
+Set-Location ".\texflux-v$version-windows-x86_64"
+.\texflux.exe --version
+```
+
+展開したディレクトリをPATHに追加すると、任意のディレクトリから`texflux`を実行できます。
 
 ### 2. `.tfx` ファイルの作成
 
@@ -263,9 +274,9 @@ texflux synctex remap slides.synctex.gz --map slides.tex.tfxmap
 
 ---
 
-## 📦 Pre-built binary
+## 📦 GitHub Release binary
 
-正式なreleaseでは、D toolchainをインストールせずに使えるbinaryをGitHub Releasesから取得できます。
+正式なreleaseでは、Homebrewを使わない環境でもD toolchainをインストールせずに使えるbinaryをGitHub Releasesから取得できます。
 
 ```text
 texflux-vX.Y.Z-macos-arm64.tar.gz
@@ -283,8 +294,25 @@ Linux binaryはUbuntu 22.04をglibc baselineとしてbuildします。macOS bina
 checksumはrelease pageの`SHA256SUMS`で確認できます。
 
 ```bash
-sha256sum -c SHA256SUMS
+# Linux: 手元にあるarchiveだけを検証する
+sha256sum --ignore-missing -c SHA256SUMS
+
+# macOS: archive名をダウンロードしたものに置き換え、SHA256SUMSの同名行と比較する
+shasum -a 256 texflux-vX.Y.Z-macos-arm64.tar.gz
 ```
+
+macOS/Linuxでarchiveを使う場合は、checksum確認後に対応する`.tar.gz`を展開します。
+
+```bash
+version="X.Y.Z" # ダウンロードしたReleaseのversionに置き換える
+platform="macos-arm64" # macos-x86_64 / linux-arm64 / linux-x86_64
+archive="texflux-v${version}-${platform}.tar.gz"
+tar -xzf "$archive"
+cd "texflux-v${version}-${platform}"
+./texflux --version
+```
+
+Release binaryはcode signing/notarizationを行っていないため、macOS GatekeeperやWindows SmartScreenが警告を表示する場合があります。実行前に`SHA256SUMS`を確認してください。
 
 GitHub Actionsのartifact attestationも各release archiveとchecksumに付与します。配布方式やpackage managerからの利用は、各repositoryの方針に従ってください。
 
