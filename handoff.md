@@ -22,11 +22,40 @@ dub build -c update-regression
 dub run -c update-regression -- --accept-current
 ```
 
+## v0.4.0 LSP・リリース完了記録（2026-09-20）
+
+- `512de7e` でLSP本体、analysis API、workspace、UTF-8/16/32位置変換、診断公開、
+  reverse dependency invalidation、watcher通知を実装し、`ebe1ab1` でWindows向けURI
+  テストを修正した。
+- PR #6 の必須4チェックを通過して `db288c3` として `main` にmerge済みである。
+- `v0.4.0` tagを新規作成し、5 platform archive、`SHA256SUMS`、artifact attestationを
+  含むGitHub Releaseを公開した。全archiveのchecksumとattestationを検証済みである。
+- `k3komatsu/homebrew-tap` のFormula PR #3（reviewed head SHA
+  `4039ebd4e728ceb41ec7662106b760ca1d2ff4f6`）について、macOS/Linuxの`brew test-bot`
+  を通過させ、`brew pr-pull`（run `35487043603`）でFormulaとBottleをmainへ反映した。
+  macOS arm64でBottleをpoured後、`brew test k3komatsu/tap/texflux` と
+  `texflux --version`（`texflux 0.4.0`）を確認済みである。
+
 ## 保留事項
 
-- 依存グラフ専用の出力、モジュール instance cache、複数診断の収集
-- LSP サーバー本体、CLI からの import 先 overlay、registry 公開、自動配布
+- 依存グラフ専用の出力、モジュール instance cache、compiler-levelの複数診断収集
+- LSP v0.4.1のcross-file module visibility、`.tfxm` rename、parser recovery、
+  background analysisは未実装。詳細は`plan/lsp-v0.4.1.md`の境界と残差を参照する。
+- CLIからのimport先overlay、未保存`.tfxb`/asset bytes overlay、registry公開、自動配布
+- 非同期解析へ移行する場合のrevision/version commit guard
 - `library` configuration の registry 公開
+
+## v0.4.1 LSP editor intelligence 実装記録（2026-09-20、release前）
+
+- `source/texflux/lsp/features.d`にstrict parse AST由来のsymbols、folds、occurrences、
+  semantic token indexを追加した。
+- `documentSymbol`、`foldingRange`、completion、hover、definition、semantic tokens、
+  document-local references/rename、safe empty codeAction endpointを実装した。
+- `didChange`の複数content changeを順序どおりtransactionalに適用し、UTF-8/16/32境界、
+  line-end clamp、明示的completion `textEdit`を追加した。
+- renameは予約名と`.tfxm`を拒否し、module可視性を推測するcross-file編集を行わない。
+- 初回Primary Engineerレビューの3 blockerを修正し、同一セッションの再レビューは
+  `PASS_WITH_RISK`（blockerなし）。フォーカス済み`dub test --force`は32 modules passed。
 
 ## 既知の残差
 
@@ -43,7 +72,7 @@ dub run -c update-regression -- --accept-current
 - M029 の固定メッセージには回帰 fixture 互換の旧 API 表記が残る。
 - LDC が出す `SumType.toHash` の既知 warning は許容する。新しい warning は受け入れない。
 
-## CI/CD・バイナリ配布の引き継ぎ（2026-09-19）
+## CI/CD・バイナリ配布の引き継ぎ（2026-09-20）
 
 ### 完了
 
@@ -66,8 +95,12 @@ CI/CD・バイナリ配布の初回実装は完了している。詳細な設計
 - 公開URLから全archiveを取得し、`SHA256SUMS`を検証済み。
 - v0.3.0のmacOS arm64 binaryは`texflux 0.3.0`を出力し、Windows ZIPは`texflux.exe`、`LICENSE`、`README.md`を含む。
 - v0.3.1のmacOS arm64 release binaryも`texflux 0.3.1`を出力することを確認済み。
+- `v0.4.0`: `db288c3`（LSP実装PR #6のmerge commit）を指すtagとしてpush済み。
+- [v0.4.0 Release](https://github.com/k3komatsu/TeXFlux/releases/tag/v0.4.0) は公開済みで、
+  5 platform build、checksum、attestation、asset公開が成功済みである。
+- v0.4.0の全archiveを公開URLから取得し、`SHA256SUMS`を検証済みである。
 - `k3komatsu/homebrew-tap` を別repositoryとして作成・push済み。
-  - `Formula/texflux.rb` は `v0.3.1` source archiveを使うsource Formulaへ更新済み。
+  - `Formula/texflux.rb` は現在 `v0.4.0` source archiveを使うsource Formulaである。
   - `7fffa60`: Formula testを`version`参照に変更し、将来のversion bumpへ追従可能にした。
   - `ldc` / `dub`によるsource build、`brew test`、linkage検査をローカルで確認済み。
   - Homebrew標準の `autobump.yml`、`tests.yml`、`publish.yml` を配置済み。
@@ -75,6 +108,10 @@ CI/CD・バイナリ配布の初回実装は完了している。詳細な設計
   - Formula PR #2のhead SHA `a3ccf99`を固定して`publish.yml` / `brew pr-pull`を実行し、v0.3.1のBottleを公開済み。
   - Bottle publish run `35449736881`は成功し、`arm64_tahoe`と`x86_64_linux`のBottle stanzaをmainへ反映した。
   - macOS arm64でBottleをpoured後、`brew test texflux`、`brew linkage --test texflux`、`texflux --version`（`texflux 0.3.1`）を確認済み。
+- v0.4.0のFormula PR #3はhead SHA `4039ebd4e728ceb41ec7662106b760ca1d2ff4f6`でレビューし、
+  macOS/Linuxの`brew test-bot`を通過した。`publish.yml` / `brew pr-pull` run
+  `35487043603`でv0.4.0のFormulaとBottleをmainへ反映し、macOS arm64でBottleをpoured、
+  `brew test k3komatsu/tap/texflux`と`texflux --version`（`texflux 0.4.0`）を確認済み。
 - READMEの標準install導線をHomebrewにし、WindowsのRelease ZIP/PowerShell手順とmacOS/Linuxのarchive手順を記載した。
 
 ### 次回以降のrelease手順

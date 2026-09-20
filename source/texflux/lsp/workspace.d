@@ -13,6 +13,7 @@ import texflux.source : LoadedSource;
 import texflux.text : decodeUtf8;
 import texflux.trace : TraceDependency;
 
+import texflux.lsp.features : FeatureIndex, buildFeatureIndex;
 import texflux.lsp.text : LineIndex, LspPosition, LspRange, PositionEncoding, pathToUri,
     uriToPath;
 
@@ -26,6 +27,14 @@ struct OpenDocument
     immutable(ubyte)[] bytes;
     LineIndex lines;
     ModuleKind kind;
+    FeatureIndex features;
+}
+
+struct TextChange
+{
+    bool hasRange;
+    LspRange range;
+    string text;
 }
 
 struct RootState
@@ -110,9 +119,68 @@ final class Workspace
         }
         auto kind = suffix == ".tfxm" ? ModuleKind.macro_ : ModuleKind.content;
         documents[canonical] = OpenDocument(uri, path, canonical, cast(int) documentVersion,
-                text, bytes, LineIndex(text), kind);
+                text, bytes, LineIndex(text), kind, buildFeatureIndex(text, path));
         ++revision;
         return true;
+    }
+
+    /// Apply one LSP change sequence transactionally against the current text.
+    bool applyChanges(string uri, long documentVersion, const(TextChange)[] changes,
+        out string path, out string error)
+    {
+        if (changes.length == 0)
+        {
+            error = "at least one content change is required";
+            return false;
+        }
+        auto decoded = uriToPath(uri);
+        if (decoded.isNull)
+        {
+            error = "only file URIs are supported";
+            return false;
+        }
+        const canonical = normalizedPath(absoluteNormalized(decoded.get));
+        auto existing = canonical in documents;
+        string next;
+        bool hasBase;
+        if (existing !is null)
+        {
+            next = (*existing).text;
+            hasBase = true;
+        }
+        foreach (change; changes)
+        {
+            auto replacementBytes = cast(immutable(ubyte)[]) change.text.idup;
+            string replacement;
+            try
+                replacement = decodeUtf8(replacementBytes);
+            catch (Exception exception)
+            {
+                error = exception.msg;
+                return false;
+            }
+            if (!change.hasRange)
+            {
+                next = replacement;
+                hasBase = true;
+                continue;
+            }
+            if (!hasBase)
+            {
+                error = "document is not open";
+                return false;
+            }
+            auto index = LineIndex(next);
+            auto start = index.byteOffset(change.range.start, encoding);
+            auto end = index.byteOffset(change.range.end, encoding);
+            if (start.isNull || end.isNull || end.get < start.get)
+            {
+                error = "change range is invalid";
+                return false;
+            }
+            next = next[0 .. start.get] ~ replacement ~ next[end.get .. $];
+        }
+        return put(uri, documentVersion, next, path, error);
     }
 
     bool contains(string path) const

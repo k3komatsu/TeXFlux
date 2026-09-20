@@ -13,6 +13,7 @@ import std.string : indexOf, split, strip;
 import texflux : AnalysisRequest, analyze;
 import texflux.flags : Flags;
 import texflux.lsp.server : run;
+import texflux.lsp.features : FeatureOccurrenceKind, buildFeatureIndex;
 import texflux.lsp.text : LspPosition, LineIndex, PositionEncoding, pathToUri,
     uriToPath;
 import texflux.lsp.transport : LspStreams, LspTransport, PacketStatus;
@@ -150,6 +151,41 @@ private void writeProcessFrame(ref File input, string body)
 
 unittest
 {
+    const source =
+        "!defmacro{wrap}{body}::\n" ~
+        "    !param{body}\n" ~
+        "!flag{draft}{off}\n" ~
+        "@frame::\n" ~
+        "    !wrap{hello}\n" ~
+        "    !when{draft} >> \\note{draft}\n";
+    auto index = buildFeatureIndex(source, "/tmp/features.tfx");
+    assert(index.complete);
+    bool macroDeclaration;
+    bool flagDeclaration;
+    bool macroCall;
+    foreach (occurrence; index.occurrences)
+    {
+        macroDeclaration |= occurrence.kind == FeatureOccurrenceKind.macro_
+            && occurrence.name == "wrap" && occurrence.declaration;
+        flagDeclaration |= occurrence.kind == FeatureOccurrenceKind.flag_
+            && occurrence.name == "draft" && occurrence.declaration;
+        macroCall |= occurrence.kind == FeatureOccurrenceKind.macro_
+            && occurrence.name == "wrap" && !occurrence.declaration;
+    }
+    assert(macroDeclaration && flagDeclaration && macroCall);
+    assert(index.symbols.length == 3, "macro, flag and environment symbols");
+    assert(index.folds.length != 0);
+    assert(index.tokens.length >= 6);
+
+    auto incomplete = buildFeatureIndex("!defmacro{wrap\n", "/tmp/incomplete.tfx");
+    assert(!incomplete.complete);
+    assert(incomplete.symbols.length == 0);
+    assert(incomplete.folds.length == 0);
+    assert(incomplete.tokens.length == 0);
+}
+
+unittest
+{
     auto packetInput = frame("{") ~ frame(
         `{"jsonrpc":"2.0","method":"initialized","params":{}}`);
     auto connection = new MemoryConnection(packetInput);
@@ -159,6 +195,80 @@ unittest
     auto next = transport.readPacket();
     assert(next.status == PacketStatus.message);
     assert(next.value["method"].str == "initialized");
+}
+
+unittest
+{
+    const uri = pathToUri("/tmp/features.tfx");
+    auto input = frame(
+        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`
+            ~ uri ~ `","version":1,"text":"!defmacro{wrap}{body}::\n    !param{body}\n!flag{draft}{off}\n@frame::\n    !wrap{hello}\n    !when{draft} >> \\note{draft}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/foldingRange","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":7}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":6}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":6,"method":"textDocument/definition","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":6}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":7,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":8,"method":"textDocument/references","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":6},"context":{"includeDeclaration":true}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":9,"method":"textDocument/rename","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":6},"newName":"shell"}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":10,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},"context":{"diagnostics":[]}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":11,"method":"textDocument/rename","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":4,"character":6},"newName":"text"}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"`
+            ~ uri ~ `","version":2},"contentChanges":[{"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":14}},"text":"shell"},{"range":{"start":{"line":0,"character":17},"end":{"line":0,"character":21}},"text":"arg"},{"range":{"start":{"line":4,"character":5},"end":{"line":4,"character":9}},"text":"shell"}]}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":12,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":13,"method":"shutdown","params":null}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(input);
+    assert(run(streams(connection)) == 0);
+    auto messages = frames(connection.output);
+    JSONValue[string] responses;
+    foreach (message; messages)
+    {
+        auto id = field(message, "id");
+        if (id.type == JSONType.integer)
+            responses[to!string(id.integer)] = message;
+    }
+    assert(responses["2"]["result"].array.length == 3);
+    assert(responses["2"]["result"].array[0]["name"].str == "!wrap");
+    assert(responses["2"]["result"].array[0]["location"]["range"]["start"]["line"].integer == 0);
+    assert(responses["2"]["result"].array[0]["location"]["range"]["end"]["line"].integer == 1);
+    assert(responses["3"]["result"].array.length != 0);
+    assert(responses["3"]["result"].array[0]["startLine"].integer == 0);
+    assert(responses["3"]["result"].array[0]["endLine"].integer == 1);
+    assert(responses["4"]["result"]["items"].array.length == 1);
+    assert(responses["4"]["result"]["items"].array[0]["label"].str == "!wrap");
+    assert(responses["4"]["result"]["items"].array[0]["textEdit"]["range"]["start"]["character"].integer == 4);
+    assert(responses["4"]["result"]["items"].array[0]["textEdit"]["range"]["end"]["character"].integer == 7);
+    assert(responses["5"]["result"]["contents"]["value"].str.indexOf("wrap") >= 0);
+    assert(responses["5"]["result"]["range"]["start"]["character"].integer == 5);
+    assert(responses["5"]["result"]["range"]["end"]["character"].integer == 9);
+    assert(responses["6"]["result"].array.length == 1);
+    assert(responses["6"]["result"].array[0]["range"]["start"]["line"].integer == 0);
+    assert(responses["6"]["result"].array[0]["range"]["start"]["character"].integer == 10);
+    assert(responses["7"]["result"]["data"].array.length != 0);
+    assert(responses["7"]["result"]["data"].array[0].integer == 0);
+    assert(responses["7"]["result"]["data"].array[1].integer == 1);
+    assert(responses["8"]["result"].array.length == 2);
+    assert(responses["9"]["result"]["changes"].objectNoRef.length == 1);
+    auto renameEdits = field(responses["9"]["result"]["changes"], uri);
+    assert(renameEdits.array.length == 2);
+    assert(responses["10"]["result"].array.length == 0);
+    assert(responses["11"]["error"]["code"].integer == -32602);
+    assert(responses["12"]["result"].array[0]["name"].str == "!shell");
+    assert(responses["13"]["result"].type == JSONType.null_);
 }
 
 unittest
