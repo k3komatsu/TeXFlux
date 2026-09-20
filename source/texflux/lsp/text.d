@@ -275,5 +275,8 @@ unittest
     assert(index.fromLsp(LspPosition(0, 9), PositionEncoding.utf16).get
             == SourcePosition(1, 10));
     assert(index.fromLsp(LspPosition(0, 11), PositionEncoding.utf16).isNull);
-    assert(uriToPath(pathToUri("/tmp/日本.tfx")).get == "/tmp/日本.tfx");
+    version (Windows)
+        assert(uriToPath(pathToUri("C:\\tmp\\日本.tfx")).get == "c:\\tmp\\日本.tfx");
+    else
+        assert(uriToPath(pathToUri("/tmp/日本.tfx")).get == "/tmp/日本.tfx");
 }

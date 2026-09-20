@@ -298,7 +298,10 @@ unittest
     assert(index.fromLsp(LspPosition(1, 13), PositionEncoding.utf8).get
             == SourcePosition(2, 5));
     assert(index.fromLsp(LspPosition(1, 10), PositionEncoding.utf8).isNull);
-    assert(uriToPath(pathToUri("/tmp/日本語.tfx")).get == "/tmp/日本語.tfx");
+    version (Windows)
+        assert(uriToPath(pathToUri("C:\\tmp\\日本語.tfx")).get == "c:\\tmp\\日本語.tfx");
+    else
+        assert(uriToPath(pathToUri("/tmp/日本語.tfx")).get == "/tmp/日本語.tfx");
 }
 
 unittest
