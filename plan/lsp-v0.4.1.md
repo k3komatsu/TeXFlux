@@ -144,5 +144,17 @@ rename/referencesは安全側のdocument-local境界に限定している。空�
 Primary Engineerの初回レビューで3件のblockerを検出したが、すべて修正した。同一Claude
 セッションの再レビューは`PASS_WITH_RISK`（blockerなし）で、残るリスクはmodule可視性を
 推測しないため`.tfxm`のcross-file renameを未対応とする設計上の制約である。フォーカス済み
-`dub test --force`は32 modules passed。release前に全必須D検証、PR/CI、tag、Release、
-Homebrew Bottle検証を行う。
+`dub test --force`は32 modules passed。全必須D検証、PR/CI、tag、Release、Homebrew Bottle
+検証も完了した。
+
+## 8. Release完了記録
+
+- `e09e283`をPR #7としてrequired 4 checks成功後に`main`へmergeし、merge commit
+  `2df1335`に`v0.4.1` tagを作成した。
+- Release workflow run `35493463099`が成功し、5 platform archive、`SHA256SUMS`、artifact
+  attestation、GitHub Releaseを公開した。公開archiveのchecksumとattestationを検証済みである。
+- Homebrew Formula PR #4のreviewed head SHAは
+  `72d5490202bec6e0d34f620f1ca4c5dfdfc7a41d`。test-bot成功後、publish workflow run
+  `35494057593`でFormulaとBottleをmainへ反映した。
+- macOS arm64でv0.4.1 Bottleをpouredし、`brew upgrade`、`brew test
+  k3komatsu/tap/texflux`、`texflux --version`（`texflux 0.4.1`）を確認済みである。
