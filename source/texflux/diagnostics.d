@@ -15,13 +15,14 @@ module texflux.diagnostics;
 import std.algorithm : all;
 
 import texflux.canonical : builtinDirectives;
-import texflux.errors : diagnosticLine, RelatedLocation, TeXFluxError;
+import texflux.errors : diagnosticLine, FlagError, RelatedLocation, TeXFluxError;
 import texflux.flags : Flags;
 import texflux.interchange : header, spanEncoder;
 import texflux.json;
-import texflux.modules : CompilationSession, readSource, SourceReader;
+import texflux.modules : CompilationSession, ModuleKind, readSource, SourceReader;
 import texflux.paths : normalizedPath;
 import texflux.source : LoadedSource, SourceSpan;
+import texflux.trace : CompilationTrace;
 
 /**
  * Whether a diagnostic stopped the compilation or only warned about it.
@@ -131,17 +132,38 @@ SourceReader overlayReader(const(ubyte)[][string] overlays)
  * raise. Neither describes a place in a document, so neither is a diagnostic:
  * they report how the compiler was called or installed.
  */
+DiagnosticReport diagnoseModule(ModuleKind kind, string source,
+        string filename = "<string>", Flags flags = Flags.init,
+        immutable(ubyte)[] sourceBytes = null, const(ubyte)[][string] overlays = null,
+        CompilationTrace* trace = null)
+{
+    auto session = new CompilationSession(builtinDirectives(),
+            overlays is null ? null : overlayReader(overlays), null, trace);
+    const data = sourceBytes is null ? cast(immutable(ubyte)[]) source : sourceBytes;
+    try
+    {
+        final switch (kind)
+        {
+        case ModuleKind.content:
+            session.compileRoot(source, filename, data, flags);
+            break;
+        case ModuleKind.macro_:
+            if (flags.length != 0)
+                throw new FlagError("macro modules do not accept build flags");
+            session.validateMacroRoot(source, filename, data);
+            break;
+        }
+    }
+    catch (TeXFluxError error)
+        return DiagnosticReport(session.loaded.dup, [Diagnostic.fromError(error)]);
+    return DiagnosticReport(session.loaded.dup, []);
+}
+
+/// Report what one content compilation found, rather than raising it.
 DiagnosticReport diagnose(string source, string filename = "<string>", Flags flags = Flags.init,
         immutable(ubyte)[] sourceBytes = null, const(ubyte)[][string] overlays = null)
 {
-    auto session = new CompilationSession(builtinDirectives(),
-            overlays is null ? null : overlayReader(overlays));
-    const data = sourceBytes is null ? cast(immutable(ubyte)[]) source : sourceBytes;
-    try
-        session.compileRoot(source, filename, data, flags);
-    catch (TeXFluxError error)
-        return DiagnosticReport(session.loaded, [Diagnostic.fromError(error)]);
-    return DiagnosticReport(session.loaded, []);
+    return diagnoseModule(ModuleKind.content, source, filename, flags, sourceBytes, overlays);
 }
 
 /**

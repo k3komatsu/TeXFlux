@@ -50,7 +50,7 @@ struct CommandStreams
     }
 }
 
-private enum usage = "usage: texflux [-h] [--version] {compile,ast,check,bundle,synctex} ...";
+private enum usage = "usage: texflux [-h] [--version] {compile,ast,check,bundle,synctex,lsp} ...";
 
 /// Run one command and return the status the process should exit with.
 int run(string[] args, CommandStreams streams)
@@ -84,9 +84,11 @@ int run(string[] args, CommandStreams streams)
             return bundleCommand(args[1 .. $], streams);
         case "synctex":
             return synctexCommand(args[1 .. $], streams);
+        case "lsp":
+            throw new UsageError("lsp requires the streaming process entry point");
         default:
             throw new UsageError("argument command: invalid choice: '" ~ args[0]
-                    ~ "' (choose from 'compile', 'ast', 'check', 'bundle', 'synctex')");
+                    ~ "' (choose from 'compile', 'ast', 'check', 'bundle', 'synctex', 'lsp')");
         }
     }
     catch (UsageError error)
