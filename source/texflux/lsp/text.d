@@ -36,7 +36,6 @@ struct LineIndex
     this(string source)
     {
         text = source;
-        size_t start;
         size_t index;
         starts ~= 0;
         while (index < source.length)
@@ -46,7 +45,6 @@ struct LineIndex
                 ends ~= index;
                 ++index;
                 starts ~= index;
-                start = index;
             }
             else if (source[index] == '\r')
             {
@@ -55,7 +53,6 @@ struct LineIndex
                 if (index < source.length && source[index] == '\n')
                     ++index;
                 starts ~= index;
-                start = index;
             }
             else
                 ++index;
@@ -100,6 +97,27 @@ struct LineIndex
                 cast(int) codePoints.get + 1).nullable;
     }
 
+    /// Convert an LSP position to a byte offset in the original UTF-8 text.
+    Nullable!size_t byteOffset(LspPosition position, PositionEncoding encoding) const
+    {
+        if (position.line < 0 || position.character < 0
+                || cast(ulong) position.line >= starts.length)
+            return Nullable!size_t.init;
+        const sourceLine = line(cast(size_t) position.line);
+        auto points = codePointsForUnits(sourceLine, cast(size_t) position.character,
+                encoding);
+        if (points.isNull)
+            return Nullable!size_t.init;
+        size_t offset;
+        size_t index;
+        while (index < sourceLine.length && offset < points.get)
+        {
+            decode(sourceLine, index);
+            ++offset;
+        }
+        return (starts[cast(size_t) position.line] + index).nullable;
+    }
+
     LspRange toLsp(SourceSpan span, PositionEncoding encoding) const
     {
         return LspRange(toLsp(span.start, encoding), toLsp(span.end, encoding));
@@ -139,7 +157,9 @@ private Nullable!size_t codePointsForUnits(string text, size_t wanted,
         units += next;
         ++points;
     }
-    return wanted == units ? points.nullable : Nullable!size_t.init;
+    // LSP positions beyond the line are clamped to its end; a position inside
+    // one encoded character was rejected above rather than silently rounded.
+    return points.nullable;
 }
 
 private size_t unitsOf(dchar character, size_t utf8Bytes, PositionEncoding encoding)
@@ -275,6 +295,8 @@ unittest
     assert(index.fromLsp(LspPosition(0, 9), PositionEncoding.utf16).get
             == SourcePosition(1, 10));
     assert(index.fromLsp(LspPosition(0, 11), PositionEncoding.utf16).isNull);
+    assert(index.fromLsp(LspPosition(0, 99), PositionEncoding.utf16).get
+            == SourcePosition(1, 13));
     version (Windows)
         assert(uriToPath(pathToUri("C:\\tmp\\日本.tfx")).get == "c:\\tmp\\日本.tfx");
     else

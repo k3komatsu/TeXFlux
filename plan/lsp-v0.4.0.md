@@ -146,8 +146,9 @@ module import の attempted edge は read 前に記録する。これにより�
 import や parse failure でも修正対象が reverse graph に残る。成功時は旧 edge を
 置換し、失敗時は旧成功 edge と今回観測 edge の union を保持する。
 
-bundle/asset の成功 edge は既存 trace を利用する。missing asset の完全な
-attempted-edge 化や unsaved binary overlay は v0.4.0 の範囲外とする。
+bundle/asset の成功 edge は既存 trace を利用する。`!bundleimport` の解決試行は
+missing bundleでもedgeを残すため、watcher変更時にimporterを再解析できる。
+一般assetの完全なattempted-edge化やunsaved binary overlayはv0.4.0の範囲外とする。
 
 ## 4. LSP runtime
 
@@ -244,8 +245,9 @@ overlays として使う。session は解析間で共有せず、single-threaded
 
 'didOpen'/'didChange'/'didSave'/'didClose' のたびに revision を進める。Full Sync
 の 'didChange' は range なしの単一 change のみ受理し、version の逆行は無視する。
-結果 commit 前に revision/version を検査し、将来の非同期化でも stale result を
-publish しない。
+v0.4.0は単一スレッドで解析とcommitを同期実行するため、解析中に別イベントが割り込む
+stale resultは発生しない。revisionは無効化と将来の非同期化のために保持しているが、
+非同期化時のcommit前revision/version guardは後続フェーズで追加する。
 
 ## 6. Diagnostics と dependency graph
 
@@ -337,16 +339,27 @@ dub build -c update-regression
 release/tag/Homebrew は implementation PR の後段で扱い、別 version tag の再利用や
 force update は行わない。
 
-## 9. 実装状況
+## 9. 実装状況・完了記録
 
-2026-09-20 時点で Phase 0--3 を実装した。
+2026-09-20時点でPhase 0--3を実装し、v0.4.0として公開した。
 
-- 'texflux lsp' の stdio JSON-RPC transport と lifecycle を追加した。
-- 'texflux.analysis' と '.tfxm' root validation を追加した。
-- open-document overlay、Full Sync、UTF-8/16/32 の位置変換を追加した。
-- diagnostics の publish、related information、stale clear、root の逆依存再解析を追加した。
-- partial packet、複数 packet、失敗時の dependency union、bundleimport edge、
-  version 逆行拒否、subprocess lifecycle smoke をテストした。
-- `didChangeWatchedFiles`、予期しない解析失敗の internal diagnostic、Windows/Posix
-  の pipe 境界を実装した。
-- symbols/completion/hover/definition 等は本計画どおり v0.4.0 の対象外である。
+- `512de7e`で`texflux lsp`のstdio JSON-RPC transportとlifecycle、
+  `texflux.analysis`、`.tfxm` root validation、open-document overlay、Full Sync、
+  UTF-8/16/32位置変換を追加した。
+- `ebe1ab1`でWindows環境のfile URI期待値を修正した。
+- diagnosticsのpublish、related information、stale clear、rootの逆依存再解析、
+  `didChangeWatchedFiles`、bundleimport edge、予期しない解析失敗のinternal diagnosticを
+  実装した。
+- partial packet、複数packet、invalid JSON、失敗時のdependency union、version逆行拒否、
+  `.tfxm` purity/closure、subprocess lifecycle smokeをテストした。
+- PR #6の必須4チェックを通過して`db288c3`として`main`にmergeし、`v0.4.0` tag、
+  GitHub Release、Homebrew Formula/Bottleまで検証済みである。
+- symbols/completion/hover/definition等は本計画どおりv0.4.0の対象外である。
+
+## 10. v0.4.1への引き継ぎ
+
+残りのLSP editor intelligenceは`plan/lsp-v0.4.1.md`へ移し、2026-09-20に実装した。
+strict AST index、symbols/folding/completion/hover/definition、semantic tokens、
+document-local references/rename、safe empty codeAction endpoint、順序付き複数
+incremental changeを対象とする。module可視性を推測するcross-file rename、parser recovery、
+background analysisは引き続き対象外である。
