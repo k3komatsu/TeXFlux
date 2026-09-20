@@ -45,7 +45,7 @@ dub run -c update-regression -- --accept-current
 - 非同期解析へ移行する場合のrevision/version commit guard
 - `library` configuration の registry 公開
 
-## v0.4.1 LSP editor intelligence 実装記録（2026-09-20、release前）
+## v0.4.1 LSP editor intelligence 実装記録（2026-09-20、完了）
 
 - `source/texflux/lsp/features.d`にstrict parse AST由来のsymbols、folds、occurrences、
   semantic token indexを追加した。
@@ -56,6 +56,16 @@ dub run -c update-regression -- --accept-current
 - renameは予約名と`.tfxm`を拒否し、module可視性を推測するcross-file編集を行わない。
 - 初回Primary Engineerレビューの3 blockerを修正し、同一セッションの再レビューは
   `PASS_WITH_RISK`（blockerなし）。フォーカス済み`dub test --force`は32 modules passed。
+- `e09e283`をPR #7としてrequired 4 checks成功後に`main`へmergeし、merge commit
+  `2df1335`へ`v0.4.1` tagを新規作成した。
+- Release workflow run `35493463099`で5 platform archive、`SHA256SUMS`、artifact
+  attestation、GitHub Releaseを公開し、全checksumと5 archiveのattestationを検証した。
+- `k3komatsu/homebrew-tap`のFormula PR #4（reviewed head SHA
+  `72d5490202bec6e0d34f620f1ca4c5dfdfc7a41d`）はmacOS/Linuxのtest-botを通過した。
+  publish workflow run `35494057593`でFormulaと`arm64_tahoe`/`x86_64_linux` Bottleを
+  mainへ反映し、macOS arm64でBottleをpouredした。
+- Homebrew upgrade後に`brew test k3komatsu/tap/texflux`と`texflux --version`
+  （`texflux 0.4.1`）を確認した。
 
 ## 既知の残差
 
@@ -99,8 +109,13 @@ CI/CD・バイナリ配布の初回実装は完了している。詳細な設計
 - [v0.4.0 Release](https://github.com/k3komatsu/TeXFlux/releases/tag/v0.4.0) は公開済みで、
   5 platform build、checksum、attestation、asset公開が成功済みである。
 - v0.4.0の全archiveを公開URLから取得し、`SHA256SUMS`を検証済みである。
+- `v0.4.1`: `2df1335`（LSP editor intelligence実装PR #7のmerge commit）を指すtagとして
+  push済み。
+- [v0.4.1 Release](https://github.com/k3komatsu/TeXFlux/releases/tag/v0.4.1) は公開済みで、
+  5 platform build、checksum、attestation、asset公開が成功済みである。
+- v0.4.1の全archiveを公開URLから取得し、`SHA256SUMS`と5 archiveのattestationを検証済みである。
 - `k3komatsu/homebrew-tap` を別repositoryとして作成・push済み。
-  - `Formula/texflux.rb` は現在 `v0.4.0` source archiveを使うsource Formulaである。
+  - `Formula/texflux.rb` は現在 `v0.4.1` source archiveを使うsource Formulaである。
   - `7fffa60`: Formula testを`version`参照に変更し、将来のversion bumpへ追従可能にした。
   - `ldc` / `dub`によるsource build、`brew test`、linkage検査をローカルで確認済み。
   - Homebrew標準の `autobump.yml`、`tests.yml`、`publish.yml` を配置済み。
@@ -112,6 +127,10 @@ CI/CD・バイナリ配布の初回実装は完了している。詳細な設計
   macOS/Linuxの`brew test-bot`を通過した。`publish.yml` / `brew pr-pull` run
   `35487043603`でv0.4.0のFormulaとBottleをmainへ反映し、macOS arm64でBottleをpoured、
   `brew test k3komatsu/tap/texflux`と`texflux --version`（`texflux 0.4.0`）を確認済み。
+- v0.4.1のFormula PR #4はhead SHA `72d5490202bec6e0d34f620f1ca4c5dfdfc7a41d`でレビューし、
+  macOS/Linuxの`brew test-bot`を通過した。`publish.yml` run `35494057593`でv0.4.1の
+  FormulaとBottleをmainへ反映し、macOS arm64でBottleをpoured、`brew upgrade`、
+  `brew test k3komatsu/tap/texflux`、`texflux --version`（`texflux 0.4.1`）を確認済み。
 - READMEの標準install導線をHomebrewにし、WindowsのRelease ZIP/PowerShell手順とmacOS/Linuxのarchive手順を記載した。
 
 ### 次回以降のrelease手順
