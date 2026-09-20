@@ -93,6 +93,8 @@ struct CompilationTrace
     TraceDependency[] dependencies;
     Flags flags;
     Document document;
+    /// Bundle builds retain payload bytes; editor analysis only needs edges.
+    bool collectAssets = true;
 
     void source(string path, string display, immutable(ubyte)[] data)
     {

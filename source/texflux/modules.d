@@ -594,11 +594,11 @@ private struct ImportResolver
         Document imported;
         try
         {
+            session.recordDependency(module_.path, "import", written,
+                    normalizedPath(display), pathGroup.get.span);
             // Loading the target parses it, so a parse error in the callee is
             // inside the chain as much as a later validation error is.
             auto target = session.load(display, pathGroup.get.span);
-            session.recordDependency(module_.path, "import", written, target.path,
-                    pathGroup.get.span);
             // The active import stack, not "ever seen": importing one module
             // twice is legal and simply produces two instances.
             if (stack.canFind(target.path))
@@ -639,10 +639,10 @@ private struct ImportResolver
             throw bundlePathForm(node.groups[0].span, written);
         const display = session.resolveBundlePath(module_.display, written, node.groups[0].span);
         const selector = node.groups[1].demandText("!bundleimport selector");
-        const bytes = readBundleBytes(display);
-        session.recordBundle(normalizedPath(display), display, bytes);
         session.recordDependency(module_.path, "bundleimport", written,
                 normalizedPath(display), node.span, selector);
+        const bytes = readBundleBytes(display);
+        session.recordBundle(normalizedPath(display), display, bytes);
         return resolveBundleFrame(display, selector, node.span, session);
     }
 
@@ -729,12 +729,16 @@ final class CompilationSession
         const resolved = resolveFilesystemAsset(reference);
         if (trace !is null)
         {
-            import std.file : read;
             import texflux.paths : normalizedPath;
 
             const physical = normalizedPath(resolved);
-            trace.asset(physical, resolved,
-                    cast(immutable(ubyte)[]) read(resolved));
+            if (trace.collectAssets)
+            {
+                import std.file : read;
+
+                trace.asset(physical, resolved,
+                        cast(immutable(ubyte)[]) read(resolved));
+            }
             trace.dependency(normalizedPath(reference.ownerFile), "asset",
                     reference.path, physical, reference.span);
         }
@@ -1000,6 +1004,23 @@ final class CompilationSession
             trace.rootDisplay = filename;
         }
         return compile(source, flags, true, null, Flags.init, [source.path]);
+    }
+
+    /// Validate a macro module supplied as the compilation root.
+    void validateMacroRoot(string text, string filename, immutable(ubyte)[] data)
+    {
+        auto source = register(filename, data, text);
+        if (trace !is null)
+        {
+            trace.root = source.path;
+            trace.rootDisplay = filename;
+        }
+
+        auto collected = collectMacroModule(source.document, source.display, source.path,
+                registry, standard.keys, moduleResolver);
+        publicMacros[source.path] = collected.macros;
+        moduleImports[source.path] = collected.imports;
+        buildEnvironments(collected.imports);
     }
 
     /// Compile one imported module as its own instance.

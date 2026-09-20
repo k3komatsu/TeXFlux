@@ -18,6 +18,7 @@
 module texflux;
 
 public import texflux.ast : Document;
+public import texflux.analysis : AnalysisRequest, AnalysisResult, analyze;
 public import texflux.bundle : BundleBuildOptions, BundleBuildResult, BundleDependency,
     BundleFile, BundleFragment, BundleIndex, BundleManifest, BundlePosition, BundleSpan,
     buildBundle, readBundleIndex, readBundleManifest, serializeBundleIndex,
@@ -39,7 +40,7 @@ public import texflux.trace : CompilationTrace, TraceAsset, TraceBundle, TraceDe
 import texflux.render : renderWithProvenance;
 
 /// The released version, which every published document names as its producer.
-enum texfluxVersion = "0.3.1";
+enum texfluxVersion = "0.4.0";
 
 /// A compiled document, and every file the compilation read.
 struct AstCompilationResult
