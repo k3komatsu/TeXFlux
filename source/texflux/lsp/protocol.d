@@ -30,12 +30,35 @@ RpcMessage inspect(JSONValue value)
     result.method = method.str;
     result.hasId = hasField(value, "id");
     if (result.hasId)
+    {
         result.id = field(value, "id");
+        if (!validId(result.id))
+            return result;
+    }
     result.hasParams = hasField(value, "params");
     if (result.hasParams)
+    {
         result.params = field(value, "params");
+        if (result.params.type != JSONType.object && result.params.type != JSONType.array)
+            return result;
+    }
     result.valid = true;
     return result;
+}
+
+private bool validId(JSONValue value)
+{
+    switch (value.type)
+    {
+    case JSONType.null_:
+    case JSONType.string:
+    case JSONType.integer:
+        return true;
+    case JSONType.uinteger:
+        return value.uinteger <= cast(ulong) long.max;
+    default:
+        return false;
+    }
 }
 
 bool hasField(JSONValue object, string name)
@@ -69,6 +92,8 @@ bool integerField(JSONValue object, string name, out long result)
         result = value.integer;
         return true;
     case JSONType.uinteger:
+        if (value.uinteger > cast(ulong) long.max)
+            return false;
         result = cast(long) value.uinteger;
         return true;
     default:
@@ -87,6 +112,8 @@ JsonValue jsonId(JSONValue id)
     case JSONType.integer:
         return memberValue(id.integer);
     case JSONType.uinteger:
+        if (id.uinteger > cast(ulong) long.max)
+            return jsonNull();
         return memberValue(cast(long) id.uinteger);
     default:
         return jsonNull();

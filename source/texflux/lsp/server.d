@@ -3,14 +3,13 @@ module texflux.lsp.server;
 import std.algorithm : canFind, sort;
 import std.json : JSONType, JSONValue;
 import std.file : exists;
-import std.path : buildNormalizedPath, dirName, extension;
-import std.string : indexOf, lastIndexOf, startsWith;
+import std.path : extension;
+import std.string : indexOf, lastIndexOf, startsWith, strip;
 import std.utf : decode;
 
 import texflux.json : JsonMember, JsonValue, jsonArray, jsonNull, jsonObject, jsonOf,
     member;
 import texflux : texfluxVersion;
-import texflux.flags : conditionalNames, isFlagName;
 import texflux.macros : isMacroName;
 import texflux.modules : ModuleKind;
 
@@ -24,9 +23,6 @@ import texflux.lsp.workspace : OpenDocument, PublishedDiagnostic, PublishedFile,
 import texflux.source : SourcePosition;
 
 enum long serverNotInitializedCode = -32002;
-enum long serverShuttingDownCode = -32001;
-enum long serverAlreadyInitializedCode = -32000;
-
 /// Run one single-threaded LSP connection until exit or EOF.
 int run(LspStreams streams)
 {
@@ -40,6 +36,10 @@ private final class LspServer
     Workspace workspace;
     bool initialized;
     bool shuttingDown;
+    bool prepareRenameSupport;
+    bool diagnosticRelatedInformationSupport;
+    bool diagnosticVersionSupport;
+    bool hoverMarkdownSupport;
     string[] publishedUris;
 
     this(LspStreams streams)
@@ -75,13 +75,25 @@ private final class LspServer
         auto message = inspect(value);
         if (!message.valid)
         {
-            transport.write(errorResponse(JSONValue.init, invalidRequestCode,
+            transport.write(errorResponse(message.hasId ? message.id : JSONValue.init,
+                    invalidRequestCode,
                     "invalid JSON-RPC request"));
             return true;
         }
 
         try
         {
+        if (notificationMethod(message.method) && message.hasId)
+        {
+            transport.write(errorResponse(message.id, invalidRequestCode,
+                    "notification method must not have an id"));
+            return true;
+        }
+        if (requestMethod(message.method) && !message.hasId)
+        {
+            log("request method received as notification: " ~ message.method);
+            return true;
+        }
         if (message.method == "exit")
         {
             return false;
@@ -98,7 +110,7 @@ private final class LspServer
         if (shuttingDown)
         {
             if (message.hasId)
-                transport.write(errorResponse(message.id, serverShuttingDownCode,
+                transport.write(errorResponse(message.id, invalidRequestCode,
                         "server is shutting down"));
             return true;
         }
@@ -137,6 +149,8 @@ private final class LspServer
             return references(message);
         if (message.method == "textDocument/rename")
             return rename(message);
+        if (message.method == "textDocument/prepareRename")
+            return prepareRename(message);
         if (message.method == "textDocument/codeAction")
             return codeAction(message);
         if (message.method == "workspace/didChangeWatchedFiles")
@@ -164,11 +178,16 @@ private final class LspServer
             return true;
         if (initialized)
         {
-            transport.write(errorResponse(message.id, serverAlreadyInitializedCode,
+            transport.write(errorResponse(message.id, invalidRequestCode,
                     "server is already initialized"));
             return true;
         }
         auto encoding = requestedEncoding(message.hasParams ? message.params : JSONValue.init);
+        prepareRenameSupport = clientSupports(message, "rename", "prepareSupport");
+        diagnosticRelatedInformationSupport = clientSupports(message, "publishDiagnostics",
+                "relatedInformation");
+        diagnosticVersionSupport = clientSupports(message, "publishDiagnostics", "versionSupport");
+        hoverMarkdownSupport = clientSupportsMarkdown(message);
         workspace = new Workspace(encoding);
         initialized = true;
         auto semantic = jsonObject(
@@ -184,11 +203,12 @@ private final class LspServer
                 member("documentSymbolProvider", true),
                 member("foldingRangeProvider", true),
                 member("completionProvider", jsonObject(member("triggerCharacters",
-                    jsonArray([jsonOf("!"), jsonOf("@")] )))),
+                    jsonArray([jsonOf("!")] )))),
                 member("hoverProvider", true),
                 member("definitionProvider", true),
                 member("referencesProvider", true),
-                member("renameProvider", true),
+                member("renameProvider", prepareRenameSupport
+                    ? jsonObject(member("prepareProvider", true)) : jsonOf(true)),
                 member("semanticTokensProvider", semantic));
         auto result = jsonObject(member("capabilities", capabilitiesWithFeatures),
                 member("serverInfo", jsonObject(member("name", "texflux"),
@@ -338,7 +358,7 @@ private final class LspServer
                 workspace.commit(path, workspace.analyzeRoot(path));
             catch (Exception error)
             {
-                workspace.invalidate(path, error.msg);
+                workspace.invalidate(path);
                 log("analysis failed for " ~ path ~ ": " ~ error.msg);
             }
         }
@@ -357,11 +377,13 @@ private final class LspServer
         foreach (file; files)
         {
             auto params = jsonObject(member("uri", file.uri),
-                    member("diagnostics", diagnosticArray(file.diagnostics)));
-            if (file.hasVersion)
+                    member("diagnostics", diagnosticArray(file.diagnostics,
+                        diagnosticRelatedInformationSupport)));
+            if (file.hasVersion && diagnosticVersionSupport)
                 params = jsonObject(member("uri", file.uri),
                         member("version", cast(long) file.documentVersion),
-                        member("diagnostics", diagnosticArray(file.diagnostics)));
+                        member("diagnostics", diagnosticArray(file.diagnostics,
+                            diagnosticRelatedInformationSupport)));
             transport.write(notification("textDocument/publishDiagnostics", params));
         }
         publishedUris = current.keys;
@@ -444,8 +466,14 @@ private final class LspServer
         const prefix = linePrefix(document.lines.line(cast(size_t) position.line),
             cast(size_t) (sourcePosition.get.column <= 1
                 ? 0 : sourcePosition.get.column - 1));
-        const whenIndex = prefix.lastIndexOf("!when{");
-        const unlessIndex = prefix.lastIndexOf("!unless{");
+        if (!completionContextAllowed(document, cast(size_t) position.line, prefix))
+        {
+            transport.write(response(message.id, jsonObject(member("isIncomplete", false),
+                member("items", jsonArray([])))));
+            return true;
+        }
+        const whenIndex = conditionalIndex(prefix, "!when");
+        const unlessIndex = conditionalIndex(prefix, "!unless");
         const flagIndex = whenIndex > unlessIndex ? whenIndex : unlessIndex;
         const open = prefix.lastIndexOf('{');
         const close = prefix.lastIndexOf('}');
@@ -480,9 +508,9 @@ private final class LspServer
                 if (occurrence.kind == FeatureOccurrenceKind.flag_ && occurrence.declaration)
                     addCompletion(items, labels, occurrence.name, 6L, partial, editRange);
         }
-        else
+        else if (bang >= 0)
         {
-            const partial = bang >= 0 ? prefix[bang .. $] : "";
+            const partial = prefix[bang .. $];
             foreach (special; builtinSpecialNames)
                 addCompletion(items, labels, "!" ~ special, 14L, partial, editRange);
             foreach (occurrence; document.features.occurrences)
@@ -513,26 +541,33 @@ private final class LspServer
             return true;
         }
         string value;
+        string plainValue;
         final switch (occurrence.kind)
         {
         case FeatureOccurrenceKind.macro_:
             value = "**macro** `!" ~ occurrence.name ~ "`";
+            plainValue = "macro !" ~ occurrence.name;
             break;
         case FeatureOccurrenceKind.flag_:
             value = "**build flag** `" ~ occurrence.name ~ "`";
+            plainValue = "build flag " ~ occurrence.name;
             break;
         case FeatureOccurrenceKind.modulePath:
             value = "**module** `" ~ occurrence.name ~ "`";
+            plainValue = "module " ~ occurrence.name;
             break;
         }
         if (occurrence.kind != FeatureOccurrenceKind.modulePath
                 && hasLocalDeclaration(document, *occurrence))
         {
             value ~= "\n\nDefined in `" ~ document.uri ~ "`";
+            plainValue ~= "\n\nDefined in " ~ document.uri;
         }
+        auto contents = hoverMarkdownSupport
+            ? jsonObject(member("kind", "markdown"), member("value", value))
+            : jsonObject(member("kind", "plaintext"), member("value", plainValue));
         auto result = jsonObject(
-            member("contents", jsonObject(member("kind", "markdown"),
-                member("value", value))),
+            member("contents", contents),
             member("range", rangeJson(document.lines.toLsp(occurrence.span,
                 workspace.encoding))));
         transport.write(response(message.id, result));
@@ -561,23 +596,23 @@ private final class LspServer
         JsonValue[] locations;
         if (occurrence.kind == FeatureOccurrenceKind.modulePath)
         {
-            const target = buildNormalizedPath(dirName(document.displayPath), occurrence.name);
-            auto targetDocument = workspace.document(target);
-            if (targetDocument !is null || exists(target))
-                locations ~= locationJson(targetDocument is null ? pathToUri(target)
-                    : targetDocument.uri, LspRange(LspPosition(0, 0), LspPosition(0, 0)));
+            auto target = workspace.dependencyTarget(document.canonicalPath,
+                    occurrence.moduleKind, occurrence.span);
+            if (target.length != 0)
+            {
+                auto targetDocument = workspace.document(target);
+                if (targetDocument !is null || exists(target))
+                    locations ~= locationJson(targetDocument is null ? pathToUri(target)
+                        : targetDocument.uri,
+                        LspRange(LspPosition(0, 0), LspPosition(0, 0)));
+            }
         }
         else
         {
-            foreach (path; sortedDocumentPaths(workspace))
-            {
-                auto candidate = &workspace.documents[path];
-                foreach (declaration; candidate.features.occurrences)
-                    if (declaration.declaration && declaration.kind == occurrence.kind
-                            && declaration.name == occurrence.name)
-                        locations ~= locationJson(candidate.uri,
-                            candidate.lines.toLsp(declaration.span, workspace.encoding));
-            }
+            auto declaration = localDeclaration(document, *occurrence);
+            if (declaration !is null)
+                locations ~= locationJson(document.uri,
+                    document.lines.toLsp(declaration.span, workspace.encoding));
         }
         transport.write(response(message.id, jsonArray(locations)));
         return true;
@@ -689,16 +724,24 @@ private final class LspServer
             transport.write(response(message.id, jsonNull()));
             return true;
         }
-        if (document.kind == ModuleKind.macro_)
+        if (document.kind == ModuleKind.macro_
+                || occurrence.kind == FeatureOccurrenceKind.flag_)
         {
             transport.write(response(message.id, jsonNull()));
             return true;
         }
-        if ((occurrence.kind == FeatureOccurrenceKind.macro_
-                    && (!isMacroName(newName) || isReservedMacroName(newName)))
-                || (occurrence.kind == FeatureOccurrenceKind.flag_
-                    && (!isFlagName(newName) || conditionalNames.canFind(newName))))
+        if (occurrence.kind == FeatureOccurrenceKind.macro_
+                && (!isMacroName(newName) || isReservedMacroName(newName)))
             return invalidNotification(message, "newName is not valid for this symbol");
+
+        foreach (candidate; document.features.occurrences)
+            if (candidate.declaration && candidate.kind == occurrence.kind
+                    && candidate.name == newName && candidate.name != occurrence.name)
+            {
+                transport.write(errorResponse(message.id, invalidParamsCode,
+                        "newName conflicts with an existing declaration"));
+                return true;
+            }
 
         JsonMember[] changes;
         JsonValue[] edits;
@@ -723,6 +766,32 @@ private final class LspServer
     {
         if (message.hasId)
             transport.write(response(message.id, jsonArray([])));
+        return true;
+    }
+
+    private bool prepareRename(RpcMessage message)
+    {
+        if (!message.hasId)
+            return true;
+        string uri;
+        auto document = openDocument(workspace,
+                message.hasParams ? message.params : JSONValue.init, uri);
+        if (document is null)
+            return invalidNotification(message, "prepareRename requires an open file URI");
+        LspPosition position;
+        if (!positionValue(field(message.params, "position"), position))
+            return invalidNotification(message, "prepareRename requires a position");
+        auto occurrence = occurrenceAt(document, position, workspace.encoding);
+        if (occurrence is null || occurrence.kind != FeatureOccurrenceKind.macro_
+                || document.kind == ModuleKind.macro_
+                || localDeclaration(document, *occurrence) is null)
+        {
+            transport.write(response(message.id, jsonNull()));
+            return true;
+        }
+        transport.write(response(message.id, jsonObject(
+                member("range", rangeJson(document.lines.toLsp(occurrence.span,
+                    workspace.encoding))), member("placeholder", occurrence.name))));
         return true;
     }
 
@@ -803,18 +872,17 @@ private FeatureOccurrence* occurrenceAt(OpenDocument* document, LspPosition posi
 
 private bool hasLocalDeclaration(OpenDocument* document, FeatureOccurrence occurrence)
 {
-    foreach (candidate; document.features.occurrences)
-        if (candidate.declaration && candidate.kind == occurrence.kind
-                && candidate.name == occurrence.name)
-            return true;
-    return false;
+    return localDeclaration(document, occurrence) !is null;
 }
 
-private string[] sortedDocumentPaths(Workspace workspace)
+private FeatureOccurrence* localDeclaration(OpenDocument* document,
+        FeatureOccurrence occurrence)
 {
-    auto result = workspace.documents.keys;
-    result.sort;
-    return result;
+    foreach (ref candidate; document.features.occurrences)
+        if (candidate.declaration && candidate.kind == occurrence.kind
+                && candidate.name == occurrence.name)
+            return &candidate;
+    return null;
 }
 
 private string linePrefix(string line, size_t codePoints)
@@ -854,6 +922,125 @@ private void addCompletion(ref JsonValue[] items, ref string[] labels, string la
             member("newText", label))));
 }
 
+private bool requestMethod(string method) @safe pure nothrow
+{
+    switch (method)
+    {
+    case "initialize":
+    case "shutdown":
+    case "textDocument/documentSymbol":
+    case "textDocument/foldingRange":
+    case "textDocument/completion":
+    case "textDocument/hover":
+    case "textDocument/definition":
+    case "textDocument/semanticTokens/full":
+    case "textDocument/references":
+    case "textDocument/rename":
+    case "textDocument/prepareRename":
+    case "textDocument/codeAction":
+        return true;
+    default:
+        return false;
+    }
+}
+
+private bool notificationMethod(string method) @safe pure nothrow
+{
+    switch (method)
+    {
+    case "initialized":
+    case "exit":
+    case "textDocument/didOpen":
+    case "textDocument/didChange":
+    case "textDocument/didSave":
+    case "textDocument/didClose":
+    case "workspace/didChangeWatchedFiles":
+        return true;
+    default:
+        return false;
+    }
+}
+
+private bool clientSupports(RpcMessage message, string feature, string capability)
+{
+    auto textDocument = field(field(message.params, "capabilities"), "textDocument");
+    auto value = field(field(textDocument, feature), capability);
+    return value.type == JSONType.true_;
+}
+
+private bool clientSupportsMarkdown(RpcMessage message)
+{
+    auto textDocument = field(field(message.params, "capabilities"), "textDocument");
+    auto formats = field(field(textDocument, "hover"), "contentFormat");
+    if (formats.type != JSONType.array)
+        return false;
+    foreach (format; formats.array)
+        if (format.type == JSONType.string && format.str == "markdown")
+            return true;
+    return false;
+}
+
+private bool completionContextAllowed(OpenDocument* document, size_t lineNumber,
+        string prefix)
+{
+    auto trimmed = prefix.strip;
+    if (hasTeXComment(prefix) || trimmed.startsWith("!!")
+            || trimmed.startsWith("!|"))
+        return false;
+
+    const bang = prefix.lastIndexOf('!');
+    if (bang >= 0 && prefix.lastIndexOf('\\') > bang)
+        return false;
+    if (bang > 0 && prefix[bang - 1] == '!')
+        return false;
+    if (prefix.lastIndexOf("!|") >= 0)
+        return false;
+
+    bool raw;
+    foreach (index; 0 .. lineNumber)
+    {
+        auto line = document.lines.line(index).strip;
+        if (line == "!BEGIN_RAW_MODE")
+            raw = true;
+        else if (line == "!END_RAW_MODE")
+            raw = false;
+    }
+    return !raw;
+}
+
+private bool hasTeXComment(string text)
+{
+    bool escaped;
+    foreach (character; text)
+    {
+        if (character == '\\')
+        {
+            escaped = !escaped;
+            continue;
+        }
+        if (character == '%' && !escaped)
+            return true;
+        escaped = false;
+    }
+    return false;
+}
+
+private long conditionalIndex(string prefix, string name)
+{
+    const index = cast(long) prefix.lastIndexOf(name);
+    if (index < 0)
+        return -1;
+    auto rest = prefix[cast(size_t) index + name.length .. $];
+    if (rest.startsWith("{"))
+        return index;
+    if (!rest.startsWith("["))
+        return -1;
+    const close = rest.indexOf(']');
+    if (close < 0 || close + 1 >= rest.length || rest[close + 1] != '{')
+        return -1;
+    return index;
+}
+
 private JsonValue locationJson(string uri, LspRange range)
 {
     return jsonObject(member("uri", uri), member("range", rangeJson(range)));
@@ -878,7 +1065,8 @@ private PositionEncoding requestedEncoding(JSONValue params)
     return PositionEncoding.utf16;
 }
 
-private JsonValue diagnosticArray(const PublishedDiagnostic[] diagnostics)
+private JsonValue diagnosticArray(const PublishedDiagnostic[] diagnostics,
+        bool includeRelated)
 {
     JsonValue[] result;
     foreach (diagnostic; diagnostics)
@@ -889,13 +1077,15 @@ private JsonValue diagnosticArray(const PublishedDiagnostic[] diagnostics)
                     member("location", jsonObject(member("uri", location.uri),
                         member("range", rangeJson(location.range)))),
                     member("message", location.message));
-        result ~= jsonObject(
+        JsonMember[] fields = [
                 member("severity", cast(long) diagnostic.severity),
                 member("code", diagnostic.code),
                 member("source", "texflux"),
                 member("message", diagnostic.message),
-                member("range", rangeJson(diagnostic.range)),
-                member("relatedInformation", jsonArray(related)));
+                member("range", rangeJson(diagnostic.range))];
+        if (includeRelated)
+            fields ~= member("relatedInformation", jsonArray(related));
+        result ~= jsonObject(fields);
     }
     return jsonArray(result);
 }

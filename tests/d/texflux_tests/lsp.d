@@ -4,9 +4,9 @@ module texflux_tests.lsp;
 import std.algorithm : canFind;
 import std.conv : to;
 import std.json : JSONType, JSONValue, parseJSON;
-import std.file : exists, getcwd;
+import std.file : exists, getcwd, mkdirRecurse, rmdirRecurse, tempDir, write;
 import std.path : buildPath;
-import std.process : pipeProcess, Redirect, wait;
+import std.process : pipeProcess, Redirect, thisProcessID, wait;
 import std.stdio : File;
 import std.string : indexOf, split, strip;
 
@@ -14,6 +14,7 @@ import texflux : AnalysisRequest, analyze;
 import texflux.flags : Flags;
 import texflux.lsp.server : run;
 import texflux.lsp.features : FeatureOccurrenceKind, buildFeatureIndex;
+import texflux.lsp.protocol : hasField, inspect;
 import texflux.lsp.text : LspPosition, LineIndex, PositionEncoding, pathToUri,
     uriToPath;
 import texflux.lsp.transport : LspStreams, LspTransport, PacketStatus;
@@ -151,6 +152,186 @@ private void writeProcessFrame(ref File input, string body)
 
 unittest
 {
+    assert(!inspect(parseJSON(`{"jsonrpc":"2.0","id":{},"method":"shutdown"}`)).valid);
+    assert(!inspect(parseJSON(`{"jsonrpc":"2.0","id":1,"method":"shutdown","params":1}`)).valid);
+    assert(!inspect(parseJSON(`{"jsonrpc":"2.0","id":18446744073709551615,"method":"shutdown"}`)).valid);
+}
+
+unittest
+{
+    auto source =
+        frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized"}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/with-id.tfx","version":1,"text":"@frame::\n    body\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///tmp/with-id.tfx"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":4,"method":"exit"}`)
+        ~ frame(`{"jsonrpc":"2.0","id":5,"method":"shutdown"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(source);
+    assert(run(streams(connection)) == 0);
+    auto messages = frames(connection.output);
+    bool didOpenRejected;
+    bool symbolsReturned;
+    bool exitRejected;
+    foreach (message; messages)
+    {
+        auto id = field(message, "id");
+        if (id.type != JSONType.integer)
+            continue;
+        if (id.integer == 2)
+            didOpenRejected = field(message, "error")["code"].integer == -32600;
+        if (id.integer == 3)
+            symbolsReturned = field(message, "error")["code"].integer == -32602;
+        if (id.integer == 4)
+            exitRejected = field(message, "error")["code"].integer == -32600;
+    }
+    assert(didOpenRejected);
+    assert(symbolsReturned);
+    assert(exitRejected);
+}
+
+unittest
+{
+    auto source =
+        frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{"textDocument":{"rename":{"prepareSupport":true},"hover":{"contentFormat":["plaintext"]}}}}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/prepare.tfx","version":1,"text":"!defmacro{foo}{x}::\n    !param{x}\n!foo{x}\n!flag{draft}{off}\n!when{draft}::\n    body\n!import{missing.tfx}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/prepare.tfx"},"position":{"line":2,"character":1}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/prepare.tfx"},"position":{"line":3,"character":6}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":4,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/prepare.tfx"},"position":{"line":6,"character":8}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/prepare.tfx"},"position":{"line":2,"character":1}}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/prepare.tfxm","version":1,"text":"!defmacro{foo}{x}::\n    !param{x}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":6,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":"file:///tmp/prepare.tfxm"},"position":{"line":0,"character":10}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":7,"method":"shutdown"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(source);
+    assert(run(streams(connection)) == 0);
+    bool prepareAdvertised;
+    foreach (message; frames(connection.output))
+    {
+        auto id = field(message, "id");
+        if (id.type != JSONType.integer)
+            continue;
+        switch (id.integer)
+        {
+        case 1:
+            prepareAdvertised = field(message, "result")["capabilities"]
+                ["renameProvider"]["prepareProvider"].type == JSONType.true_;
+            break;
+        case 2:
+            assert(field(message, "result")["placeholder"].str == "foo");
+            break;
+        case 3:
+        case 4:
+        case 6:
+            assert(field(message, "result").type == JSONType.null_);
+            break;
+        case 5:
+            assert(field(message, "result")["contents"]["kind"].str == "plaintext");
+            assert(field(message, "result")["contents"]["value"].str.indexOf("**") < 0);
+            break;
+        case 7:
+            assert(field(message, "result").type == JSONType.null_);
+            break;
+        default:
+            break;
+        }
+    }
+    assert(prepareAdvertised);
+}
+
+unittest
+{
+    const uri = pathToUri("/tmp/completion-contexts.tfx");
+    const sourceText = "!flag{draft}{off}\\n"
+        ~ "% !wh\\n"
+        ~ "!!when{draft}\\n"
+        ~ "!| !wh\\n"
+        ~ "!BEGIN_RAW_MODE\\n"
+        ~ "!wh\\n"
+        ~ "!END_RAW_MODE\\n"
+        ~ "!when[and]{draft}\\n";
+    auto input = frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"`
+            ~ uri ~ `","version":1,"text":"` ~ sourceText ~ `"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":1,"character":5}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":2,"character":4}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":4,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":3,"character":6}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":5,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":5,"character":3}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":6,"method":"textDocument/completion","params":{"textDocument":{"uri":"`
+            ~ uri ~ `"},"position":{"line":7,"character":11}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":7,"method":"shutdown"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(input);
+    assert(run(streams(connection)) == 0);
+    foreach (message; frames(connection.output))
+    {
+        auto id = field(message, "id");
+        if (id.type != JSONType.integer)
+            continue;
+        if (id.integer >= 2 && id.integer <= 5)
+            assert(field(message, "result")["items"].array.length == 0);
+        if (id.integer == 6)
+        {
+            auto items = field(message, "result")["items"].array;
+            assert(items.length == 1);
+            assert(items[0]["label"].str == "draft");
+        }
+    }
+}
+
+unittest
+{
+    auto source =
+        frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/a-definition.tfx","version":1,"text":"!defmacro{foo}{x}::\n    !param{x}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/b-definition.tfx","version":1,"text":"!defmacro{foo}{x}::\n    !param{x}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/main-definition.tfx","version":1,"text":"!foo{x}\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/main-definition.tfx"},"position":{"line":0,"character":1}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"shutdown"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(source);
+    assert(run(streams(connection)) == 0);
+    foreach (message; frames(connection.output))
+    {
+        auto id = field(message, "id");
+        if (id.type == JSONType.integer && id.integer == 2)
+            assert(field(message, "result").array.length == 0);
+    }
+}
+
+unittest
+{
+    auto source =
+        frame(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"initialized"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/collision.tfx","version":1,"text":"!defmacro{foo}{x}::\n    !param{x}\n!defmacro{bar}{x}::\n    !param{x}\n!foo{x}\n!flag{draft}{off}\n!when{draft}::\n    body\n"}}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/collision.tfx"},"position":{"line":4,"character":1},"newName":"bar"}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":3,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/collision.tfx"},"position":{"line":6,"character":7},"newName":"notes"}}`)
+        ~ frame(`{"jsonrpc":"2.0","id":4,"method":"shutdown"}`)
+        ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
+    auto connection = new MemoryConnection(source);
+    assert(run(streams(connection)) == 0);
+    foreach (message; frames(connection.output))
+    {
+        auto id = field(message, "id");
+        if (id.type != JSONType.integer)
+            continue;
+        if (id.integer == 2)
+            assert(field(message, "error")["code"].integer == -32602);
+        if (id.integer == 3)
+            assert(field(message, "result").type == JSONType.null_);
+    }
+}
+
+unittest
+{
     const source =
         "!defmacro{wrap}{body}::\n" ~
         "    !param{body}\n" ~
@@ -229,7 +410,7 @@ unittest
             ~ uri ~ `","version":2},"contentChanges":[{"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":14}},"text":"shell"},{"range":{"start":{"line":0,"character":17},"end":{"line":0,"character":21}},"text":"arg"},{"range":{"start":{"line":4,"character":5},"end":{"line":4,"character":9}},"text":"shell"}]}}`)
         ~ frame(`{"jsonrpc":"2.0","id":12,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"`
             ~ uri ~ `"}}}`)
-        ~ frame(`{"jsonrpc":"2.0","id":13,"method":"shutdown","params":null}`)
+        ~ frame(`{"jsonrpc":"2.0","id":13,"method":"shutdown"}`)
         ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
     auto connection = new MemoryConnection(input);
     assert(run(streams(connection)) == 0);
@@ -261,6 +442,15 @@ unittest
     assert(responses["7"]["result"]["data"].array.length != 0);
     assert(responses["7"]["result"]["data"].array[0].integer == 0);
     assert(responses["7"]["result"]["data"].array[1].integer == 1);
+    bool macroToken;
+    bool flagToken;
+    auto tokenData = responses["7"]["result"]["data"].array;
+    for (size_t index = 3; index < tokenData.length; index += 5)
+    {
+        macroToken |= tokenData[index].integer == 5;
+        flagToken |= tokenData[index].integer == 6;
+    }
+    assert(macroToken && flagToken);
     assert(responses["8"]["result"].array.length == 2);
     assert(responses["9"]["result"]["changes"].objectNoRef.length == 1);
     auto renameEdits = field(responses["9"]["result"]["changes"], uri);
@@ -348,6 +538,42 @@ unittest
         }
     assert(foundPart);
 
+    const definitionRoot = buildPath(tempDir(),
+            "texflux-lsp-definition-" ~ thisProcessID.to!string);
+    mkdirRecurse(definitionRoot);
+    scope (exit)
+        rmdirRecurse(definitionRoot);
+    const definitionChild = buildPath(definitionRoot, "child.tfx");
+    const definitionMain = buildPath(definitionRoot, "main.tfx");
+    write(definitionChild, "child body\n");
+    auto definitionWorkspace = new Workspace(PositionEncoding.utf16);
+    string definitionPath;
+    assert(definitionWorkspace.put(pathToUri(definitionMain), 1,
+            "!import{child.tfx}\n", definitionPath, error));
+    definitionWorkspace.commit(definitionPath,
+            definitionWorkspace.analyzeRoot(definitionPath));
+    auto definitionDocument = definitionWorkspace.document(definitionPath);
+    auto definitionIndex = definitionDocument.features.occurrences[0];
+    assert(definitionWorkspace.dependencyTarget(definitionPath, "import",
+            definitionIndex.span) == normalizedPath(definitionChild));
+
+    const droppedMain = buildPath(definitionRoot, "dropped.tfx");
+    string droppedPath;
+    assert(definitionWorkspace.put(pathToUri(droppedMain), 1,
+            "!flag{draft}{off}\n!when{draft}::\n    !import{missing.tfx}\n",
+            droppedPath, error));
+    definitionWorkspace.commit(droppedPath, definitionWorkspace.analyzeRoot(droppedPath));
+    auto droppedDocument = definitionWorkspace.document(droppedPath);
+    bool foundDroppedImport;
+    foreach (occurrence; droppedDocument.features.occurrences)
+        if (occurrence.kind == FeatureOccurrenceKind.modulePath)
+        {
+            foundDroppedImport = true;
+            assert(definitionWorkspace.dependencyTarget(droppedPath, "import",
+                    occurrence.span).length == 0);
+        }
+    assert(foundDroppedImport);
+
     string ignoredPath;
     assert(!workspace.put(pathToUri("/tmp/not-a-texflux.txt"), 1, "text\n",
             ignoredPath, error));
@@ -356,11 +582,9 @@ unittest
     string internalPath;
     assert(internalWorkspace.put(pathToUri("/tmp/internal.tfx"), 1,
             "@frame::\n    body\n", internalPath, error));
-    internalWorkspace.invalidate(internalPath, "boom");
+    internalWorkspace.invalidate(internalPath);
     auto internalFiles = internalWorkspace.diagnostics();
-    assert(internalFiles.length == 1);
-    assert(internalFiles[0].diagnostics.length == 1);
-    assert(internalFiles[0].diagnostics[0].code == "internal");
+    assert(internalFiles.length == 0);
     internalWorkspace.commit(internalPath, internalWorkspace.analyzeRoot(internalPath));
     assert(internalWorkspace.diagnostics()[0].diagnostics.length == 0);
 }
@@ -373,7 +597,7 @@ unittest
         ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/server.tfx","languageId":"texflux","version":1,"text":"@foo\n"}}}`)
         ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/server.tfx","version":2},"contentChanges":[{"text":"@foo::\n    body\n"}]}}`)
         ~ frame(`{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/server.tfx"}}}`)
-        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}`)
+        ~ frame(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`)
         ~ frame(`{"jsonrpc":"2.0","method":"exit"}`);
     auto connection = new MemoryConnection(source);
     assert(run(streams(connection)) == 0);
@@ -393,6 +617,9 @@ unittest
     }
     assert(publications.length == 3);
     assert(publications[0]["params"]["diagnostics"].array.length == 1);
+    assert(!hasField(publications[0]["params"], "version"));
+    assert(!hasField(publications[0]["params"]["diagnostics"].array[0],
+            "relatedInformation"));
     assert(publications[1]["params"]["diagnostics"].array.length == 0);
     assert(publications[2]["params"]["diagnostics"].array.length == 0);
     assert(shutdownResponse);
@@ -441,7 +668,7 @@ unittest
     assert(initialize["result"]["capabilities"].type == JSONType.object);
 
     writeProcessFrame(input,
-            `{"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}`);
+            `{"jsonrpc":"2.0","id":2,"method":"shutdown"}`);
     writeProcessFrame(input, `{"jsonrpc":"2.0","method":"exit"}`);
     auto shutdown = parseJSON(readProcessFrame(output));
     assert(shutdown["id"].integer == 2);

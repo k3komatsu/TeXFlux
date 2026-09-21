@@ -67,6 +67,22 @@ dub run -c update-regression -- --accept-current
 - Homebrew upgrade後に`brew test k3komatsu/tap/texflux`と`texflux --version`
   （`texflux 0.4.1`）を確認した。
 
+## v0.4.2 LSP pre-v0.5 hardening 実装記録（2026-09-21）
+
+- JSON-RPCの`id`/`params`形状、request/notificationの区別、lifecycle応答、client capabilityに
+  応じたhover・diagnosticsの出力を整理した。`prepareRename`は実装済みのsafe local macro
+  判定へ接続し、flag、module path、`.tfxm`、曖昧なmacroのrenameは拒否する。
+- definitionは無関係なopen documentを検索せず、local macroだけを返す。module pathはcompilerが
+  成功解析で記録した`TraceDependency`だけを使い、失敗・未解決・dropされたimportへは移動しない。
+- document versionの単調増加、didChange-before-open、feature indexのsyntax error境界、completionの
+  comment・escape・raw mode判定、semantic tokenのflag type、内部解析失敗のsource diagnostic非表示を
+  修正した。
+- flag renameはcaller bindingを完全に追跡できるまで提供せず、既存宣言とのmacro名衝突も拒否する。
+  dynamic watcher、root/flag設定、imported macroのsemantic completion・cross-file rename、URIの
+  追加対応、parser recoveryはv0.5以降へ保留する。
+- LDC 1.43で`dub test`、`dub build`、`dub build -c library`、`dub build --build=release`、
+  `dub build -c update-regression`を実行し、回帰fixtureは更新していない。
+
 ## 既知の残差
 
 - Bundle v1 は `doc/bundle.md` の設計に沿って実装済み。`.tfxb` は

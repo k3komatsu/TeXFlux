@@ -9,7 +9,7 @@ import texflux.diagnostics : Severity;
 import texflux.flags : Flags;
 import texflux.modules : ModuleKind;
 import texflux.paths : absoluteNormalized, normalizedPath;
-import texflux.source : LoadedSource;
+import texflux.source : LoadedSource, SourceSpan;
 import texflux.text : decodeUtf8;
 import texflux.trace : TraceDependency;
 
@@ -72,7 +72,6 @@ final class Workspace
 {
     OpenDocument[string] documents;
     RootState[string] roots;
-    string[string] internalErrors;
     string[][string] reverseDependencies;
     ulong revision;
     PositionEncoding encoding;
@@ -106,9 +105,9 @@ final class Workspace
         path = absoluteNormalized(decoded.get);
         const canonical = normalizedPath(path);
         if (auto existing = canonical in documents)
-            if (documentVersion < (*existing).documentVersion)
+            if (documentVersion <= (*existing).documentVersion)
             {
-                error = "document version must not go backwards";
+                error = "document version must increase";
                 return false;
             }
         const suffix = extension(path);
@@ -141,13 +140,13 @@ final class Workspace
         }
         const canonical = normalizedPath(absoluteNormalized(decoded.get));
         auto existing = canonical in documents;
-        string next;
-        bool hasBase;
-        if (existing !is null)
+        if (existing is null)
         {
-            next = (*existing).text;
-            hasBase = true;
+            error = "document is not open";
+            return false;
         }
+        string next;
+        next = (*existing).text;
         foreach (change; changes)
         {
             auto replacementBytes = cast(immutable(ubyte)[]) change.text.idup;
@@ -162,13 +161,7 @@ final class Workspace
             if (!change.hasRange)
             {
                 next = replacement;
-                hasBase = true;
                 continue;
-            }
-            if (!hasBase)
-            {
-                error = "document is not open";
-                return false;
             }
             auto index = LineIndex(next);
             auto start = index.byteOffset(change.range.start, encoding);
@@ -188,14 +181,26 @@ final class Workspace
         return (normalizedPath(path) in documents) !is null;
     }
 
+    /// Return only a compiler-recorded edge from a successful root analysis.
+    string dependencyTarget(string path, string kind, SourceSpan span)
+    {
+        const canonical = normalizedPath(path);
+        auto state = canonical in roots;
+        if (state is null || !(*state).result.complete)
+            return null;
+        foreach (dependency; (*state).result.dependencies)
+            if (normalizedPath(dependency.from) == canonical
+                    && dependency.kind == kind
+                    && normalizedPath(dependency.span.file) == normalizedPath(span.file)
+                    && dependency.span.start <= span.start
+                    && dependency.span.end >= span.end)
+                return dependency.target;
+        return null;
+    }
+
     OpenDocument* document(string path)
     {
         return normalizedPath(path) in documents;
-    }
-
-    string[] rootPaths() const
-    {
-        return documents.keys;
     }
 
     void close(string path)
@@ -203,7 +208,6 @@ final class Workspace
         const canonical = normalizedPath(path);
         documents.remove(canonical);
         roots.remove(canonical);
-        internalErrors.remove(canonical);
         rebuildReverse();
         ++revision;
     }
@@ -215,7 +219,7 @@ final class Workspace
     }
 
     /// Remove stale diagnostics while retaining the last dependency edges.
-    void invalidate(string path, string message)
+    void invalidate(string path)
     {
         const canonical = normalizedPath(path);
         if (canonical in roots)
@@ -223,7 +227,6 @@ final class Workspace
             roots[canonical].result.complete = false;
             roots[canonical].result.report.diagnostics = null;
         }
-        internalErrors[canonical] = message;
     }
 
     AnalysisResult analyzeRoot(string path)
@@ -244,7 +247,6 @@ final class Workspace
                         result.dependencies);
         }
         roots[canonical] = RootState(result);
-        internalErrors.remove(canonical);
         rebuildReverse();
     }
 
@@ -320,25 +322,6 @@ final class Workspace
                     file.keys ~= key;
                     file.diagnostics ~= item;
                 }
-            }
-        }
-        foreach (root, message; internalErrors)
-        {
-            auto document = root in documents;
-            if (document is null)
-                continue;
-            auto file = addFile(files, (*document).uri, (*document).displayPath);
-            PublishedDiagnostic item;
-            item.severity = 1;
-            item.kind = "internal";
-            item.code = "internal";
-            item.message = message;
-            item.range = LspRange(LspPosition(0, 0), LspPosition(0, 0));
-            const key = diagnosticKey((*document).uri, item);
-            if (!file.keys.canFind(key))
-            {
-                file.keys ~= key;
-                file.diagnostics ~= item;
             }
         }
         PublishedFile[] result;
