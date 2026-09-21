@@ -13,6 +13,7 @@ import std.string : indexOf;
 import std.sumtype : match;
 
 import texflux.ast;
+import texflux.errors : ParseError;
 import texflux.parser : parse;
 import texflux.source : SourcePosition, SourceSpan;
 import texflux.syntax : rawModeNames, requiredText;
@@ -33,6 +34,7 @@ enum FeatureTokenType : long
     variable,
     string_,
     macro_,
+    flag_,
 }
 
 struct FeatureSymbol
@@ -57,6 +59,7 @@ struct FeatureOccurrence
     SourceSpan span;
     bool declaration;
     string target;
+    string moduleKind;
 }
 
 struct FeatureToken
@@ -85,7 +88,7 @@ FeatureIndex buildFeatureIndex(string source, string filename)
         visitBlock(result, document.body_, true, null);
         result.complete = true;
     }
-    catch (Exception _)
+    catch (ParseError _)
     {
         // A partial syntax tree is not a safe basis for definitions or edits.
         result.complete = false;
@@ -177,7 +180,7 @@ private void visitSpecial(ref FeatureIndex result, SpecialInvocation invocation,
             result.symbols ~= FeatureSymbol(symbolName, 12L, nodeSpan(
                     invocation.span, invocation.suite), selection, container);
             result.occurrences ~= FeatureOccurrence(name, FeatureOccurrenceKind.macro_,
-                    selection, true, null);
+                    selection, true, null, null);
             result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.macro_, 0L);
         }
     }
@@ -190,8 +193,8 @@ private void visitSpecial(ref FeatureIndex result, SpecialInvocation invocation,
             result.symbols ~= FeatureSymbol(name, 13L, nodeSpan(
                     invocation.span, invocation.suite), selection, container);
             result.occurrences ~= FeatureOccurrence(name, FeatureOccurrenceKind.flag_,
-                    selection, true, null);
-            result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.variable, 0L);
+                    selection, true, null, null);
+            result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.flag_, 0L);
         }
     }
     else if (isConditional)
@@ -203,8 +206,8 @@ private void visitSpecial(ref FeatureIndex result, SpecialInvocation invocation,
             if (group.kind == GroupKind.required && groupValue(group, name, selection))
             {
                 result.occurrences ~= FeatureOccurrence(name, FeatureOccurrenceKind.flag_,
-                        selection, false, null);
-                result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.variable, 0L);
+                        selection, false, null, null);
+                result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.flag_, 0L);
             }
         }
     }
@@ -217,7 +220,8 @@ private void visitSpecial(ref FeatureIndex result, SpecialInvocation invocation,
             if (groupValue(invocation.groups[0], path, selection))
             {
                 result.occurrences ~= FeatureOccurrence(path,
-                        FeatureOccurrenceKind.modulePath, selection, false, path);
+                        FeatureOccurrenceKind.modulePath, selection, false, path,
+                        invocation.name);
                 result.tokens ~= FeatureToken(selection, cast(long) FeatureTokenType.string_, 0L);
             }
         }
@@ -226,7 +230,7 @@ private void visitSpecial(ref FeatureIndex result, SpecialInvocation invocation,
     {
         result.occurrences ~= FeatureOccurrence(invocation.name,
                 FeatureOccurrenceKind.macro_, nameOnlySpan(invocation.span, invocation.name),
-                false, null);
+                false, null, null);
         result.tokens ~= FeatureToken(header, cast(long) FeatureTokenType.macro_, 0L);
     }
 

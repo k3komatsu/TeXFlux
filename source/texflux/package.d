@@ -40,7 +40,7 @@ public import texflux.trace : CompilationTrace, TraceAsset, TraceBundle, TraceDe
 import texflux.render : renderWithProvenance;
 
 /// The released version, which every published document names as its producer.
-enum texfluxVersion = "0.4.1";
+enum texfluxVersion = "0.4.2";
 
 /// A compiled document, and every file the compilation read.
 struct AstCompilationResult
