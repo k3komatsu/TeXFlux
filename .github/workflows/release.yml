@@ -238,31 +238,31 @@ jobs:
           fetch-depth: 0
 
       - name: Download macOS arm64 binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: raw-macos-arm64
           path: raw/macos-arm64
 
       - name: Download macOS x86_64 binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: raw-macos-x86_64
           path: raw/macos-x86_64
 
       - name: Download Linux arm64 binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: raw-linux-arm64
           path: raw/linux-arm64
 
       - name: Download Linux x86_64 binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: raw-linux-x86_64
           path: raw/linux-x86_64
 
       - name: Download Windows x86_64 binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: raw-windows-x86_64
           path: raw/windows-x86_64
@@ -336,7 +336,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-assets
           path: downloaded-release
