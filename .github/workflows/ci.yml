@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install LDC 1.43.0
-        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        uses: dlang-community/setup-dlang@5d239e99bc553874d9362e7e6aeeac9454b6789f # v2
         with:
           compiler: ldc-1.43.0
           dub: ''
@@ -84,7 +84,7 @@ jobs:
         run: echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}" >> "$GITHUB_ENV"
 
       - name: Install LDC 1.43.0
-        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        uses: dlang-community/setup-dlang@5d239e99bc553874d9362e7e6aeeac9454b6789f # v2
         with:
           compiler: ldc-1.43.0
           dub: ''
@@ -133,7 +133,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install latest LDC
-        uses: dlang-community/setup-dlang@a6f7969b8b5dc3ff448c30f2c6749150795814f3 # v2
+        uses: dlang-community/setup-dlang@5d239e99bc553874d9362e7e6aeeac9454b6789f # v2
         with:
           compiler: ldc-latest
           dub: ''
